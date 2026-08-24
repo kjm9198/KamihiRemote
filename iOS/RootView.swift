@@ -2,21 +2,16 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject private var session: RemoteSession
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     var body: some View {
         ZStack {
-            AtmosphereBackground().allowsHitTesting(false)
-            Group {
-                if horizontalSizeClass == .regular {
-                    padLayout
-                } else if horizontalSizeClass == .compact && verticalSizeClass == .regular {
-                    portraitLayout
-                } else {
-                    landscapeLayout
-                }
-            }
+            AtmosphereBackground()
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+            mainContent
         }
-        .ignoresSafeArea()
         .sheet(isPresented: $session.showsSettings) {
             SettingsSheet().environmentObject(session)
         }
@@ -28,71 +23,86 @@ struct RootView: View {
         .accessibilityElement(children: .contain)
     }
 
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @ViewBuilder
+    private var mainContent: some View {
+        GeometryReader { proxy in
+            let insets = proxy.safeAreaInsets
+            let contentSize = CGSize(
+                width: max(0, proxy.size.width - insets.leading - insets.trailing),
+                height: max(0, proxy.size.height - insets.top - insets.bottom)
+            )
+            let landscape = contentSize.width > contentSize.height
+            Group {
+                if horizontalSizeClass == .regular && contentSize.width >= 700 {
+                    padLayout(size: contentSize)
+                } else if landscape {
+                    landscapeShell(size: contentSize)
+                } else {
+                    portraitLayout(size: contentSize)
+                }
+            }
+            .frame(width: contentSize.width, height: contentSize.height, alignment: .topLeading)
+            .padding(.leading, insets.leading)
+            .padding(.trailing, insets.trailing)
+            .padding(.top, insets.top)
+            .padding(.bottom, insets.bottom)
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+        }
+    }
 
-    private var padLayout: some View {
+    private func padLayout(size: CGSize) -> some View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 16) {
                 header
-                statusLabel
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(RemoteTab.allCases) { tab in
-                        Button { session.selectedTab = tab } label: {
-                            Label(tab.rawValue.capitalized, systemImage: symbol(for: tab))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 10)
-                                .background(session.selectedTab == tab ? .white.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.white.opacity(session.selectedTab == tab ? 1 : 0.55))
-                    }
-                    Button { session.showsSettings = true } label: {
-                        Label("Settings", systemImage: "gearshape")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.white.opacity(0.7))
-                }
-                .padding(10)
-                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
-                Spacer()
+                ConnectionStatusChip()
+                tabRail()
+                Spacer(minLength: 0)
             }
-            .frame(width: 230)
-            .padding(.leading, 24)
-            .padding(.vertical, 28)
+            .frame(width: min(230, max(180, size.width * 0.28)))
+            .padding(.leading, 12)
+            .padding(.vertical, 12)
             screenBody
-                .padding(20)
+                .padding(12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
-    private var portraitLayout: some View {
+    private func portraitLayout(size: CGSize) -> some View {
         VStack(spacing: 0) {
-            header.padding(.top, 18).padding(.horizontal, 24)
-            screenBody.padding(.top, 8)
-            statusLabel.padding(.bottom, 8)
-            bottomBar.padding(.bottom, 24)
+            HStack(alignment: .top) {
+                header
+                Spacer(minLength: 8)
+                ConnectionStatusChip()
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            screenBody
+                .padding(.top, 6)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            bottomBar
+                .padding(.bottom, 8)
         }
+        .frame(width: size.width, height: size.height)
     }
 
-    private var landscapeLayout: some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 12) {
+    private func landscapeShell(size: CGSize) -> some View {
+        let railWidth = min(76, max(56, size.width * 0.10))
+        return HStack(alignment: .top, spacing: 10) {
+            VStack(spacing: 10) {
                 header
-                statusLabel
-                Spacer()
-                sideRail
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                ConnectionStatusChip()
+                Spacer(minLength: 8)
+                tabRail()
+                Spacer(minLength: 0)
             }
-            .frame(width: 88)
-            .padding(.leading, 16)
-            .padding(.vertical, 20)
+            .frame(width: railWidth)
             screenBody
-                .padding(.trailing, 16)
-                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(width: size.width, height: size.height)
     }
 
     @ViewBuilder
@@ -108,63 +118,52 @@ struct RootView: View {
             MediaScreen()
         case .deck:
             DeckScreen()
+        case .controller:
+            ControllerScreen()
         }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("KAMIHI REMOTE")
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .tracking(2.8)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .tracking(2.4)
                 .foregroundStyle(.white.opacity(0.62))
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(session.isConnected ? Color.green.opacity(0.9) : Color.white.opacity(0.28))
-                    .frame(width: 8, height: 8)
-                    .accessibilityHidden(true)
-                Text(session.isConnected ? (session.hostName.isEmpty ? "Mac" : session.hostName) : session.statusText)
-                    .font(.system(size: 18, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.92))
-                    .lineLimit(1)
-            }
-            Text(session.telemetry.quality.title)
-                .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.5))
+            Text(session.isConnected ? (session.hostName.isEmpty ? "Mac" : session.hostName) : session.statusText)
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.92))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Connection \(session.isConnected ? "connected" : session.statusText), quality \(session.telemetry.quality.title)")
+        .accessibilityLabel("Kamihi Remote, \(session.isConnected ? "connected" : session.statusText)")
         .allowsHitTesting(false)
     }
 
-    private var statusLabel: some View {
-        Text(session.isConnected ? "connected" : session.statusText)
-            .font(.system(size: 14, weight: .medium, design: .rounded))
-            .foregroundStyle(.white.opacity(0.55))
-            .allowsHitTesting(false)
-    }
-
     private var bottomBar: some View {
-        HStack(spacing: 0) {
-            ForEach(RemoteTab.allCases) { tab in
-                tabButton(tab)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 0) {
+                ForEach(RemoteTab.allCases) { tab in
+                    tabButton(tab)
+                }
+                Button { session.showsSettings = true } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 18, weight: .medium))
+                        .frame(width: 48, height: 44)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.white.opacity(0.78))
+                .accessibilityLabel("Settings")
             }
-            Button { session.showsSettings = true } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 18, weight: .medium))
-                    .frame(width: 52, height: 44)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.white.opacity(0.78))
-            .accessibilityLabel("Settings")
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 8)
         .glassEffect(.regular.interactive(), in: .capsule)
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 12)
     }
 
-    private var sideRail: some View {
-        VStack(spacing: 10) {
+    private func tabRail() -> some View {
+        VStack(spacing: 8) {
             ForEach(RemoteTab.allCases) { tab in
                 Button { session.selectedTab = tab } label: {
                     Image(systemName: symbol(for: tab))
@@ -174,13 +173,15 @@ struct RootView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.white)
-                .accessibilityLabel(tab.rawValue)
+                .accessibilityLabel(tab.title)
+                .accessibilityAddTraits(session.selectedTab == tab ? .isSelected : [])
             }
             Button { session.showsSettings = true } label: {
                 Image(systemName: "gearshape").frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
             .foregroundStyle(.white.opacity(0.8))
+            .accessibilityLabel("Settings")
         }
         .padding(8)
         .glassEffect(.regular.interactive(), in: .capsule)
@@ -190,13 +191,12 @@ struct RootView: View {
         Button { session.selectedTab = tab } label: {
             Image(systemName: symbol(for: tab))
                 .font(.system(size: 16, weight: .semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                .frame(width: 44, height: 44)
                 .opacity(session.selectedTab == tab ? 1 : 0.45)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.white)
-        .accessibilityLabel(tab.rawValue)
+        .accessibilityLabel(tab.title)
         .accessibilityAddTraits(session.selectedTab == tab ? .isSelected : [])
     }
 
@@ -207,6 +207,42 @@ struct RootView: View {
         case .keyboard: return "keyboard"
         case .media: return "playpause"
         case .deck: return "square.grid.3x3"
+        case .controller: return "gamecontroller"
+        }
+    }
+}
+
+struct ModeShell<Controls: View>: View {
+    @EnvironmentObject private var session: RemoteSession
+    var pointerRatio: CGFloat = 0.56
+    var compactPointerHeight: CGFloat = 168
+    var showsPointerOverride: Bool? = nil
+    @ViewBuilder var controls: () -> Controls
+
+    var body: some View {
+        GeometryReader { geo in
+            let landscape = geo.size.width > geo.size.height * 1.05
+            let showPointer = showsPointerOverride ?? session.preferences.alwaysShowPointerPad
+            Group {
+                if showPointer == false {
+                    controls()
+                } else if landscape {
+                    HStack(spacing: 10) {
+                        TrackpadCanvas()
+                            .frame(width: max(180, geo.size.width * pointerRatio))
+                        controls()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                } else {
+                    VStack(spacing: 10) {
+                        controls()
+                            .frame(maxWidth: .infinity)
+                        TrackpadCanvas()
+                            .frame(minHeight: 120, maxHeight: min(compactPointerHeight, max(130, geo.size.height * 0.36)))
+                    }
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
         }
     }
 }
@@ -231,9 +267,12 @@ struct TrackpadCanvas: View {
                     Spacer()
                     HStack {
                         precisionButton
+                        if session.selectedTab == .slides {
+                            laserButton
+                        }
                         Spacer()
                     }
-                    .padding(16)
+                    .padding(12)
                 }
             }
         }
@@ -243,6 +282,7 @@ struct TrackpadCanvas: View {
     private var precisionButton: some View {
         Button {
             session.precisionActive.toggle()
+            session.pointerMode = .macCursor
         } label: {
             Label(session.precisionActive ? "Precision" : "Pointer", systemImage: session.precisionActive ? "scope" : "cursorarrow")
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
@@ -252,23 +292,46 @@ struct TrackpadCanvas: View {
         .buttonStyle(.plain)
         .foregroundStyle(.white)
         .glassEffect(.regular.interactive(), in: .capsule)
-        .accessibilityLabel("Precision mode")
-        .accessibilityValue(session.precisionActive ? "On" : "Off")
+        .accessibilityLabel("Mac cursor")
+        .accessibilityValue(session.precisionActive ? "Precision on" : "Off")
+    }
+
+    private var laserButton: some View {
+        Button {
+            session.pointerMode = session.pointerMode == .presentationLaser ? .macCursor : .presentationLaser
+            session.send(.laserVisible(session.pointerMode == .presentationLaser))
+        } label: {
+            Label("Laser", systemImage: "circle.fill")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(session.pointerMode == .presentationLaser ? .red : .white)
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .accessibilityLabel("Presentation laser")
+        .accessibilityValue(session.pointerMode == .presentationLaser ? "On" : "Off")
     }
 
     private var debugHUD: some View {
+        let debug = session.engine.debug
         let stats = session.engine.stats
         return VStack(alignment: .leading, spacing: 2) {
-            Text("touch \(stats.touchActive ? "ON" : "off")  #\(stats.touchCount)")
-            Text("MOVE \(stats.moveSent)  \(stats.movePerSecond)/s")
-            Text("rtt \(session.telemetry.rttMilliseconds) ms")
+            Text("Active touches: \(debug.activeCount)")
+            ForEach(Array(debug.points.prefix(5).enumerated()), id: \.offset) { index, point in
+                Text("#\(index + 1) \(Int(point.x))/\(Int(point.y))")
+            }
+            Text("Gesture: \(debug.mode)")
+            Text("Cumulative: x \(Int(debug.cumulativeX))  y \(Int(debug.cumulativeY))")
+            Text("Intent \(debug.scrollIntent)  MOVE \(stats.moveSent)")
         }
         .font(.system(size: 11, weight: .medium, design: .monospaced))
-        .foregroundStyle(.white.opacity(0.72))
+        .foregroundStyle(.white.opacity(0.78))
         .padding(10)
-        .background(.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(12)
+        .padding(10)
+        .accessibilityHidden(true)
     }
 
     private func fitted(_ state: TouchAnimationState, size: CGSize) -> TouchAnimationState {
@@ -277,6 +340,45 @@ struct TrackpadCanvas: View {
         copy.isConnected = session.isConnected
         copy.isPrecision = session.precisionActive
         return copy
+    }
+}
+
+struct ConnectionStatusChip: View {
+    @EnvironmentObject private var session: RemoteSession
+    @State private var expanded = false
+
+    var body: some View {
+        Button {
+            expanded.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(session.isConnected ? Color.green.opacity(0.9) : Color.white.opacity(0.28))
+                    .frame(width: 8, height: 8)
+                Text(session.isConnected ? "Connected" : session.statusText)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .accessibilityLabel(session.isConnected ? "Connected" : session.statusText)
+        .popover(isPresented: $expanded) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(session.hostName.isEmpty ? "Mac" : session.hostName).font(.headline)
+                Text(session.telemetry.transport)
+                if session.telemetry.rttMilliseconds > 0 {
+                    Text("\(session.telemetry.rttMilliseconds) ms")
+                }
+                Text(session.telemetry.quality == .offline ? "Reconnecting" : "Stable")
+                    .foregroundStyle(.secondary)
+            }
+            .padding(14)
+            .presentationCompactAdaptation(.popover)
+        }
     }
 }
 

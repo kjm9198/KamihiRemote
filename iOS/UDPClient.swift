@@ -51,10 +51,22 @@ final class UDPClient: ObservableObject {
                 self.pendingDx += dx
                 self.pendingDy += dy
                 self.hasPendingMove = true
-            case .scroll(let dx, let dy):
-                self.pendingScrollDx += dx
-                self.pendingScrollDy += dy
-                self.hasPendingScroll = true
+            case .scroll(let dx, let dy, let phase):
+                if phase == .changed {
+                    self.pendingScrollDx += dx
+                    self.pendingScrollDy += dy
+                    self.hasPendingScroll = true
+                } else {
+                    if self.hasPendingScroll {
+                        self.write(.scroll(dx: self.pendingScrollDx, dy: self.pendingScrollDy, phase: .changed))
+                        self.pendingScrollDx = 0
+                        self.pendingScrollDy = 0
+                        self.hasPendingScroll = false
+                    }
+                    self.write(command)
+                }
+            case .controller:
+                self.write(command)
             default:
                 self.write(command)
             }
@@ -107,7 +119,7 @@ final class UDPClient: ObservableObject {
             movesThisSecond += 1
         }
         if hasPendingScroll {
-            write(.scroll(dx: pendingScrollDx, dy: pendingScrollDy))
+            write(.scroll(dx: pendingScrollDx, dy: pendingScrollDy, phase: .changed))
             pendingScrollDx = 0
             pendingScrollDy = 0
             hasPendingScroll = false

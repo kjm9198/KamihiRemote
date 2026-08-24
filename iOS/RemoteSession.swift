@@ -10,12 +10,14 @@ final class RemoteSession: ObservableObject, CommandSending {
     let tcp = ReliableClient()
     let browser = DiscoveryBrowser()
     let engine: TouchInputEngine
+    let transport: TransportManager
 
     @Published var preferences = AppPreferences.load()
     @Published var pairingCode = UserDefaults.standard.string(forKey: "pairingCode") ?? ""
     @Published var manualAddress = UserDefaults.standard.string(forKey: "hostAddress") ?? ""
     @Published var manualPort = UserDefaults.standard.integer(forKey: "hostPort") == 0 ? Int(RemoteConstants.defaultUDPPort) : UserDefaults.standard.integer(forKey: "hostPort")
     @Published var showsSettings = false
+    @Published var showsDeckEditor = false
     @Published var selectedTab: RemoteTab = .trackpad
     @Published var connectionState: ConnectionState = .idle
     @Published var statusText = "Looking for nearby Macs"
@@ -24,7 +26,10 @@ final class RemoteSession: ObservableObject, CommandSending {
     @Published var precisionActive = false {
         didSet { engine.precisionActive = precisionActive }
     }
+    @Published var pointerMode: PointerMode = .macCursor
     @Published var deck = DeckButton.load()
+    @Published var hostApps: [HostAppEntry] = []
+    @Published var pendingAppName = ""
 
     private var sessionID: String?
     private var activeHost: HostIdentity?
@@ -33,9 +38,13 @@ final class RemoteSession: ObservableObject, CommandSending {
     private var cancellables = Set<AnyCancellable>()
     private var handshakeSent = false
     private var resolvedAddress: String?
+    private var lastController: ControllerState = .neutral
+    private var collectingApps: [HostAppEntry] = []
+    private let keys = DeviceKeyPair.loadOrCreate(account: "iphone-identity")
 
     init() {
         engine = TouchInputEngine()
+        transport = TransportManager(lanReady: { true })
         engine.attach(self)
         engine.preferences = preferences
         Haptics.level = preferences.hapticLevel
@@ -53,8 +62,11 @@ final class RemoteSession: ObservableObject, CommandSending {
         }
         tcp.onRTT = { [weak self] ms in
             Task { @MainActor in
-                self?.telemetry.rttMilliseconds = ms
-                self?.telemetry.quality = ms > 80 ? .unstable : (ms > 25 ? .good : .excellent)
+                guard let self else { return }
+                self.telemetry.rttMilliseconds = ms
+                self.telemetry.quality = ms > 80 ? .unstable : (ms > 25 ? .good : .excellent)
+                self.transport.noteLAN(rtt: ms, peerToPeer: true)
+                self.telemetry.transport = self.transport.active.title
             }
         }
         tcp.onPathResolved = { [weak self] address in
@@ -65,6 +77,7 @@ final class RemoteSession: ObservableObject, CommandSending {
         }
         NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
             self?.send(.releaseAll)
+            self?.sendController(.neutral)
         }
         NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
             self?.connectIfPossible()
@@ -73,15 +86,32 @@ final class RemoteSession: ObservableObject, CommandSending {
         if preferences.autoConnect {
             connectIfPossible()
         }
+        GestureEngineTests.runSelfChecks()
+        _ = SessionCrypto.runSelfChecks()
+        transport.noteWiredUnsupported()
     }
 
     var isConnected: Bool { connectionState == .connected }
 
     func send(_ command: RemoteCommand) {
+        if pointerMode == .presentationLaser, case .move = command {
+            let size = engine.animation.trackpadSize
+            let x = engine.stats.x / max(size.width, 1)
+            let y = engine.stats.y / max(size.height, 1)
+            udp.send(.laser(x: x, y: y))
+            return
+        }
         if command.isRealtime {
             udp.send(command)
         } else {
             tcp.send(command)
+        }
+    }
+
+    func sendController(_ state: ControllerState) {
+        lastController = state
+        if isConnected {
+            udp.send(.controller(state))
         }
     }
 
@@ -146,12 +176,14 @@ final class RemoteSession: ObservableObject, CommandSending {
 
     func disconnect(reason: String) {
         send(.releaseAll)
+        sendController(.neutral)
         tcp.stop()
         udp.stop()
         sessionID = nil
         connectionState = .idle
         statusText = reason
         engine.syncConnection(false)
+        pointerMode = .macCursor
     }
 
     func applySettingsAndConnect() {
@@ -188,13 +220,25 @@ final class RemoteSession: ObservableObject, CommandSending {
                 sessionID = session
                 udp.updateSession(session)
                 markConnected()
+            } else if isConnected == false {
+                statusText = "Waiting for Mac approval…"
+            }
+        case .pairDecision(let ok, _, let material):
+            if ok {
+                markConnected()
             } else {
-                statusText = "Pairing failed"
-                showsSettings = true
+                statusText = "Mac denied pairing"
             }
         case .pong(let name):
             hostName = name
             markConnected()
+        case .appListBegin:
+            collectingApps = []
+            pendingAppName = ""
+        case .appEntry(let name, let bundleID):
+            collectingApps.append(HostAppEntry(displayName: name, bundleIdentifier: bundleID))
+        case .appListEnd:
+            hostApps = collectingApps.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
         default:
             break
         }
@@ -208,6 +252,7 @@ final class RemoteSession: ObservableObject, CommandSending {
             statusText = "Waiting for Mac… \(error.localizedDescription)"
             if connectionState == .connected { beginReconnect() }
         case .failed:
+            sendController(.neutral)
             if connectionState != .idle { beginReconnect() }
         case .cancelled:
             break
@@ -220,12 +265,14 @@ final class RemoteSession: ObservableObject, CommandSending {
         guard handshakeSent == false else { return }
         handshakeSent = true
         statusText = "Talking to Mac…"
-        tcp.send(.hello(deviceID: DeviceIdentity.deviceID, deviceName: UIDevice.current.name, capabilities: "trackpad,keyboard,media,deck"))
+        tcp.send(.hello(deviceID: DeviceIdentity.deviceID, deviceName: UIDevice.current.name, capabilities: "trackpad,keyboard,media,deck,controller,ble"))
+        let pub = keys.publicKeyData.base64EncodedString()
         if PairingSecret.isValid(pairingCode) {
             tcp.send(.pair(code: pairingCode, deviceID: DeviceIdentity.deviceID))
+            tcp.send(.pairRequest(deviceID: DeviceIdentity.deviceID, deviceName: UIDevice.current.name, publicKey: pub, code: pairingCode))
         } else {
             showsSettings = true
-            statusText = "Enter the pairing code from your Mac"
+            statusText = "Scan the QR code or enter the pairing code from your Mac"
         }
     }
 
@@ -246,11 +293,13 @@ final class RemoteSession: ObservableObject, CommandSending {
         engine.syncConnection(true)
         Haptics.connect()
         telemetry.quality = .excellent
-        telemetry.transport = "UDP+TCP"
+        telemetry.transport = transport.active.title
+        browser.stopIfNeeded()
     }
 
     private func beginReconnect() {
         engine.syncConnection(false)
+        sendController(.neutral)
         connectionState = .reconnecting
         statusText = "Reconnecting…"
         telemetry.reconnects += 1
@@ -276,6 +325,16 @@ enum ConnectionState: String {
 }
 
 enum RemoteTab: String, CaseIterable, Identifiable {
-    case trackpad, slides, keyboard, media, deck
+    case trackpad, slides, keyboard, media, deck, controller
     var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .trackpad: return "Trackpad"
+        case .slides: return "Slides"
+        case .keyboard: return "Keyboard"
+        case .media: return "Media"
+        case .deck: return "Deck"
+        case .controller: return "Controller"
+        }
+    }
 }
