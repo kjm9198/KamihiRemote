@@ -46,12 +46,14 @@ enum RemotePacket {
                 switch (command, expected) {
                 case (.ping, .ping), (.click, .click), (.rightClick, .rightClick), (.mouseDown, .mouseDown), (.mouseUp, .mouseUp), (.releaseAll, .releaseAll):
                     break
-                case let (.move(dx, dy), .move(ex, ey)), let (.scroll(dx, dy), .scroll(ex, ey)):
+                case let (.move(dx, dy), .move(ex, ey)):
                     precondition(coordsMatch(dx, ex) && coordsMatch(dy, ey), "Vector mismatch for \(raw)")
+                case let (.scroll(dx, dy, phase), .scroll(ex, ey, expectedPhase)):
+                    precondition(coordsMatch(dx, ex) && coordsMatch(dy, ey) && phase == expectedPhase, "Scroll mismatch for \(raw)")
                 case let (.pong(name), .pong(expectedName)):
                     precondition(name == expectedName)
                 default:
-                    preconditionFailure("Unexpected parse for \(raw): \(command)")
+                    precondition(command == expected, "Unexpected parse for \(raw): \(command)")
                 }
             case .failure(let reason):
                 preconditionFailure("Expected success for \(raw), got \(reason)")
@@ -65,9 +67,16 @@ enum RemotePacket {
         expectSuccess("163158 MOVE 120.5 -80.25", token: "163158", .move(dx: 120.5, dy: -80.25))
         expectSuccess("163158 PING", token: "163158", .ping)
         expectSuccess("163158 CLICK", token: "163158", .click)
+        expectSuccess("163158 DOUBLE_CLICK", token: "163158", .doubleClick)
         expectSuccess("163158 RELEASE_ALL", token: "163158", .releaseAll)
         expectSuccess("163158 MOUSE_DOWN", token: "163158", .mouseDown)
         expectSuccess("163158 MOUSE_UP", token: "163158", .mouseUp)
+        expectSuccess("163158 SCROLL 1.5 -4.0", token: "163158", .scroll(dx: 1.5, dy: -4.0, phase: .changed))
+        expectSuccess("163158 SCROLL 1.5 -4.0 ended", token: "163158", .scroll(dx: 1.5, dy: -4.0, phase: .ended))
+        expectSuccess("163158 PRESENTATION next", token: "163158", .presentation(action: .next, profile: .keynote))
+        expectSuccess("163158 PRESENTATION start powerpoint", token: "163158", .presentation(action: .start, profile: .powerpoint))
+        expectSuccess("163158 OPEN_APP com.apple.Safari", token: "163158", .openApp(bundleID: "com.apple.Safari"))
+        expectSuccess("163158 SHORTCUT cmd+c", token: "163158", .shortcut("cmd+c"))
         expectSuccess("MOVE 163158 1.289 0.645", token: "163158", .move(dx: 1.289, dy: 0.645), legacy: true)
 
         switch parse("K2 sess-1 103 1710000000.000 MOVE 1.289 0.645") {
@@ -143,10 +152,12 @@ enum RemotePacket {
             return parseVector(token: token, command: "MOVE", args: args, legacy: legacy, sessionID: sessionID, sequence: sequence) { .move(dx: $0, dy: $1) }
         case "CLICK":
             return .success(token: token, command: .click, legacy: legacy, sessionID: sessionID, sequence: sequence)
+        case "DOUBLE_CLICK":
+            return .success(token: token, command: .doubleClick, legacy: legacy, sessionID: sessionID, sequence: sequence)
         case "RIGHT_CLICK":
             return .success(token: token, command: .rightClick, legacy: legacy, sessionID: sessionID, sequence: sequence)
         case "SCROLL":
-            return parseVector(token: token, command: "SCROLL", args: args, legacy: legacy, sessionID: sessionID, sequence: sequence) { .scroll(dx: $0, dy: $1) }
+            return parseScroll(token: token, args: args, legacy: legacy, sessionID: sessionID, sequence: sequence)
         case "MOUSE_DOWN":
             return .success(token: token, command: .mouseDown, legacy: legacy, sessionID: sessionID, sequence: sequence)
         case "MOUSE_UP":
@@ -190,13 +201,88 @@ enum RemotePacket {
             return .success(token: token, command: .media(action), legacy: legacy, sessionID: sessionID, sequence: sequence)
         case "PRESENTATION":
             guard let raw = args.first, let action = PresentationAction(rawValue: raw) else { return .failure("unknown presentation action") }
-            return .success(token: token, command: .presentation(action), legacy: legacy, sessionID: sessionID, sequence: sequence)
+            let profile = args.dropFirst().first.flatMap(PresentationProfile.init(rawValue:)) ?? .keynote
+            return .success(token: token, command: .presentation(action: action, profile: profile), legacy: legacy, sessionID: sessionID, sequence: sequence)
         case "PINCH":
             guard let delta = args.first.flatMap(parseDouble) else { return .failure("PINCH invalid") }
             return .success(token: token, command: .pinch(delta: delta), legacy: legacy, sessionID: sessionID, sequence: sequence)
+        case "ZOOM":
+            guard let raw = args.first, let action = ZoomAction(rawValue: raw) else { return .failure("ZOOM invalid") }
+            return .success(token: token, command: .zoom(action), legacy: legacy, sessionID: sessionID, sequence: sequence)
+        case "OPEN_APP":
+            guard let bundle = args.first, bundle.isEmpty == false else { return .failure("OPEN_APP missing bundle") }
+            return .success(token: token, command: .openApp(bundleID: bundle), legacy: legacy, sessionID: sessionID, sequence: sequence)
+        case "OPEN_URL":
+            return .success(token: token, command: .openURL(unquote(args.joined(separator: " "))), legacy: legacy, sessionID: sessionID, sequence: sequence)
+        case "SHORTCUT":
+            guard let spec = args.first else { return .failure("SHORTCUT missing spec") }
+            return .success(token: token, command: .shortcut(spec), legacy: legacy, sessionID: sessionID, sequence: sequence)
+        case "REQUEST_APP_LIST":
+            return .success(token: token, command: .requestAppList, legacy: legacy, sessionID: sessionID, sequence: sequence)
+        case "APP_LIST_BEGIN":
+            let count = args.first.flatMap { Int($0) } ?? 0
+            return .success(token: token, command: .appListBegin(count: count), legacy: legacy, sessionID: sessionID, sequence: sequence)
+        case "APP_ENTRY":
+            guard args.count >= 2 else { return .failure("APP_ENTRY missing fields") }
+            return .success(token: token, command: .appEntry(name: unquote(args[0]), bundleID: args[1]), legacy: legacy, sessionID: sessionID, sequence: sequence)
+        case "APP_LIST_END":
+            return .success(token: token, command: .appListEnd, legacy: legacy, sessionID: sessionID, sequence: sequence)
+        case "LASER":
+            return parseVector(token: token, command: "LASER", args: args, legacy: legacy, sessionID: sessionID, sequence: sequence) { .laser(x: $0, y: $1) }
+        case "LASER_VISIBLE":
+            let visible = (args.first ?? "0") != "0"
+            return .success(token: token, command: .laserVisible(visible), legacy: legacy, sessionID: sessionID, sequence: sequence)
+        case "CONTROLLER":
+            return parseController(token: token, args: args, legacy: legacy, sessionID: sessionID, sequence: sequence)
+        case "PAIR_REQUEST":
+            guard args.count >= 4 else { return .failure("PAIR_REQUEST missing fields") }
+            return .success(token: token, command: .pairRequest(deviceID: args[0], deviceName: unquote(args[1]), publicKey: args[2], code: args[3]), legacy: legacy, sessionID: sessionID, sequence: sequence)
+        case "PAIR_DECISION":
+            guard args.count >= 3 else { return .failure("PAIR_DECISION missing fields") }
+            return .success(token: token, command: .pairDecision(ok: args[0].uppercased() == "OK", deviceID: args[1], sessionMaterial: args[2]), legacy: legacy, sessionID: sessionID, sequence: sequence)
+        case "REVOKE":
+            guard let deviceID = args.first else { return .failure("REVOKE missing device") }
+            return .success(token: token, command: .revokeDevice(deviceID: deviceID), legacy: legacy, sessionID: sessionID, sequence: sequence)
         default:
             return .failure("unknown command \"\(command)\"")
         }
+    }
+
+    private static func parseScroll(token: String, args: [String], legacy: Bool, sessionID: String?, sequence: UInt64?) -> RemotePacketResult {
+        guard args.count >= 1 else { return .failure("SCROLL missing dx") }
+        guard args.count >= 2 else { return .failure("SCROLL missing dy") }
+        guard let dx = parseDouble(args[0]) else { return .failure("SCROLL dx invalid") }
+        guard let dy = parseDouble(args[1]) else { return .failure("SCROLL dy invalid") }
+        let phase = args.count >= 3 ? (ScrollPhase(rawValue: args[2]) ?? .changed) : .changed
+        return .success(token: token, command: .scroll(dx: dx, dy: dy, phase: phase), legacy: legacy, sessionID: sessionID, sequence: sequence)
+    }
+
+    private static func parseController(token: String, args: [String], legacy: Bool, sessionID: String?, sequence: UInt64?) -> RemotePacketResult {
+        guard args.count >= 10,
+              let seq = UInt32(args[0]),
+              let ts = parseDouble(args[1]),
+              let lx = parseDouble(args[2]),
+              let ly = parseDouble(args[3]),
+              let rx = parseDouble(args[4]),
+              let ry = parseDouble(args[5]),
+              let lt = parseDouble(args[6]),
+              let rt = parseDouble(args[7]),
+              let buttons = UInt32(args[8]),
+              let dpad = UInt8(args[9])
+        else { return .failure("CONTROLLER invalid") }
+        let state = ControllerState(
+            sequence: seq,
+            timestamp: ts,
+            leftX: Float(lx),
+            leftY: Float(ly),
+            rightX: Float(rx),
+            rightY: Float(ry),
+            leftTrigger: Float(lt),
+            rightTrigger: Float(rt),
+            buttons: buttons,
+            dpad: dpad
+        )
+        return .success(token: token, command: .controller(state), legacy: legacy, sessionID: sessionID, sequence: sequence)
     }
 
     private static func parseVector(
@@ -246,9 +332,11 @@ enum RemotePacket {
 
     private static func looksLikeCommand(_ value: String) -> Bool {
         [
-            "PING", "PONG", "MOVE", "CLICK", "RIGHT_CLICK", "SCROLL", "MOUSE_DOWN", "MOUSE_UP",
+            "PING", "PONG", "MOVE", "CLICK", "DOUBLE_CLICK", "RIGHT_CLICK", "SCROLL", "MOUSE_DOWN", "MOUSE_UP",
             "RELEASE_ALL", "HEARTBEAT", "HEARTBEAT_ACK", "HELLO", "HELLO_ACK", "PAIR", "PAIR_ACK",
-            "KEY_DOWN", "KEY_UP", "TYPE", "SYSTEM", "MEDIA", "PRESENTATION", "PINCH"
+            "PAIR_REQUEST", "PAIR_DECISION", "KEY_DOWN", "KEY_UP", "TYPE", "SYSTEM", "MEDIA", "PRESENTATION",
+            "PINCH", "ZOOM", "OPEN_APP", "OPEN_URL", "SHORTCUT", "REQUEST_APP_LIST", "APP_LIST_BEGIN",
+            "APP_ENTRY", "APP_LIST_END", "LASER", "LASER_VISIBLE", "CONTROLLER", "REVOKE"
         ].contains(value.uppercased())
     }
 }

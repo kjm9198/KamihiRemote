@@ -19,6 +19,8 @@ struct AppPreferences: Codable, Equatable {
     var smoothingEnabled = true
     var naturalScrolling = true
     var scrollSpeed = 1.0
+    var scrollFeel: ScrollFeel = .macLike
+    var scrollMomentum = 0.93
     var tapToClick = true
     var twoFingerSecondaryClick = true
     var hapticLevel: HapticLevel = .normal
@@ -29,10 +31,22 @@ struct AppPreferences: Codable, Equatable {
     var airMouseSensitivity = 1.6
     var airMouseDeadZone = 0.04
     var presentationProfile: PresentationProfile = .keynote
+    var presentationPointerStyle: PresentationPointerStyle = .laser
     var showDeveloperDiagnostics = false
     var autoConnect = true
     var lastHostID: String?
     var bindings = GestureBindings()
+    var alwaysShowPointerPad = true
+    var pinchInShortcut = "cmd+-"
+    var pinchOutShortcut = "cmd+="
+    var pinchThreshold = 0.12
+    var preferredTransport: TransportKind = .lan
+    var automaticTransport = true
+    var controllerLayout: ControllerLayout = .standard
+    var gameMapping: GameMapping = .fps
+    var stickDeadZone = 0.12
+    var stickSensitivity = 1.0
+    var controllerHaptics = true
 
     var effectiveSensitivity: Double {
         useCustomSensitivity ? customSensitivity : pointerPreset.sensitivity
@@ -42,13 +56,34 @@ struct AppPreferences: Codable, Equatable {
         pointerPreset.acceleration
     }
 
-    static let storageKey = "appPreferences.v2"
+    var effectiveScrollDecay: Double {
+        switch scrollFeel {
+        case .macLike: return 0.93
+        case .direct: return 0.0
+        case .custom: return min(max(scrollMomentum, 0.7), 0.98)
+        }
+    }
+
+    var effectiveScrollGain: Double {
+        switch scrollFeel {
+        case .macLike: return 1.15 * scrollSpeed
+        case .direct: return 1.0 * scrollSpeed
+        case .custom: return scrollSpeed
+        }
+    }
+
+    static let storageKey = "appPreferences.v3"
 
     static func load() -> AppPreferences {
-        guard let data = UserDefaults.standard.data(forKey: Self.storageKey),
-              let decoded = try? JSONDecoder().decode(AppPreferences.self, from: data)
-        else { return AppPreferences() }
-        return decoded
+        if let data = UserDefaults.standard.data(forKey: storageKey),
+           let decoded = try? JSONDecoder().decode(AppPreferences.self, from: data) {
+            return decoded
+        }
+        if let data = UserDefaults.standard.data(forKey: "appPreferences.v2"),
+           let decoded = try? JSONDecoder().decode(AppPreferences.self, from: data) {
+            return decoded
+        }
+        return AppPreferences()
     }
 
     func save() {
@@ -70,9 +105,9 @@ struct DeckButton: Codable, Equatable, Identifiable {
     }
 
     static let defaultLayout: [DeckButton] = [
-        .init(id: "safari", title: "Safari", symbol: "safari", kind: .openApp, payload: "Safari"),
-        .init(id: "finder", title: "Finder", symbol: "folder", kind: .openApp, payload: "Finder"),
-        .init(id: "music", title: "Music", symbol: "music.note", kind: .openApp, payload: "Music"),
+        .init(id: "safari", title: "Safari", symbol: "safari", kind: .openApp, payload: "com.apple.Safari"),
+        .init(id: "finder", title: "Finder", symbol: "folder", kind: .openApp, payload: "com.apple.finder"),
+        .init(id: "music", title: "Music", symbol: "music.note", kind: .openApp, payload: "com.apple.Music"),
         .init(id: "copy", title: "Copy", symbol: "doc.on.doc", kind: .shortcut, payload: "cmd+c"),
         .init(id: "paste", title: "Paste", symbol: "doc.on.clipboard", kind: .shortcut, payload: "cmd+v"),
         .init(id: "undo", title: "Undo", symbol: "arrow.uturn.backward", kind: .shortcut, payload: "cmd+z"),
@@ -85,12 +120,25 @@ struct DeckButton: Codable, Equatable, Identifiable {
         guard let data = UserDefaults.standard.data(forKey: "deckLayout.v1"),
               let decoded = try? JSONDecoder().decode([DeckButton].self, from: data)
         else { return defaultLayout }
-        return decoded
+        return decoded.map(Self.migrated)
     }
 
     static func save(_ buttons: [DeckButton]) {
         if let data = try? JSONEncoder().encode(buttons) {
             UserDefaults.standard.set(data, forKey: "deckLayout.v1")
         }
+    }
+
+    private static func migrated(_ button: DeckButton) -> DeckButton {
+        var copy = button
+        if copy.kind == .openApp {
+            switch copy.payload.lowercased() {
+            case "safari": copy.payload = "com.apple.Safari"
+            case "finder": copy.payload = "com.apple.finder"
+            case "music": copy.payload = "com.apple.Music"
+            default: break
+            }
+        }
+        return copy
     }
 }
