@@ -4,6 +4,7 @@ import UIKit
 final class TouchInputEngine: NSObject, ObservableObject {
     @Published private(set) var animation = TouchAnimationState.idle
     @Published private(set) var stats = TouchPipelineStats()
+    @Published private(set) var debug = GestureDebug()
     @Published var precisionActive = false {
         didSet { gesture.precisionActive = precisionActive }
     }
@@ -18,6 +19,8 @@ final class TouchInputEngine: NSObject, ObservableObject {
     private var displayLink: CADisplayLink?
     private var movesThisSecond = 0
     private var secondTimer: Timer?
+    private var lastMomentumTime: TimeInterval = 0
+    private var lastSize = CGSize(width: 390, height: 640)
 
     init(sender: CommandSending? = nil) {
         self.preferences = AppPreferences.load()
@@ -45,24 +48,29 @@ final class TouchInputEngine: NSObject, ObservableObject {
     }
 
     func handle(samples: [FingerSample], timestamp: TimeInterval, phase: UITouch.Phase, in size: CGSize) {
+        handle(changed: samples, active: samples, timestamp: timestamp, phase: phase, in: size)
+    }
+
+    func handle(changed: [FingerSample], active: [FingerSample], timestamp: TimeInterval, phase: UITouch.Phase, in size: CGSize) {
+        lastSize = size
         if phase == .began {
             stats.touchActive = true
             stats.touchCount += 1
-            stats.touchActive = true
         }
-        let output = gesture.handle(samples: samples, timestamp: timestamp, phase: phase, in: size)
+        let output = gesture.handle(changed: changed, active: active, timestamp: timestamp, phase: phase, in: size)
         emit(output)
         if phase == .ended || phase == .cancelled {
-            if samples.isEmpty || gesture.mode == .idle {
+            if active.isEmpty || gesture.mode == .idle {
                 stats.touchActive = false
                 stats.dx = 0
                 stats.dy = 0
             }
         }
-        if let point = samples.first?.point {
+        if let point = active.first?.point ?? changed.first?.point {
             stats.x = point.x
             stats.y = point.y
         }
+        stats.activeFingers = active.count
     }
 
     func handleCancelled(in size: CGSize) {
@@ -70,6 +78,7 @@ final class TouchInputEngine: NSObject, ObservableObject {
         stats.touchActive = false
         stats.dx = 0
         stats.dy = 0
+        stats.activeFingers = 0
     }
 
     func orientationChanged(in size: CGSize) {
@@ -78,6 +87,7 @@ final class TouchInputEngine: NSObject, ObservableObject {
 
     private func emit(_ output: GestureOutput) {
         latestAnimation = output.animation
+        debug = output.debug
         for command in output.commands {
             senderBox.sender?.send(command)
             stats.packetsSent += 1
@@ -107,6 +117,16 @@ final class TouchInputEngine: NSObject, ObservableObject {
     }
 
     @objc private func flushAnimation() {
+        let now = CACurrentMediaTime()
+        if lastMomentumTime == 0 { lastMomentumTime = now }
+        let dt = now - lastMomentumTime
+        lastMomentumTime = now
+        if gesture.mode == .idle {
+            let extra = gesture.tickMomentum(dt: dt, size: lastSize)
+            if extra.commands.isEmpty == false {
+                emit(extra)
+            }
+        }
         if animation != latestAnimation {
             animation = latestAnimation
         }

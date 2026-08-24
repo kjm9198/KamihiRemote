@@ -10,4 +10,5 @@ struct TouchPipelineStats: Equatable {
     var packetsSent = 0
     var moveSent = 0
     var movePerSecond = 0
+    var activeFingers = 0
 }

@@ -24,9 +24,11 @@ struct TouchAnimationView: View {
             ripples.append(Ripple(kind: .double, origin: orbOrigin))
         }
         .onChange(of: state.points) { _, points in
-            guard let point = points.first, state.isFingerDown, reduceMotion == false else { return }
-            trail.append(TrailDot(point: point, energy: hypot(state.velocity.width, state.velocity.height)))
-            if trail.count > 18 { trail.removeFirst(trail.count - 18) }
+            guard state.isFingerDown, reduceMotion == false else { return }
+            for point in points.prefix(4) {
+                trail.append(TrailDot(point: point, energy: hypot(state.velocity.width, state.velocity.height)))
+            }
+            if trail.count > 28 { trail.removeFirst(trail.count - 28) }
         }
         .allowsHitTesting(false)
     }
@@ -95,15 +97,18 @@ struct TouchAnimationView: View {
     private func connectedOrbs(at time: TimeInterval) -> some View {
         let points = Array(state.points.prefix(4))
         if state.isFingerDown, points.isEmpty == false {
+            if points.count >= 2 {
+                glassBridge(from: points[0], to: points[1], pinch: state.modeName.contains("pinch") || state.modeName.contains("scroll"))
+            }
             ForEach(Array(points.enumerated()), id: \.offset) { index, point in
                 orb(
                     id: "finger-\(index)",
-                    size: index == 0 ? (state.isDragging ? 108 : 92) : 64,
-                    stretch: index == 0 ? stretchAmount : 0.04,
+                    size: orbSize(index: index, count: points.count),
+                    stretch: index == 0 && points.count == 1 ? stretchAmount : groupStretch,
                     pressed: true
                 )
-                .scaleEffect(index == 0 ? clickScale : 1)
-                .rotationEffect(index == 0 ? stretchAngle : .zero)
+                .scaleEffect(index == 0 && points.count == 1 ? clickScale : 1)
+                .rotationEffect(groupRotation)
                 .position(point)
             }
         } else {
@@ -118,6 +123,39 @@ struct TouchAnimationView: View {
             .position(x: center.x, y: center.y + float)
         }
     }
+
+    private func glassBridge(from a: CGPoint, to b: CGPoint, pinch: Bool) -> some View {
+        let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
+        let length = hypot(b.x - a.x, b.y - a.y)
+        let angle = atan2(b.y - a.y, b.x - a.x)
+        return Capsule()
+            .fill(.clear)
+            .frame(width: max(length - 36, 12), height: pinch ? 22 : 16)
+            .glassEffect(.regular.tint(.white.opacity(0.10)), in: .capsule)
+            .rotationEffect(.radians(angle))
+            .position(mid)
+            .opacity(reduceMotion ? 0.35 : 0.7)
+            .allowsHitTesting(false)
+    }
+
+    private func orbSize(index: Int, count: Int) -> CGFloat {
+        if count == 1 { return state.isDragging ? 108 : 92 }
+        if count == 2 { return 70 }
+        return 54
+    }
+
+    private var groupStretch: CGFloat {
+        guard state.fingerCount >= 3, state.isFingerDown else { return 0.04 }
+        return min(hypot(state.velocity.width, state.velocity.height) / 900, 0.22)
+    }
+
+    private var groupRotation: Angle {
+        guard state.fingerCount >= 3 else {
+            return state.fingerCount == 1 ? stretchAngle : .zero
+        }
+        return stretchAngle
+    }
+
 
     private func searchingConstellation(at time: TimeInterval) -> some View {
         let count = 8
