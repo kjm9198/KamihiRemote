@@ -70,7 +70,9 @@ enum SessionCrypto {
     static func seal(plaintext: Data, key: SymmetricKey, nonceData: Data) throws -> Data {
         let nonce = try AES.GCM.Nonce(data: nonceData)
         let box = try AES.GCM.seal(plaintext, using: key, nonce: nonce)
-        return box.ciphertext + box.tag
+        // combined == nonce(12) + ciphertext + tag(16). Strip nonce; caller supplies it separately.
+        guard let combined = box.combined, combined.count > 28 else { throw CryptoError.short }
+        return Data(combined.dropFirst(nonceData.count))
     }
 
     static func open(ciphertextAndTag: Data, key: SymmetricKey, nonceData: Data) throws -> Data {
@@ -90,24 +92,31 @@ enum SessionCrypto {
 
     @discardableResult
     static func runSelfChecks() -> Bool {
-        let a = Curve25519.KeyAgreement.PrivateKey()
-        let b = Curve25519.KeyAgreement.PrivateKey()
-        let salt = Data("kamihi-test".utf8)
-        let keyA = try! deriveSessionKey(ourPrivate: a, peerPublic: b.publicKey.rawRepresentation, salt: salt)
-        let keyB = try! deriveSessionKey(ourPrivate: b, peerPublic: a.publicKey.rawRepresentation, salt: salt)
-        let nonce = randomNonce()
-        let sealed = try! seal(plaintext: Data("MOVE 1 2".utf8), key: keyA, nonceData: nonce)
-        let opened = try! open(ciphertextAndTag: sealed, key: keyB, nonceData: nonce)
-        precondition(opened == Data("MOVE 1 2".utf8))
         do {
+            let a = Curve25519.KeyAgreement.PrivateKey()
+            let b = Curve25519.KeyAgreement.PrivateKey()
+            let salt = Data("kamihi-test".utf8)
+            let keyA = try deriveSessionKey(ourPrivate: a, peerPublic: b.publicKey.rawRepresentation, salt: salt)
+            let keyB = try deriveSessionKey(ourPrivate: b, peerPublic: a.publicKey.rawRepresentation, salt: salt)
+            let nonce = randomNonce()
+            guard nonce.count == 12 else { return false }
+            let sealed = try seal(plaintext: Data("MOVE 1 2".utf8), key: keyA, nonceData: nonce)
+            guard sealed.count > 16 else { return false }
+            let opened = try open(ciphertextAndTag: sealed, key: keyB, nonceData: nonce)
+            guard opened == Data("MOVE 1 2".utf8) else { return false }
             var bad = sealed
-            bad[0] ^= 0xFF
-            _ = try open(ciphertextAndTag: bad, key: keyB, nonceData: nonce)
-            preconditionFailure("tampered packet must fail")
+            bad[bad.startIndex] ^= 0xFF
+            do {
+                _ = try open(ciphertextAndTag: bad, key: keyB, nonceData: nonce)
+                return false
+            } catch {
+                // fail closed as required
+            }
+            return true
         } catch {
-            // fail closed
+            NSLog("Kamihi SessionCrypto self-check failed: %@", String(describing: error))
+            return false
         }
-        return true
     }
 
     enum CryptoError: Error { case short }
