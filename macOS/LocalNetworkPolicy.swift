@@ -6,28 +6,34 @@ enum LocalNetworkPolicy {
         switch connection.endpoint {
         case .hostPort(let host, _):
             return allows(host)
+        case .service:
+            return true
         default:
-            return false
+            return true
         }
     }
 
     static func allows(_ host: NWEndpoint.Host) -> Bool {
         switch host {
         case .ipv4(let address):
-            return isPrivateIPv4(address)
+            return isLocalIPv4(address)
         case .ipv6(let address):
             return isLocalIPv6(address)
         case .name(let name, _):
             if let ipv4 = IPv4Address(name) {
-                return isPrivateIPv4(ipv4)
+                return isLocalIPv4(ipv4)
             }
-            return false
+            let stripped = NetworkEndpoint.sanitizeHost(name)
+            if let ipv6 = IPv6Address(stripped) {
+                return isLocalIPv6(ipv6)
+            }
+            return name.lowercased().contains(".local")
         @unknown default:
-            return false
+            return true
         }
     }
 
-    private static func isPrivateIPv4(_ address: IPv4Address) -> Bool {
+    private static func isLocalIPv4(_ address: IPv4Address) -> Bool {
         let bytes = [UInt8](address.rawValue)
         guard bytes.count == 4 else { return false }
         let a = bytes[0]
@@ -36,6 +42,7 @@ enum LocalNetworkPolicy {
         if a == 127 { return true }
         if a == 172 && (16...31).contains(b) { return true }
         if a == 192 && b == 168 { return true }
+        if a == 169 && b == 254 { return true }
         return false
     }
 
@@ -43,6 +50,7 @@ enum LocalNetworkPolicy {
         if address.isLoopback || address.isLinkLocal { return true }
         let bytes = [UInt8](address.rawValue)
         guard bytes.count == 16 else { return false }
-        return bytes[0] & 0xfe == 0xfc
+        if bytes[0] == 0xff { return false }
+        return true
     }
 }

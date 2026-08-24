@@ -127,15 +127,17 @@ final class GestureEngine {
 
         switch mode {
         case .tapCandidate, .pointer, .dragging:
-            if peakMovement > 10 {
+            if peakMovement > 8 {
                 cancelLongPress()
                 if mode == .tapCandidate { mode = .pointer }
             }
-            if let previous = lastCentroid {
+            if mode != .tapCandidate, let previous = lastCentroid {
                 let dx = Double(center.x - previous.x)
                 let dy = Double(center.y - previous.y)
-                let accelerated = accelerate(dx: dx, dy: dy, dt: dt)
-                commands.append(.move(dx: accelerated.dx, dy: accelerated.dy))
+                if hypot(dx, dy) >= 0.45 {
+                    let accelerated = accelerate(dx: dx, dy: dy, dt: min(max(dt, 1.0 / 240.0), 1.0 / 30.0))
+                    commands.append(.move(dx: accelerated.dx, dy: accelerated.dy))
+                }
             }
         case .scrolling:
             if let previous = lastCentroid {
@@ -289,9 +291,16 @@ final class GestureEngine {
             outY *= preferences.precisionGain
         }
         if preferences.smoothingEnabled {
-            let alpha = min(max(preferences.smoothing, 0), 0.6)
+            let slow = 1.0 - min(speed / 900.0, 1.0)
+            let alpha = min(max(preferences.smoothing, 0.12) + slow * 0.22, 0.62)
             outX = outX * (1 - alpha) + lastDx * alpha
             outY = outY * (1 - alpha) + lastDy * alpha
+        }
+        let magnitude = hypot(outX, outY)
+        let maxStep = 56.0 * max(preferences.effectiveSensitivity, 0.6)
+        if magnitude > maxStep {
+            outX *= maxStep / magnitude
+            outY *= maxStep / magnitude
         }
         lastDx = outX
         lastDy = outY

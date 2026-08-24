@@ -5,6 +5,7 @@ final class ReliableClient {
     var onCommand: ((RemoteCommand) -> Void)?
     var onState: ((NWConnection.State) -> Void)?
     var onRTT: ((Int) -> Void)?
+    var onPathResolved: ((String) -> Void)?
 
     private var connection: NWConnection?
     private let queue = DispatchQueue(label: "kamihi.tcp.client", qos: .userInitiated)
@@ -13,23 +14,39 @@ final class ReliableClient {
     private var heartbeat: DispatchSourceTimer?
     private var heartbeatID: UInt64 = 0
     private var pendingHeartbeat: (UInt64, Date)?
+    private var pendingCommands: [RemoteCommand] = []
+    private var isReady = false
 
     func connect(host: String, port: UInt16, pairingCode: String) {
+        connect(
+            to: .hostPort(
+                host: NWEndpoint.Host(host),
+                port: NWEndpoint.Port(rawValue: port) ?? NWEndpoint.Port(rawValue: RemoteConstants.defaultTCPPort)!
+            ),
+            pairingCode: pairingCode
+        )
+    }
+
+    func connect(to endpoint: NWEndpoint, pairingCode: String) {
         stop()
         self.pairingCode = pairingCode
+        isReady = false
+        pendingCommands.removeAll()
         let parameters = NWParameters.tcp
         parameters.includePeerToPeer = true
-        let connection = NWConnection(
-            host: NWEndpoint.Host(host),
-            port: NWEndpoint.Port(rawValue: port) ?? NWEndpoint.Port(rawValue: RemoteConstants.defaultTCPPort)!,
-            using: parameters
-        )
+        let connection = NWConnection(to: endpoint, using: parameters)
         self.connection = connection
         connection.stateUpdateHandler = { [weak self] state in
-            self?.onState?(state)
+            guard let self else { return }
             if case .ready = state {
-                self?.startHeartbeat()
+                self.isReady = true
+                if let host = NetworkEndpoint.hostString(from: connection.currentPath?.remoteEndpoint) {
+                    self.onPathResolved?(host)
+                }
+                self.flushPending()
+                self.startHeartbeat()
             }
+            self.onState?(state)
         }
         connection.start(queue: queue)
         receive()
@@ -37,9 +54,12 @@ final class ReliableClient {
 
     func send(_ command: RemoteCommand) {
         queue.async { [weak self] in
-            guard let self, let connection = self.connection else { return }
-            let data = RemotePacket.encodeV1(token: self.pairingCode, command: command)
-            connection.send(content: data, completion: .contentProcessed { _ in })
+            guard let self else { return }
+            if self.isReady {
+                self.write(command)
+            } else {
+                self.pendingCommands.append(command)
+            }
         }
     }
 
@@ -50,6 +70,20 @@ final class ReliableClient {
         connection = nil
         buffer.removeAll()
         pendingHeartbeat = nil
+        pendingCommands.removeAll()
+        isReady = false
+    }
+
+    private func flushPending() {
+        let queued = pendingCommands
+        pendingCommands.removeAll()
+        queued.forEach(write)
+    }
+
+    private func write(_ command: RemoteCommand) {
+        guard let connection else { return }
+        let data = RemotePacket.encodeV1(token: pairingCode, command: command)
+        connection.send(content: data, completion: .contentProcessed { _ in })
     }
 
     private func startHeartbeat() {
@@ -61,7 +95,7 @@ final class ReliableClient {
             self.heartbeatID += 1
             let id = self.heartbeatID
             self.pendingHeartbeat = (id, Date())
-            self.send(.heartbeat(id: id, timestamp: Date().timeIntervalSince1970))
+            self.write(.heartbeat(id: id, timestamp: Date().timeIntervalSince1970))
         }
         timer.resume()
         heartbeat = timer

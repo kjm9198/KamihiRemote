@@ -8,6 +8,8 @@ enum InputEngine {
     private static var rightMouseIsDown = false
     private static var heldKeys = Set<UInt16>()
     private static let source = CGEventSource(stateID: .hidSystemState)
+    private static var remainderX = 0.0
+    private static var remainderY = 0.0
 
     static var canInjectEvents: Bool {
         AXIsProcessTrusted()
@@ -16,8 +18,14 @@ enum InputEngine {
     @discardableResult
     static func move(dx: Double, dy: Double) -> Bool {
         guard canInjectEvents else { return false }
+        remainderX += dx
+        remainderY += dy
+        let stepX = remainderX
+        let stepY = remainderY
+        remainderX = 0
+        remainderY = 0
         let current = CGEvent(source: nil)?.location ?? .zero
-        let next = clamp(CGPoint(x: current.x + dx, y: current.y + dy))
+        let next = clamp(CGPoint(x: current.x + stepX, y: current.y + stepY))
         let type: CGEventType = mouseIsDown ? .leftMouseDragged : .mouseMoved
         return postMouse(type: type, at: next, button: .left)
     }

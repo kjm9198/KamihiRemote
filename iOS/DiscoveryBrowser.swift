@@ -2,12 +2,16 @@ import Foundation
 import Network
 
 struct DiscoveredHost: Identifiable, Equatable {
-    var id: String { hostID + address + "\(port)" }
+    var id: String { hostID }
     var hostID: String
     var name: String
     var address: String
     var port: UInt16
     var tcpPort: UInt16
+
+    var isResolved: Bool {
+        NetworkEndpoint.looksLikeNumericHost(address)
+    }
 }
 
 final class DiscoveryBrowser: ObservableObject {
@@ -19,7 +23,9 @@ final class DiscoveryBrowser: ObservableObject {
     func start() {
         stop()
         let descriptor = NWBrowser.Descriptor.bonjour(type: RemoteConstants.bonjourType, domain: RemoteConstants.bonjourDomain)
-        let browser = NWBrowser(for: descriptor, using: .tcp)
+        let parameters = NWParameters()
+        parameters.includePeerToPeer = true
+        let browser = NWBrowser(for: descriptor, using: parameters)
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             self?.handle(results)
         }
@@ -48,7 +54,7 @@ final class DiscoveryBrowser: ObservableObject {
                 DiscoveredHost(
                     hostID: hostID,
                     name: name,
-                    address: name,
+                    address: "",
                     port: udpPort,
                     tcpPort: tcpPort
                 )
@@ -56,24 +62,37 @@ final class DiscoveryBrowser: ObservableObject {
             resolve(result, hostID: hostID, displayName: name, tcpPort: tcpPort, udpPort: udpPort)
         }
         DispatchQueue.main.async {
-            if self.hosts.isEmpty {
-                self.hosts = discovered
+            let previous = Dictionary(uniqueKeysWithValues: self.hosts.map { ($0.hostID, $0) })
+            self.hosts = discovered.map { host in
+                var merged = host
+                if let existing = previous[host.hostID], existing.isResolved {
+                    merged.address = existing.address
+                    merged.tcpPort = existing.tcpPort
+                }
+                return merged
             }
         }
     }
 
     private func resolve(_ result: NWBrowser.Result, hostID: String, displayName: String, tcpPort: UInt16, udpPort: UInt16) {
-        let connection = NWConnection(to: result.endpoint, using: .tcp)
+        let parameters = NWParameters.tcp
+        parameters.includePeerToPeer = true
+        let connection = NWConnection(to: result.endpoint, using: parameters)
         connection.stateUpdateHandler = { [weak self] state in
-            if case .ready = state, let inner = connection.currentPath?.remoteEndpoint {
-                if case .hostPort(let host, let port) = inner {
-                    let address = "\(host)".trimmingCharacters(in: CharacterSet(charactersIn: "%[]"))
+            if case .ready = state {
+                if let address = NetworkEndpoint.hostString(from: connection.currentPath?.remoteEndpoint) {
+                    let resolvedPort: UInt16
+                    if case .hostPort(_, let port) = connection.currentPath?.remoteEndpoint {
+                        resolvedPort = UInt16(port.rawValue)
+                    } else {
+                        resolvedPort = tcpPort
+                    }
                     let resolved = DiscoveredHost(
                         hostID: hostID,
                         name: displayName,
                         address: address,
                         port: udpPort,
-                        tcpPort: UInt16(port.rawValue)
+                        tcpPort: resolvedPort
                     )
                     DispatchQueue.main.async {
                         var hosts = self?.hosts ?? []

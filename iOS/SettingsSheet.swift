@@ -7,6 +7,15 @@ struct SettingsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Pairing") {
+                    TextField("Code from the Mac app", text: $session.pairingCode)
+                        .keyboardType(.numberPad)
+                        .font(.title2.monospacedDigit())
+                    Text("Open Kamihi Remote Host on your Mac and type the 6-digit code here.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Nearby Macs") {
                     if session.browser.hosts.isEmpty {
                         Text("Searching on this Wi-Fi…")
@@ -14,21 +23,12 @@ struct SettingsSheet: View {
                     }
                     ForEach(session.browser.hosts) { host in
                         Button {
-                            session.pairingCode = session.pairingCode
-                            session.connect(to: HostIdentity(
-                                hostID: host.hostID,
-                                displayName: host.name,
-                                pairingSecret: session.pairingCode,
-                                lastAddress: host.address,
-                                lastPort: host.port,
-                                lastTCPPort: host.tcpPort,
-                                lastConnected: nil
-                            ))
+                            session.connect(to: host)
                             dismiss()
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(host.name).foregroundStyle(.primary)
-                                Text(host.address).font(.caption).foregroundStyle(.secondary)
+                                Text(host.isResolved ? host.address : "Found on this Wi-Fi").font(.caption).foregroundStyle(.secondary)
                             }
                         }
                     }

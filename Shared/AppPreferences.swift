@@ -15,7 +15,7 @@ struct AppPreferences: Codable, Equatable {
     var pointerPreset: PointerPreset = .normal
     var customSensitivity: Double = 1.8
     var useCustomSensitivity = false
-    var smoothing = 0.18
+    var smoothing = 0.28
     var smoothingEnabled = true
     var naturalScrolling = true
     var scrollSpeed = 1.0

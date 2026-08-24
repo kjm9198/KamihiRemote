@@ -6,6 +6,7 @@ final class TCPServer {
     var onDisconnect: (() -> Void)?
 
     private var listener: NWListener?
+    private var advertisedService: NWListener.Service?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private var buffers: [ObjectIdentifier: Data] = [:]
     private let queue = DispatchQueue(label: "kamihi.tcp.server", qos: .userInitiated)
@@ -16,8 +17,9 @@ final class TCPServer {
         do {
             let parameters = NWParameters.tcp
             parameters.allowLocalEndpointReuse = true
-            parameters.acceptLocalOnly = true
+            parameters.includePeerToPeer = true
             let listener = try NWListener(using: parameters, on: NWEndpoint.Port(rawValue: port)!)
+            listener.service = advertisedService
             listener.newConnectionHandler = { [weak self] connection in
                 self?.accept(connection)
             }
@@ -26,6 +28,22 @@ final class TCPServer {
         } catch {
             NSLog("Kamihi TCP listener failed: %@", error.localizedDescription)
         }
+    }
+
+    func advertise(name: String, hostID: String, udpPort: UInt16) {
+        let service = NWListener.Service(
+            name: name,
+            type: RemoteConstants.bonjourType,
+            domain: RemoteConstants.bonjourDomain,
+            txtRecord: NWTXTRecord([
+                "id": hostID,
+                "tcp": "\(port)",
+                "udp": "\(udpPort)",
+                "proto": RemoteConstants.protocolVersionString
+            ])
+        )
+        advertisedService = service
+        listener?.service = service
     }
 
     func send(_ command: RemoteCommand, token: String, to connection: NWConnection) {

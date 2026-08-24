@@ -7,7 +7,9 @@ struct RootView: View {
         ZStack {
             AtmosphereBackground().allowsHitTesting(false)
             Group {
-                if horizontalSizeClass == .compact && verticalSizeClass == .regular {
+                if horizontalSizeClass == .regular {
+                    padLayout
+                } else if horizontalSizeClass == .compact && verticalSizeClass == .regular {
                     portraitLayout
                 } else {
                     landscapeLayout
@@ -28,6 +30,44 @@ struct RootView: View {
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    private var padLayout: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 16) {
+                header
+                statusLabel
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(RemoteTab.allCases) { tab in
+                        Button { session.selectedTab = tab } label: {
+                            Label(tab.rawValue.capitalized, systemImage: symbol(for: tab))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .background(session.selectedTab == tab ? .white.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.white.opacity(session.selectedTab == tab ? 1 : 0.55))
+                    }
+                    Button { session.showsSettings = true } label: {
+                        Label("Settings", systemImage: "gearshape")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.white.opacity(0.7))
+                }
+                .padding(10)
+                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
+                Spacer()
+            }
+            .frame(width: 230)
+            .padding(.leading, 24)
+            .padding(.vertical, 28)
+            screenBody
+                .padding(20)
+        }
+    }
 
     private var portraitLayout: some View {
         VStack(spacing: 0) {

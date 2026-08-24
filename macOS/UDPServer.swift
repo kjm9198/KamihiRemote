@@ -28,6 +28,7 @@ final class UDPServer: ObservableObject {
         do {
             let parameters = NWParameters.udp
             parameters.allowLocalEndpointReuse = true
+            parameters.includePeerToPeer = true
             let listener = try NWListener(using: parameters, on: NWEndpoint.Port(rawValue: port)!)
             listener.newConnectionHandler = { [weak self] connection in
                 self?.accept(connection)

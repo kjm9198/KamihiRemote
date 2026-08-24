@@ -183,6 +183,7 @@ struct MediaScreen: View {
 
 struct DeckScreen: View {
     @EnvironmentObject private var session: RemoteSession
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
         VStack(spacing: 12) {
@@ -190,7 +191,7 @@ struct DeckScreen: View {
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                 .tracking(2)
                 .foregroundStyle(.white.opacity(0.6))
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: horizontalSizeClass == .regular ? 4 : 3), spacing: 10) {
                 ForEach(session.deck) { button in
                     Button {
                         run(button)
