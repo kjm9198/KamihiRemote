@@ -23,16 +23,3 @@ enum PairingSecret {
         return difference == 0
     }
 }
-
-enum RemoteEnvelope {
-    static func encode(token: String, command: RemoteCommand) -> Data {
-        Data("\(token) \(command.wire)\n".utf8)
-    }
-
-    static func decode(_ raw: String) -> (token: String, command: RemoteCommand)? {
-        if case .success(let token, let command, _) = RemotePacket.parse(raw) {
-            return (token, command)
-        }
-        return nil
-    }
-}

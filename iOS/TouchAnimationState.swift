@@ -11,6 +11,8 @@ struct TouchAnimationState: Equatable {
     var clickPulse: Int
     var doubleClickPulse: Int
     var trackpadSize: CGSize
+    var modeName: String
+    var isPrecision: Bool
 
     static let idle = TouchAnimationState(
         isConnected: false,
@@ -21,6 +23,8 @@ struct TouchAnimationState: Equatable {
         isDragging: false,
         clickPulse: 0,
         doubleClickPulse: 0,
-        trackpadSize: CGSize(width: 390, height: 640)
+        trackpadSize: CGSize(width: 390, height: 640),
+        modeName: "idle",
+        isPrecision: false
     )
 }

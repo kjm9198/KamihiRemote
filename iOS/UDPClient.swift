@@ -2,136 +2,133 @@ import Foundation
 import Network
 
 final class UDPClient: ObservableObject {
-    @Published private(set) var isConnected = false
-    @Published private(set) var hostName = ""
-    @Published private(set) var statusText = "Enter your Mac’s IP and pairing code"
-    @Published private(set) var lastError: String?
     @Published private(set) var packetsSent = 0
     @Published private(set) var movePacketsSent = 0
+    @Published private(set) var realtimePacketsPerSecond = 0
 
     private var connection: NWConnection?
     private var pairingCode = ""
+    private var sessionID: String?
+    private var sequence: UInt64 = 0
     private let queue = DispatchQueue(label: "kamihi.udp.client", qos: .userInteractive)
-    private var pingTimer: DispatchSourceTimer?
-    private var lastPong = Date.distantPast
+    private var pendingDx = 0.0
+    private var pendingDy = 0.0
+    private var pendingScrollDx = 0.0
+    private var pendingScrollDy = 0.0
+    private var hasPendingMove = false
+    private var hasPendingScroll = false
+    private var flushTimer: DispatchSourceTimer?
+    private var movesThisSecond = 0
+    private var meterTimer: DispatchSourceTimer?
 
-    func connect(host: String, port: UInt16, pairingCode: String) {
+    func configure(host: String, port: UInt16, pairingCode: String, sessionID: String?) {
         stop()
-        lastError = nil
-        hostName = ""
-        isConnected = false
-        packetsSent = 0
-        movePacketsSent = 0
-        self.pairingCode = pairingCode.trimmingCharacters(in: .whitespacesAndNewlines)
-        statusText = "Searching for Mac…"
-
-        guard PairingSecret.isValid(self.pairingCode) else {
-            statusText = "Enter the 6-digit pairing code"
-            return
-        }
-
+        self.pairingCode = pairingCode
+        self.sessionID = sessionID
+        sequence = 0
         let connection = NWConnection(
             host: NWEndpoint.Host(host),
-            port: NWEndpoint.Port(rawValue: port) ?? NWEndpoint.Port(integerLiteral: RemoteConstants.defaultPort),
+            port: NWEndpoint.Port(rawValue: port) ?? NWEndpoint.Port(rawValue: RemoteConstants.defaultUDPPort)!,
             using: .udp
         )
         self.connection = connection
-        connection.stateUpdateHandler = { [weak self] state in
-            self?.queue.async {
-                self?.handle(state)
-            }
-        }
         connection.start(queue: queue)
-        receive(on: connection)
-        startPing()
-        send(.ping)
+        startFlush()
+        startMeter()
+    }
+
+    func updateSession(_ sessionID: String?) {
+        queue.async { self.sessionID = sessionID }
     }
 
     func send(_ command: RemoteCommand) {
         queue.async { [weak self] in
-            guard let self, PairingSecret.isValid(self.pairingCode) else { return }
-            guard let connection = self.connection else { return }
-            connection.send(content: RemoteEnvelope.encode(token: self.pairingCode, command: command), completion: .idempotent)
-            DispatchQueue.main.async {
-                self.packetsSent += 1
-                if case .move = command {
-                    self.movePacketsSent += 1
-                }
+            guard let self else { return }
+            switch command {
+            case .move(let dx, let dy):
+                self.pendingDx += dx
+                self.pendingDy += dy
+                self.hasPendingMove = true
+            case .scroll(let dx, let dy):
+                self.pendingScrollDx += dx
+                self.pendingScrollDy += dy
+                self.hasPendingScroll = true
+            default:
+                self.write(command)
             }
         }
     }
 
     func stop() {
-        pingTimer?.cancel()
-        pingTimer = nil
+        flushTimer?.cancel()
+        flushTimer = nil
+        meterTimer?.cancel()
+        meterTimer = nil
         connection?.cancel()
         connection = nil
-        pairingCode = ""
-        setConnected(false, hostName: "", status: "Searching for Mac…")
+        sessionID = nil
+        hasPendingMove = false
+        hasPendingScroll = false
     }
 
-    private func handle(_ state: NWConnection.State) {
-        switch state {
-        case .ready:
-            send(.ping)
-        case .waiting:
-            setConnected(false, hostName: "", status: "Waiting for Mac…")
-        case .failed(let error):
-            DispatchQueue.main.async { self.lastError = error.localizedDescription }
-            setConnected(false, hostName: "", status: "Couldn’t reach Mac")
-        case .cancelled:
-            break
-        default:
-            break
+    private func startFlush() {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now(), repeating: 1.0 / RemoteConstants.maxRealtimeHz)
+        timer.setEventHandler { [weak self] in
+            self?.flushPending()
         }
+        timer.resume()
+        flushTimer = timer
     }
 
-    private func receive(on connection: NWConnection) {
-        connection.receiveMessage { [weak self] data, _, _, error in
+    private func startMeter() {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 1, repeating: 1)
+        timer.setEventHandler { [weak self] in
             guard let self else { return }
-            if let data, let text = String(data: data, encoding: .utf8) {
-                self.handleIncoming(text)
-            }
-            if error == nil, self.connection === connection {
-                self.receive(on: connection)
-            }
-        }
-    }
-
-    private func handleIncoming(_ text: String) {
-        for line in text.split(whereSeparator: \.isNewline) {
-            guard let command = RemoteCommand.parse(String(line)) else { continue }
-            if case .pong(let name) = command {
-                lastPong = Date()
-                setConnected(true, hostName: name, status: "connected")
+            let count = self.movesThisSecond
+            self.movesThisSecond = 0
+            DispatchQueue.main.async {
+                self.realtimePacketsPerSecond = count
             }
         }
+        timer.resume()
+        meterTimer = timer
     }
 
-    private func startPing() {
-        let ping = DispatchSource.makeTimerSource(queue: queue)
-        ping.schedule(deadline: .now(), repeating: RemoteConstants.pingInterval)
-        ping.setEventHandler { [weak self] in
-            self?.send(.ping)
-            self?.checkTimeout()
+    private func flushPending() {
+        if hasPendingMove {
+            write(.move(dx: pendingDx, dy: pendingDy))
+            pendingDx = 0
+            pendingDy = 0
+            hasPendingMove = false
+            movesThisSecond += 1
         }
-        ping.resume()
-        pingTimer = ping
-    }
-
-    private func checkTimeout() {
-        guard isConnected else { return }
-        if Date().timeIntervalSince(lastPong) > RemoteConstants.pongTimeout {
-            setConnected(false, hostName: "", status: "Searching for Mac…")
+        if hasPendingScroll {
+            write(.scroll(dx: pendingScrollDx, dy: pendingScrollDy))
+            pendingScrollDx = 0
+            pendingScrollDy = 0
+            hasPendingScroll = false
         }
     }
 
-    private func setConnected(_ connected: Bool, hostName: String, status: String) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.isConnected = connected
-            self.hostName = hostName
-            self.statusText = status
+    private func write(_ command: RemoteCommand) {
+        guard let connection else { return }
+        let data: Data
+        if let sessionID {
+            sequence += 1
+            data = RemotePacket.encodeV2(sessionID: sessionID, sequence: sequence, command: command)
+        } else if PairingSecret.isValid(pairingCode) {
+            data = RemotePacket.encodeV1(token: pairingCode, command: command)
+        } else {
+            return
+        }
+        connection.send(content: data, completion: .idempotent)
+        DispatchQueue.main.async {
+            self.packetsSent += 1
+            if case .move = command {
+                self.movePacketsSent += 1
+            }
         }
     }
 }

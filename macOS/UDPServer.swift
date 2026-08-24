@@ -19,6 +19,8 @@ final class UDPServer: ObservableObject {
     private var timeoutTimer: DispatchSourceTimer?
     private var packetsThisSecond = 0
     private var movesThisSecond = 0
+    private var activeSessionID: String?
+    private var sequenceGate = SequenceGate()
 
     func start(pairingCode: String) {
         stop()
@@ -42,6 +44,13 @@ final class UDPServer: ObservableObject {
                 self.lastError = error.localizedDescription
                 self.isRunning = false
             }
+        }
+    }
+
+    func updateSession(_ sessionID: String?) {
+        queue.async {
+            self.activeSessionID = sessionID
+            self.sequenceGate.reset()
         }
     }
 
@@ -130,17 +139,27 @@ final class UDPServer: ObservableObject {
             switch RemotePacket.parse(raw) {
             case .failure(let reason):
                 reject(reason, from: connection, raw: raw)
-            case .success(let token, let command, let legacy):
-                guard PairingSecret.matches(token, pairingCode) else {
+            case .success(let token, let command, let legacy, let sessionID, let sequence):
+                let authorized: Bool
+                if let activeSessionID, token == activeSessionID || sessionID == activeSessionID {
+                    authorized = true
+                } else {
+                    authorized = PairingSecret.matches(token, pairingCode)
+                }
+                guard authorized else {
                     let reason: String
                     if token.isEmpty {
                         reason = "missing pairing code"
-                    } else if !PairingSecret.isValid(token) {
+                    } else if !PairingSecret.isValid(token), activeSessionID == nil {
                         reason = "missing pairing code"
                     } else {
                         reason = "wrong pairing code"
                     }
                     reject(reason, from: connection, raw: raw, parsed: "Auth: \(token) ✗  \(reason)")
+                    continue
+                }
+                if let sequence, sequenceGate.shouldAccept(sequence) == false {
+                    DispatchQueue.main.async { self.stats.droppedStale += 1 }
                     continue
                 }
                 if legacy {
@@ -187,6 +206,9 @@ final class UDPServer: ObservableObject {
         case .mouseUp:
             name = "MOUSE_UP"
             posted = InputEngine.mouseUp()
+        default:
+            name = command.name
+            posted = InputEngine.apply(command)
         }
 
         let parsed = parsedSummary(token: token, command: command, name: name, dx: dxText, dy: dyText, legacy: legacy)
@@ -273,7 +295,8 @@ final class UDPServer: ObservableObject {
             DispatchQueue.main.async {
                 self.stats.packetsPerSecond = rx
                 self.stats.movePacketsPerSecond = moves
-                if self.clientConnected, Date().timeIntervalSince(self.lastPacket) > RemoteConstants.pongTimeout {
+                if self.clientConnected, Date().timeIntervalSince(self.lastPacket) > RemoteConstants.watchdogTimeout {
+                    InputEngine.releaseAll()
                     self.clientConnected = false
                     self.clientLabel = ""
                 }

@@ -17,4 +17,8 @@ struct HostPipelineStats: Equatable {
     var clientIP = "—"
     var lastRawPacket = "—"
     var lastParsed = "—"
+    var droppedStale = 0
+    var rttMilliseconds = 0
+    var sessionID = "—"
+    var reconnects = 0
 }

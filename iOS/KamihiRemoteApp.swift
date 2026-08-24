@@ -6,7 +6,7 @@ struct KamihiRemoteApp: App {
 
     var body: some Scene {
         WindowGroup {
-            TrackpadScreen()
+            RootView()
                 .environmentObject(session)
                 .preferredColorScheme(.dark)
                 .statusBarHidden(true)

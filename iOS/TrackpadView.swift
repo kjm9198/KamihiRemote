@@ -12,10 +12,9 @@ struct TrackpadView: UIViewRepresentable {
         view.isMultipleTouchEnabled = true
         view.isExclusiveTouch = true
         view.isUserInteractionEnabled = true
-        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        view.setContentHuggingPriority(.defaultLow, for: .vertical)
-        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        view.accessibilityLabel = "Mac trackpad"
+        view.accessibilityHint = "Move one finger to control the Mac pointer. Two fingers scroll. Three fingers change desktops."
+        view.accessibilityTraits = .allowsDirectInteraction
         return view
     }
 
@@ -31,6 +30,7 @@ final class TrackpadUIView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         isUserInteractionEnabled = true
+        isMultipleTouchEnabled = true
     }
 
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
@@ -42,45 +42,24 @@ final class TrackpadUIView: UIView {
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        engine?.markUIKitTouch()
-        forward(event, phase: .began)
+        forward(touches, phase: .began)
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        engine?.markUIKitTouch()
-        forward(event, phase: .moved)
+        forward(touches, phase: .moved)
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        engine?.markUIKitTouch()
-        forward(event, phase: .ended)
+        forward(touches, phase: .ended)
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         engine?.handleCancelled(in: bounds.size)
     }
 
-    private func forward(_ event: UIEvent?, phase: UITouch.Phase) {
-        guard let event else { return }
-        let points = (event.touches(for: self) ?? [])
-            .filter { $0.phase != .cancelled && $0.phase != .ended }
-            .map { $0.location(in: self) }
-        let timestamp = event.timestamp
-
-        switch phase {
-        case .began:
-            let beganPoints = points.isEmpty ? event.allTouches.map(locations) ?? [] : points
-            engine?.handleBegan(points: beganPoints, timestamp: timestamp, in: bounds.size)
-        case .moved:
-            engine?.handleMoved(points: points, timestamp: timestamp, in: bounds.size)
-        case .ended:
-            engine?.handleEnded(remainingCount: points.count, timestamp: timestamp, in: bounds.size)
-        default:
-            break
-        }
-    }
-
-    private func locations(_ touches: Set<UITouch>) -> [CGPoint] {
-        touches.map { $0.location(in: self) }
+    private func forward(_ touches: Set<UITouch>, phase: UITouch.Phase) {
+        let samples = touches.map { FingerSample(id: $0.hash, point: $0.location(in: self)) }
+        let timestamp = touches.first?.timestamp ?? ProcessInfo.processInfo.systemUptime
+        engine?.handle(samples: samples, timestamp: timestamp, phase: phase, in: bounds.size)
     }
 }
