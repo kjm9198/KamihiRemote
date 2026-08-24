@@ -312,7 +312,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = QBAGFXM25Q;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -321,6 +321,8 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSBonjourServices = "_kamihiremote._tcp,_kamihiremote._udp";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Kamihi Remote uses your Wi-Fi to move the cursor on your Mac.";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Kamihi Remote can use Bluetooth as a nearby fallback when Wi-Fi is weak.";
+				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Kamihi Remote can use Bluetooth as a nearby fallback when Wi-Fi is weak.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "Kamihi Remote uses Motion only for the optional Air Mouse.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -334,7 +336,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kamihi.remote;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -355,7 +357,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = QBAGFXM25Q;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -364,6 +366,8 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSBonjourServices = "_kamihiremote._tcp,_kamihiremote._udp";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Kamihi Remote uses your Wi-Fi to move the cursor on your Mac.";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Kamihi Remote can use Bluetooth as a nearby fallback when Wi-Fi is weak.";
+				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Kamihi Remote can use Bluetooth as a nearby fallback when Wi-Fi is weak.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "Kamihi Remote uses Motion only for the optional Air Mouse.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -377,7 +381,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kamihi.remote;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -400,7 +404,7 @@
 				CODE_SIGN_ENTITLEMENTS = macOS/KamihiRemoteHost.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = QBAGFXM25Q;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -412,14 +416,15 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = NO;
 				INFOPLIST_KEY_NSBonjourServices = "_kamihiremote._tcp,_kamihiremote._udp";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Kamihi Remote Host uses your Wi-Fi so the iPhone can control this Mac.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Kamihi Remote Host uses your Wi-Fi so the iPhone can control this Mac.";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Kamihi Remote Host can use Bluetooth as a nearby fallback when Wi-Fi is weak.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kamihi.remote.host;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -438,7 +443,7 @@
 				CODE_SIGN_ENTITLEMENTS = macOS/KamihiRemoteHost.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = QBAGFXM25Q;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -450,14 +455,15 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = NO;
 				INFOPLIST_KEY_NSBonjourServices = "_kamihiremote._tcp,_kamihiremote._udp";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Kamihi Remote Host uses your Wi-Fi so the iPhone can control this Mac.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Kamihi Remote Host uses your Wi-Fi so the iPhone can control this Mac.";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Kamihi Remote Host can use Bluetooth as a nearby fallback when Wi-Fi is weak.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kamihi.remote.host;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;

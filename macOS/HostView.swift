@@ -58,6 +58,9 @@ struct HostView: View {
                     .foregroundStyle(.secondary)
 
                 pairingCard
+                if let pending = host.pendingPairing {
+                    pendingCard(pending)
+                }
                 statusRow(title: host.server.isRunning ? "Host running" : "Host stopped", ok: host.server.isRunning)
                 statusRow(title: "Accessibility", ok: host.accessibility.isTrusted)
                 labeled("This Mac", value: Host.current().localizedName ?? "Mac")
@@ -99,12 +102,40 @@ struct HostView: View {
                 Button("New Code") { host.rotatePairingCode() }
                     .buttonStyle(.borderless)
             }
-            Text("Enter this code once on the phone, then Kamihi can reconnect automatically on this Wi-Fi.")
+            Text("This code expires in two minutes and is only for first pairing. Approve the iPhone on this Mac.")
                 .foregroundStyle(.secondary)
+            if let image = qrImage {
+                Image(nsImage: image)
+                    .interpolation(.none)
+                    .resizable()
+                    .frame(width: 148, height: 148)
+                    .padding(.top, 6)
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func pendingCard(_ pending: PendingPairing) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("NEW IPHONE WANTS TO CONNECT")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(pending.deviceName).font(.title2.weight(.semibold))
+            HStack {
+                Button("Approve") { host.approvePending() }
+                    .keyboardShortcut(.defaultAction)
+                Button("Deny", role: .destructive) { host.denyPending() }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var qrImage: NSImage? {
+        QRCode.image(from: host.qrPayload)
     }
 
     private var diagnostics: some View {
@@ -186,6 +217,23 @@ struct HostPreferencesView: View {
             Section("Pairing") {
                 LabeledContent("Code", value: host.pairingCode)
                 Button("Rotate pairing code") { host.rotatePairingCode() }
+            }
+            Section("Trusted Devices") {
+                if host.trustedDevices.isEmpty {
+                    Text("No phones have been approved yet.").foregroundStyle(.secondary)
+                }
+                ForEach(host.trustedDevices) { device in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(device.displayName)
+                            Text("Last used \(device.lastUsed.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Revoke", role: .destructive) { host.revokeDevice(device.deviceID) }
+                    }
+                }
             }
             Section("This Mac") {
                 LabeledContent("Address", value: host.localAddress)

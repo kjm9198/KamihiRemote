@@ -16,6 +16,7 @@ final class UDPServer: ObservableObject {
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private let queue = DispatchQueue(label: "kamihi.udp.server", qos: .userInteractive)
     private var lastPacket = Date.distantPast
+    private var lastController = Date.distantPast
     private var timeoutTimer: DispatchSourceTimer?
     private var packetsThisSecond = 0
     private var movesThisSecond = 0
@@ -167,6 +168,7 @@ final class UDPServer: ObservableObject {
                     NSLog("Kamihi packet used legacy command-first order: %@", raw)
                 }
                 lastPacket = Date()
+                if command.isController { lastController = Date() }
                 accept(command, from: connection, raw: raw, token: token, legacy: legacy)
             }
         }
@@ -193,14 +195,17 @@ final class UDPServer: ObservableObject {
         case .click:
             name = "CLICK"
             posted = InputEngine.click()
+        case .doubleClick:
+            name = "DOUBLE_CLICK"
+            posted = InputEngine.doubleClick()
         case .rightClick:
             name = "RIGHT_CLICK"
             posted = InputEngine.rightClick()
-        case .scroll(let dx, let dy):
+        case .scroll(let dx, let dy, _):
             name = "SCROLL"
             dxText = RemotePacket.formatCoord(dx)
             dyText = RemotePacket.formatCoord(dy)
-            posted = InputEngine.scroll(dx: dx, dy: dy)
+            posted = InputEngine.apply(command)
         case .mouseDown:
             name = "MOUSE_DOWN"
             posted = InputEngine.mouseDown()
@@ -300,6 +305,11 @@ final class UDPServer: ObservableObject {
                     InputEngine.releaseAll()
                     self.clientConnected = false
                     self.clientLabel = ""
+                }
+                if self.lastController.timeIntervalSince1970 > 0,
+                   Date().timeIntervalSince(self.lastController) > RemoteConstants.controllerWatchdog {
+                    KeyboardGamepad.shared.reset()
+                    self.lastController = Date.distantPast
                 }
             }
         }
