@@ -148,26 +148,32 @@ struct VibeProjectProfileSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Project") {
+                Section {
                     LabeledContent("Name", value: project.name)
                     LabeledContent("Path", value: project.path)
+                } header: {
+                    Text("Project")
                 }
 
-                Section("Preview") {
+                Section {
                     TextField("http://localhost:3000", text: $previewURL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                } header: {
+                    Text("Preview")
                 } footer: {
                     Text("Used by the Preview button in Vibe Hub.")
                 }
 
-                Section("Commands") {
+                Section {
                     TextField("npm run dev", text: $devCommand)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                     TextField("npm test", text: $testCommand)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                } header: {
+                    Text("Commands")
                 } footer: {
                     Text("Commands run visibly in Terminal from this project's folder, so you can see logs and failures immediately.")
                 }
