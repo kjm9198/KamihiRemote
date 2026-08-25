@@ -181,14 +181,15 @@ enum GestureEngineTests {
         ]
         _ = g.handle(changed: start, active: start, timestamp: 8.5, phase: .began, in: size)
 
-        // Move up 40pt
+        // Move up 40pt — swipe should lock and fire Mission Control immediately.
         let moved = [
             FingerSample(id: 1, point: CGPoint(x: 100, y: 160)),
             FingerSample(id: 2, point: CGPoint(x: 150, y: 160)),
             FingerSample(id: 3, point: CGPoint(x: 200, y: 160))
         ]
-        _ = g.handle(changed: moved, active: moved, timestamp: 8.58, phase: .moved, in: size)
+        let locked = g.handle(changed: moved, active: moved, timestamp: 8.58, phase: .moved, in: size)
         precondition(g.mode == .threeFingerSwipe, "mode must lock into threeFingerSwipe")
+        precondition(locked.commands.contains(.system(.missionControl)), "Mission Control must fire when swipe locks")
 
         // Finger 1 lifts (remaining active: 2, 3)
         _ = g.handle(changed: [moved[0]], active: [moved[1], moved[2]], timestamp: 8.60, phase: .ended, in: size)
@@ -198,9 +199,9 @@ enum GestureEngineTests {
         _ = g.handle(changed: [moved[1]], active: [moved[2]], timestamp: 8.61, phase: .ended, in: size)
         precondition(g.mode == .threeFingerSwipe, "mode must STAY threeFingerSwipe after finger 2 lifts")
 
-        // Finger 3 lifts (remaining active: [])
+        // Finger 3 lifts (remaining active: []) — must not double-fire
         let end3 = g.handle(changed: [moved[2]], active: [], timestamp: 8.62, phase: .ended, in: size)
-        precondition(end3.commands.contains(.system(.missionControl)), "Mission Control command must be emitted when final finger lifts")
+        precondition(end3.commands.contains(.system(.missionControl)) == false, "must not double-fire Mission Control on lift")
     }
 
     private static func threeFingerCumulative() {
@@ -214,15 +215,18 @@ enum GestureEngineTests {
         var x: CGFloat = 0
         var t = 9.0
         var output = GestureOutput()
+        var sawSystem = false
         for delta in [4, 5, 4, 6, 5, 8, 7] as [CGFloat] {
             x += delta
             t += 0.008
             let samples = start.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x + x, y: $0.point.y)) }
             output = g.ingest(samples: samples, timestamp: t, phase: .moved, in: size)
+            if output.commands.contains(where: { if case .system = $0 { return true } else { return false } }) {
+                sawSystem = true
+            }
         }
         precondition(output.debug.cumulativeX >= 32, "cumulative three-finger distance")
-        let ended = g.ingest(samples: start.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x + x, y: $0.point.y)) }, timestamp: t + 0.01, phase: .ended, in: size)
-        precondition(ended.commands.contains { if case .system(let action) = $0 { return action == .nextDesktop || action == .previousDesktop } else { return false } }, "three finger swipe")
+        precondition(sawSystem, "three finger swipe from cumulative frames")
     }
 
     private static func fourFinger() {
@@ -231,13 +235,16 @@ enum GestureEngineTests {
         _ = g.ingest(samples: start, timestamp: 10, phase: .began, in: size)
         var y: CGFloat = 0
         var t = 10.0
+        var sawSystem = false
         for _ in 0..<10 {
             y += 6
             t += 0.008
-            _ = g.ingest(samples: start.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x, y: $0.point.y + y)) }, timestamp: t, phase: .moved, in: size)
+            let out = g.ingest(samples: start.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x, y: $0.point.y + y)) }, timestamp: t, phase: .moved, in: size)
+            if out.commands.contains(where: { if case .system = $0 { return true } else { return false } }) {
+                sawSystem = true
+            }
         }
-        let ended = g.ingest(samples: start.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x, y: $0.point.y + y)) }, timestamp: t + 0.01, phase: .ended, in: size)
-        precondition(ended.commands.contains { if case .system = $0 { return true } else { return false } }, "four finger swipe")
+        precondition(sawSystem, "four finger swipe")
     }
 
     private static func animationFingerCounts() {

@@ -64,15 +64,15 @@ final class TrackpadUIView: UIView {
     }
 
     private func forward(changed: Set<UITouch>, event: UIEvent?, phase: UITouch.Phase) {
-        let allInWindow = event?.allTouches?.filter { $0.view == self || $0.window == self.window } ?? changed
+        // Only touches that belong to this trackpad view — never other chrome buttons.
+        let all = event?.touches(for: self) ?? changed
         let activeTouches: [UITouch]
         if phase == .ended || phase == .cancelled {
-            // Ending touches are excluded from activeTouches
-            activeTouches = allInWindow.filter { touch in
+            activeTouches = all.filter { touch in
                 !changed.contains(touch) && (touch.phase == .began || touch.phase == .moved || touch.phase == .stationary)
             }
         } else {
-            activeTouches = allInWindow.filter { $0.phase != .ended && $0.phase != .cancelled }
+            activeTouches = Array(all.filter { $0.phase != .ended && $0.phase != .cancelled })
         }
 
         let changedSamples = changed.map(sample)

@@ -399,6 +399,20 @@ struct TrackpadCanvas: View {
 
     private func fitted(_ state: TouchAnimationState, size: CGSize) -> TouchAnimationState {
         var copy = state
+        let src = state.trackpadSize
+        // Remap UIKit touch points into the SwiftUI overlay size so bubbles land on fingers.
+        if src.width > 1, src.height > 1, size.width > 1, size.height > 1,
+           abs(src.width - size.width) > 0.5 || abs(src.height - size.height) > 0.5 {
+            let sx = size.width / src.width
+            let sy = size.height / src.height
+            copy.fingers = state.fingers.map { finger in
+                var next = finger
+                next.point = CGPoint(x: finger.point.x * sx, y: finger.point.y * sy)
+                return next
+            }
+            copy.gestureProgress = CGSize(width: state.gestureProgress.width * sx, height: state.gestureProgress.height * sy)
+            copy.velocity = CGSize(width: state.velocity.width * sx, height: state.velocity.height * sy)
+        }
         copy.trackpadSize = size
         copy.isConnected = session.isConnected
         copy.isPrecision = session.precisionActive

@@ -55,7 +55,9 @@ struct TouchAnimationView: View {
                     connectedOrbs(at: time)
                 }
             }
-            .animation(.interactiveSpring(response: 0.15, dampingFraction: 0.75), value: state.fingers)
+            // Do NOT animate finger positions — bubbles must sit on the physical touch.
+            .transaction { $0.animation = nil }
+            .animation(nil, value: state.fingers)
             .animation(.spring(response: 0.45, dampingFraction: 0.8), value: state.isConnected)
 
             ForEach(ripples) { ripple in
