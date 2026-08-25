@@ -54,6 +54,7 @@ enum InputEngine {
         guard canInjectEvents else { return false }
         let point = CGEvent(source: nil)?.location ?? .zero
         let down = postMouse(type: .rightMouseDown, at: point, button: .right)
+        usleep(12000)
         let up = postMouse(type: .rightMouseUp, at: point, button: .right)
         rightMouseIsDown = false
         return down && up
@@ -508,40 +509,30 @@ enum InputEngine {
     @discardableResult
     private static func switchDesktop(left: Bool) -> Bool {
         guard canInjectEvents else { return false }
-        DispatchQueue.global(qos: .userInteractive).async {
-            let src = CGEventSource(stateID: .combinedSessionState)
-            let keyCode: CGKeyCode = left ? CGKeyCode(kVK_LeftArrow) : CGKeyCode(kVK_RightArrow)
-            let ctrlKey: CGKeyCode = CGKeyCode(kVK_Control)
+        let keyCode: CGKeyCode = left ? CGKeyCode(kVK_LeftArrow) : CGKeyCode(kVK_RightArrow)
+        let ctrlKey: CGKeyCode = CGKeyCode(kVK_Control)
 
-            if let ctrlDown = CGEvent(keyboardEventSource: src, virtualKey: ctrlKey, keyDown: true) {
-                ctrlDown.flags = .maskControl
-                ctrlDown.post(tap: .cghidEventTap)
-            }
-            usleep(18000)
+        if let ctrlDown = CGEvent(keyboardEventSource: nil, virtualKey: ctrlKey, keyDown: true) {
+            ctrlDown.flags = .maskControl
+            ctrlDown.post(tap: .cghidEventTap)
+        }
+        usleep(15000)
 
-            if let arrowDown = CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: true) {
-                arrowDown.flags = .maskControl
-                arrowDown.post(tap: .cghidEventTap)
-            }
-            usleep(25000)
+        if let arrowDown = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) {
+            arrowDown.flags = .maskControl
+            arrowDown.post(tap: .cghidEventTap)
+        }
+        usleep(25000)
 
-            if let arrowUp = CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: false) {
-                arrowUp.flags = .maskControl
-                arrowUp.post(tap: .cghidEventTap)
-            }
-            usleep(18000)
+        if let arrowUp = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) {
+            arrowUp.flags = .maskControl
+            arrowUp.post(tap: .cghidEventTap)
+        }
+        usleep(15000)
 
-            if let ctrlUp = CGEvent(keyboardEventSource: src, virtualKey: ctrlKey, keyDown: false) {
-                ctrlUp.flags = []
-                ctrlUp.post(tap: .cghidEventTap)
-            }
-
-            // AppleScript fallback
-            let script = "tell application \"System Events\" to key code \(left ? 123 : 124) using control down"
-            if let appleScript = NSAppleScript(source: script) {
-                var err: NSDictionary?
-                appleScript.executeAndReturnError(&err)
-            }
+        if let ctrlUp = CGEvent(keyboardEventSource: nil, virtualKey: ctrlKey, keyDown: false) {
+            ctrlUp.flags = []
+            ctrlUp.post(tap: .cghidEventTap)
         }
         return true
     }

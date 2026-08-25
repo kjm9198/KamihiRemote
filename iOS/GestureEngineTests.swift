@@ -107,7 +107,14 @@ enum GestureEngineTests {
         let start = [FingerSample(id: 1, point: CGPoint(x: 90, y: 90)), FingerSample(id: 2, point: CGPoint(x: 140, y: 90))]
         _ = g.ingest(samples: start, timestamp: 4, phase: .began, in: size)
         let ended = g.ingest(samples: start, timestamp: 4.08, phase: .ended, in: size)
-        try require(ended.commands.contains(.rightClick), "two finger tap")
+        try require(ended.commands.contains(.rightClick), "two finger tap simultaneous")
+
+        // Staggered landing test: finger 1 lands at t=4.2, finger 2 lands at t=4.215, both release at t=4.30
+        let g2 = engine()
+        _ = g2.handle(changed: [FingerSample(id: 1, point: CGPoint(x: 90, y: 90))], active: [FingerSample(id: 1, point: CGPoint(x: 90, y: 90))], timestamp: 4.2, phase: .began, in: size)
+        _ = g2.handle(changed: [FingerSample(id: 2, point: CGPoint(x: 140, y: 90))], active: [FingerSample(id: 1, point: CGPoint(x: 90, y: 90)), FingerSample(id: 2, point: CGPoint(x: 140, y: 90))], timestamp: 4.215, phase: .began, in: size)
+        let staggeredEnd = g2.handle(changed: [FingerSample(id: 1, point: CGPoint(x: 90, y: 90)), FingerSample(id: 2, point: CGPoint(x: 140, y: 90))], active: [], timestamp: 4.30, phase: .ended, in: size)
+        try require(staggeredEnd.commands.contains(.rightClick), "staggered two finger tap must trigger right click")
     }
 
     private static func threeFingerTap() throws {
