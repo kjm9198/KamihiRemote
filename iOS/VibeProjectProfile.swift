@@ -2,15 +2,21 @@ import Foundation
 import SwiftUI
 
 struct VibeProjectProfile: Codable, Equatable {
+    static let autoDevToken = "__KAMIHI_AUTO_DEV__"
+    static let autoVerifyToken = "__KAMIHI_AUTO_VERIFY__"
+
     var previewURL: String
     var devCommand: String
     var testCommand: String
 
     static let standard = VibeProjectProfile(
         previewURL: "http://localhost:3000",
-        devCommand: "npm run dev",
-        testCommand: "npm test"
+        devCommand: autoDevToken,
+        testCommand: autoVerifyToken
     )
+
+    var usesAutomaticDevCommand: Bool { devCommand == Self.autoDevToken }
+    var usesAutomaticVerifyCommand: Bool { testCommand == Self.autoVerifyToken }
 }
 
 enum VibeProjectProfileStore {
@@ -58,18 +64,18 @@ enum VibeProjectCommandRunner {
 
     static func runDev(project: VoiceProject?, profile: VibeProjectProfile, session: RemoteSession) {
         runVisible(
-            command: profile.devCommand,
+            command: resolvedDevCommand(profile.devCommand),
             project: project,
-            title: "Start Dev",
+            title: profile.usesAutomaticDevCommand ? "Auto Start Dev" : "Start Dev",
             session: session
         )
     }
 
     static func runTests(project: VoiceProject?, profile: VibeProjectProfile, session: RemoteSession) {
         runVisible(
-            command: profile.testCommand,
+            command: resolvedVerifyCommand(profile.testCommand),
             project: project,
-            title: "Run Tests",
+            title: profile.usesAutomaticVerifyCommand ? "Auto Verify" : "Run Tests",
             session: session
         )
     }
@@ -104,6 +110,10 @@ enum VibeProjectCommandRunner {
         let script = """
         #!/bin/zsh
         cd \(shellPath(project.path)) || exit 1
+        echo ""
+        echo "⚡ Kamihi Vibe • \(title)"
+        echo "📁 $PWD"
+        echo ""
         \(cleanCommand)
         """
         let encoded = Data(script.utf8).base64EncodedString()
@@ -112,6 +122,158 @@ enum VibeProjectCommandRunner {
         let temp = "/tmp/kamihi-vibe-\(safeID)-\(UUID().uuidString.prefix(8)).command"
         let launcher = "printf %s '\(encoded)' | /usr/bin/base64 -D > '\(temp)' && chmod +x '\(temp)' && open -a Terminal '\(temp)'"
         session.sendAcknowledged(.runCommand(launcher), title: title)
+    }
+
+    /// Resolve the default Dev action on the Mac instead of assuming every project is npm.
+    /// Custom user commands bypass this completely.
+    private static func resolvedDevCommand(_ configured: String) -> String {
+        guard configured == VibeProjectProfile.autoDevToken else { return configured }
+        return #"""
+        set -e
+
+        run_js_script() {
+          local script="$1"
+          if [ -f bun.lockb ] || [ -f bun.lock ]; then
+            command -v bun >/dev/null 2>&1 || { echo "Bun lockfile found, but bun is not installed."; exit 127; }
+            exec bun run "$script"
+          elif [ -f pnpm-lock.yaml ]; then
+            command -v pnpm >/dev/null 2>&1 || { echo "pnpm-lock.yaml found, but pnpm is not installed."; exit 127; }
+            exec pnpm run "$script"
+          elif [ -f yarn.lock ]; then
+            command -v yarn >/dev/null 2>&1 || { echo "yarn.lock found, but yarn is not installed."; exit 127; }
+            exec yarn "$script"
+          else
+            command -v npm >/dev/null 2>&1 || { echo "package.json found, but npm is not installed."; exit 127; }
+            exec npm run "$script"
+          fi
+        }
+
+        if [ -f package.json ]; then
+          if command -v node >/dev/null 2>&1 && node -e 'const p=require("./package.json"); process.exit(p.scripts&&p.scripts.dev?0:1)' >/dev/null 2>&1; then
+            echo "Detected JavaScript/TypeScript project → dev"
+            run_js_script dev
+          elif command -v node >/dev/null 2>&1 && node -e 'const p=require("./package.json"); process.exit(p.scripts&&p.scripts.start?0:1)' >/dev/null 2>&1; then
+            echo "No dev script; using start"
+            run_js_script start
+          else
+            echo "package.json has no dev/start script. Configure a custom Dev command in Vibe Actions."
+            exit 64
+          fi
+        elif [ -f Package.swift ]; then
+          echo "Detected Swift Package → swift run"
+          exec swift run
+        elif [ -f Cargo.toml ]; then
+          echo "Detected Rust project → cargo run"
+          exec cargo run
+        elif [ -f go.mod ]; then
+          echo "Detected Go project → go run ."
+          exec go run .
+        elif [ -f manage.py ]; then
+          echo "Detected Django project → runserver"
+          exec python3 manage.py runserver
+        elif [ -f Makefile ] && grep -Eq '^dev:' Makefile; then
+          echo "Detected Makefile dev target → make dev"
+          exec make dev
+        elif [ -f Makefile ] && grep -Eq '^run:' Makefile; then
+          echo "Detected Makefile run target → make run"
+          exec make run
+        else
+          echo "Kamihi could not detect a Dev command for this project."
+          echo "Open Configure Vibe Actions and enter the command once; it will be remembered for this project."
+          exit 64
+        fi
+        """#
+    }
+
+    /// Pick the strongest verification the repository advertises. For JS projects this prefers tests,
+    /// then type-check, build, then lint so the button remains useful even when no test script exists.
+    private static func resolvedVerifyCommand(_ configured: String) -> String {
+        guard configured == VibeProjectProfile.autoVerifyToken else { return configured }
+        return #"""
+        set -e
+
+        has_js_script() {
+          command -v node >/dev/null 2>&1 && node -e 'const p=require("./package.json"); process.exit(p.scripts&&p.scripts[process.argv[1]]?0:1)' "$1" >/dev/null 2>&1
+        }
+
+        run_js_script() {
+          local script="$1"
+          if [ -f bun.lockb ] || [ -f bun.lock ]; then
+            command -v bun >/dev/null 2>&1 || { echo "Bun lockfile found, but bun is not installed."; exit 127; }
+            bun run "$script"
+          elif [ -f pnpm-lock.yaml ]; then
+            command -v pnpm >/dev/null 2>&1 || { echo "pnpm-lock.yaml found, but pnpm is not installed."; exit 127; }
+            pnpm run "$script"
+          elif [ -f yarn.lock ]; then
+            command -v yarn >/dev/null 2>&1 || { echo "yarn.lock found, but yarn is not installed."; exit 127; }
+            yarn "$script"
+          else
+            command -v npm >/dev/null 2>&1 || { echo "package.json found, but npm is not installed."; exit 127; }
+            npm run "$script"
+          fi
+        }
+
+        if [ -f package.json ]; then
+          ran=0
+          if has_js_script test; then
+            echo "▶ test"
+            run_js_script test
+            ran=1
+          fi
+          if has_js_script typecheck; then
+            echo "▶ typecheck"
+            run_js_script typecheck
+            ran=1
+          elif has_js_script type-check; then
+            echo "▶ type-check"
+            run_js_script type-check
+            ran=1
+          fi
+          if has_js_script build; then
+            echo "▶ build"
+            run_js_script build
+            ran=1
+          fi
+          if has_js_script lint; then
+            echo "▶ lint"
+            run_js_script lint
+            ran=1
+          fi
+          if [ "$ran" -eq 0 ]; then
+            echo "No test/typecheck/build/lint script was found in package.json."
+            exit 64
+          fi
+          echo ""
+          echo "✅ Kamihi verification passed"
+        elif [ -f Package.swift ]; then
+          echo "Detected Swift Package → swift test"
+          exec swift test
+        elif [ -f Cargo.toml ]; then
+          echo "Detected Rust project → cargo test"
+          exec cargo test
+        elif [ -f go.mod ]; then
+          echo "Detected Go project → go test ./..."
+          exec go test ./...
+        elif [ -f pyproject.toml ] || [ -f pytest.ini ] || [ -d tests ]; then
+          if command -v pytest >/dev/null 2>&1; then
+            echo "Detected Python tests → pytest"
+            exec pytest
+          elif command -v python3 >/dev/null 2>&1 && python3 -m pytest --version >/dev/null 2>&1; then
+            echo "Detected Python tests → python3 -m pytest"
+            exec python3 -m pytest
+          else
+            echo "Python project detected, but pytest is unavailable. Configure a custom Verify command if this project uses another runner."
+            exit 127
+          fi
+        elif [ -f Makefile ] && grep -Eq '^test:' Makefile; then
+          echo "Detected Makefile test target → make test"
+          exec make test
+        else
+          echo "Kamihi could not detect a verification command for this project."
+          echo "Open Configure Vibe Actions and enter the command once; it will be remembered for this project."
+          exit 64
+        fi
+        """#
     }
 
     private static func shellPath(_ raw: String) -> String {
@@ -136,13 +298,17 @@ struct VibeProjectProfileSheet: View {
     @State private var previewURL: String
     @State private var devCommand: String
     @State private var testCommand: String
+    @State private var automaticDev: Bool
+    @State private var automaticVerify: Bool
 
     init(project: VoiceProject) {
         self.project = project
         let profile = VibeProjectProfileStore.load(projectID: project.id)
         _previewURL = State(initialValue: profile.previewURL)
-        _devCommand = State(initialValue: profile.devCommand)
-        _testCommand = State(initialValue: profile.testCommand)
+        _devCommand = State(initialValue: profile.usesAutomaticDevCommand ? "" : profile.devCommand)
+        _testCommand = State(initialValue: profile.usesAutomaticVerifyCommand ? "" : profile.testCommand)
+        _automaticDev = State(initialValue: profile.usesAutomaticDevCommand)
+        _automaticVerify = State(initialValue: profile.usesAutomaticVerifyCommand)
     }
 
     var body: some View {
@@ -166,25 +332,34 @@ struct VibeProjectProfileSheet: View {
                 }
 
                 Section {
-                    TextField("npm run dev", text: $devCommand)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    TextField("npm test", text: $testCommand)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                    Toggle("Auto-detect Dev command", isOn: $automaticDev)
+                    if automaticDev == false {
+                        TextField("e.g. pnpm dev", text: $devCommand)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+
+                    Toggle("Auto-detect Verify command", isOn: $automaticVerify)
+                    if automaticVerify == false {
+                        TextField("e.g. pnpm test", text: $testCommand)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
                 } header: {
                     Text("Commands")
                 } footer: {
-                    Text("Commands run visibly in Terminal from this project's folder, so you can see logs and failures immediately.")
+                    Text("Auto mode detects Bun, pnpm, Yarn, npm, Swift Package Manager, Cargo, Go, Python and Makefile projects. Custom commands always take priority and run visibly in Terminal.")
                 }
 
                 Section {
-                    Button("Reset to Defaults", role: .destructive) {
+                    Button("Reset to Smart Defaults", role: .destructive) {
                         VibeProjectProfileStore.reset(projectID: project.id)
                         let defaults = VibeProjectProfile.standard
                         previewURL = defaults.previewURL
-                        devCommand = defaults.devCommand
-                        testCommand = defaults.testCommand
+                        devCommand = ""
+                        testCommand = ""
+                        automaticDev = true
+                        automaticVerify = true
                     }
                 }
             }
@@ -198,8 +373,12 @@ struct VibeProjectProfileSheet: View {
                     Button("Save") {
                         let profile = VibeProjectProfile(
                             previewURL: previewURL.trimmingCharacters(in: .whitespacesAndNewlines),
-                            devCommand: devCommand.trimmingCharacters(in: .whitespacesAndNewlines),
-                            testCommand: testCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+                            devCommand: automaticDev
+                                ? VibeProjectProfile.autoDevToken
+                                : devCommand.trimmingCharacters(in: .whitespacesAndNewlines),
+                            testCommand: automaticVerify
+                                ? VibeProjectProfile.autoVerifyToken
+                                : testCommand.trimmingCharacters(in: .whitespacesAndNewlines)
                         )
                         VibeProjectProfileStore.save(profile, projectID: project.id)
                         Haptics.gesture()
