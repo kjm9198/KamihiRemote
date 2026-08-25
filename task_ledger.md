@@ -33,6 +33,7 @@
 | **Security** | Pairing & Keychain Secret Storage | AUTOMATED TESTED | PIN/QR handshake + Curve25519 ECDH verified in `SessionCrypto.runSelfChecks()` |
 | **Security** | Device Revocation | IMPLEMENTED | `HostSession.revokeDevice` removes peer & resets connections |
 | **Transport** | Connection State Machine & Reconnect | IMPLEMENTED | Scheduled exponential backoff reconnects in `RemoteSession.swift` |
+| **Transport** | Preserve Queued Commands Across Reconnect | IMPLEMENTED | `ReliableClient.connect` now preserves commands queued while TCP is down; explicit user stop still clears them |
 | **Transport** | Direct Wi-Fi & LAN Network.framework| IMPLEMENTED | `NWParameters.includePeerToPeer = true` across TCP and UDP |
 | **Transport** | CoreBluetooth (BLE) Transport | IMPLEMENTED | Service & characteristic UUIDs configured in `RemoteConstants` |
 | **Controller** | Simultaneous Touches & Snapshot | IMPLEMENTED | Compact state snapshot serialization in `RemoteCommand.controller` |
