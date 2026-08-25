@@ -72,17 +72,30 @@ struct AppPreferences: Codable, Equatable {
         }
     }
 
-    static let storageKey = "appPreferences.v3"
+    static let storageKey = "appPreferences.v4"
 
     static func load() -> AppPreferences {
         if let data = UserDefaults.standard.data(forKey: storageKey),
            let decoded = try? JSONDecoder().decode(AppPreferences.self, from: data) {
             return decoded
         }
-        if let data = UserDefaults.standard.data(forKey: "appPreferences.v2"),
-           let decoded = try? JSONDecoder().decode(AppPreferences.self, from: data) {
-            return decoded
+
+        // v0.4.1 migration: older builds could preserve tap-to-click and the large
+        // developer HUD from earlier debugging sessions. Reset only the interaction
+        // defaults the user explicitly asked to change, while preserving all other
+        // preferences.
+        for legacyKey in ["appPreferences.v3", "appPreferences.v2"] {
+            if let data = UserDefaults.standard.data(forKey: legacyKey),
+               let decoded = try? JSONDecoder().decode(AppPreferences.self, from: data) {
+                var migrated = decoded
+                migrated.tapToClick = false
+                migrated.twoFingerSecondaryClick = true
+                migrated.showDeveloperDiagnostics = false
+                migrated.save()
+                return migrated
+            }
         }
+
         return AppPreferences()
     }
 
