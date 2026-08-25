@@ -34,6 +34,9 @@ final class RemoteSession: ObservableObject, CommandSending {
     @Published var hostApps: [HostAppEntry] = []
     @Published var pendingAppName = ""
     @Published var gestureBanner: String? = nil
+    #if DEBUG
+    @Published var uiTestShowDeckGallery = false
+    #endif
 
     private var sessionID: String?
     private var sessionKey: SymmetricKey?
@@ -114,6 +117,16 @@ final class RemoteSession: ObservableObject, CommandSending {
         }
         if args.contains("-KamihiUITestKeyboard") {
             showsKeyboard = true
+        }
+        if args.contains("-KamihiUITestDeckGallery") {
+            selectedTab = .deck
+            hostApps = [
+                HostAppEntry(displayName: "Safari", bundleIdentifier: "com.apple.Safari"),
+                HostAppEntry(displayName: "Finder", bundleIdentifier: "com.apple.finder"),
+                HostAppEntry(displayName: "Music", bundleIdentifier: "com.apple.Music"),
+                HostAppEntry(displayName: "Xcode", bundleIdentifier: "com.apple.dt.Xcode"),
+            ]
+            uiTestShowDeckGallery = true
         }
     }
     #endif

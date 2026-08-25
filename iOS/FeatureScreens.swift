@@ -251,6 +251,14 @@ struct DeckScreen: View {
         .sheet(isPresented: $session.showsDeckEditor) {
             DeckEditorSheet().environmentObject(session)
         }
+        #if DEBUG
+        .onAppear {
+            if session.uiTestShowDeckGallery {
+                showsAppGallery = true
+                session.uiTestShowDeckGallery = false
+            }
+        }
+        #endif
         .sheet(item: $editing) { button in
             NavigationStack {
                 DeckTileEditor(
