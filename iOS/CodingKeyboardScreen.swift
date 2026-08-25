@@ -5,6 +5,10 @@ struct CodingKeyboardScreen: View {
     @EnvironmentObject private var session: RemoteSession
     @FocusState private var isFieldFocused: Bool
     @State private var inputText = ""
+    @State private var baseline = ""
+    @State private var applyingRemote = false
+    @State private var userIsEditing = false
+    @State private var didApplySnapshot = false
     @State private var commandHeld = false
     @State private var optionHeld = false
     @State private var controlHeld = false
@@ -36,12 +40,15 @@ struct CodingKeyboardScreen: View {
             }
         }
         .onAppear {
+            didApplySnapshot = false
+            userIsEditing = false
             session.requestFocusedText()
         }
-        .onChange(of: session.focusedTextValue) { _, newValue in
-            if !isFieldFocused && !newValue.isEmpty {
-                inputText = newValue
-            }
+        .onChange(of: session.focusedTextStatus) { _, _ in
+            applyFocusedSnapshotIfNeeded()
+        }
+        .onChange(of: session.focusedTextValue) { _, _ in
+            applyFocusedSnapshotIfNeeded()
         }
     }
 
@@ -74,6 +81,8 @@ struct CodingKeyboardScreen: View {
             }
 
             Button {
+                didApplySnapshot = false
+                userIsEditing = false
                 session.requestFocusedText()
                 Haptics.touchTap()
             } label: {
@@ -123,14 +132,17 @@ struct CodingKeyboardScreen: View {
 
     private var liveInputSection: some View {
         HStack(spacing: 8) {
-            TextField("Type code or text to Mac…", text: $inputText)
+            TextField(liveInputPlaceholder, text: $inputText)
                 .textFieldStyle(.plain)
                 .focused($isFieldFocused)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .submitLabel(.send)
+                .submitLabel(.return)
                 .onSubmit {
-                    submitText()
+                    pressKey(code: 36)
+                }
+                .onChange(of: inputText) { _, newValue in
+                    handleLiveEdit(newValue)
                 }
                 .font(.system(size: 14, design: .monospaced))
                 .padding(.horizontal, 12)
@@ -139,15 +151,23 @@ struct CodingKeyboardScreen: View {
                 .foregroundStyle(.white)
 
             Button {
-                submitText()
+                isFieldFocused = false
+                Haptics.touchTap()
             } label: {
-                Image(systemName: "arrow.up.circle.fill")
+                Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 26, weight: .semibold))
-                    .foregroundStyle(inputText.isEmpty ? .gray : .cyan)
+                    .foregroundStyle(.cyan)
             }
             .buttonStyle(.plain)
-            .disabled(inputText.isEmpty)
-            .accessibilityLabel("Send text to Mac")
+            .accessibilityLabel("Finish editing Mac text")
+        }
+    }
+
+    private var liveInputPlaceholder: String {
+        switch session.focusedTextStatus {
+        case .value: return "Edit Mac text live…"
+        case .secure: return "Secure field — typing only"
+        case .unavailable: return "Type code or text to Mac…"
         }
     }
 
@@ -356,14 +376,7 @@ struct CodingKeyboardScreen: View {
 
     private func keyButton(_ title: String, code: UInt16) -> some View {
         Button {
-            let flags = buildFlags()
-            session.send(.keyDown(code: code, flags: flags))
-            usleep(12000)
-            session.send(.keyUp(code: code, flags: flags))
-            Haptics.touchTap()
-            if !commandHeld && !optionHeld && !controlHeld && !shiftHeld {
-                // keep toggle status
-            }
+            pressKey(code: code)
         } label: {
             Text(title)
                 .font(.system(size: 12, weight: .semibold, design: .monospaced))
@@ -372,6 +385,25 @@ struct CodingKeyboardScreen: View {
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 8))
+    }
+
+    private func pressKey(code: UInt16) {
+        userIsEditing = true
+        let flags = buildFlags()
+        session.send(.keyDown(code: code, flags: flags))
+        session.send(.keyUp(code: code, flags: flags))
+        Haptics.touchTap()
+
+        guard flags == 0 else { return }
+        applyingRemote = true
+        if code == 51, inputText.isEmpty == false {
+            inputText.removeLast()
+            baseline = inputText
+        } else if code == 49 {
+            inputText.append(" ")
+            baseline = inputText
+        }
+        applyingRemote = false
     }
 
     private func sendSymbol(_ symbol: String) {
@@ -397,12 +429,67 @@ struct CodingKeyboardScreen: View {
         Haptics.touchTap()
     }
 
-    private func submitText() {
-        guard !inputText.isEmpty else { return }
-        session.send(.typeText(inputText))
-        inputText = ""
-        isFieldFocused = false
-        Haptics.touchTap()
+    private func applyFocusedSnapshotIfNeeded() {
+        guard userIsEditing == false, didApplySnapshot == false else { return }
+        applyingRemote = true
+        defer { applyingRemote = false }
+
+        switch session.focusedTextStatus {
+        case .value:
+            inputText = session.focusedTextValue
+            baseline = session.focusedTextValue
+            didApplySnapshot = true
+        case .secure, .unavailable:
+            inputText = ""
+            baseline = ""
+            didApplySnapshot = true
+        }
+    }
+
+    private func handleLiveEdit(_ newValue: String) {
+        guard applyingRemote == false else { return }
+        userIsEditing = true
+        if newValue == baseline { return }
+
+        // Append-only edits are safe regardless of the focused app. Spaces are sent
+        // as physical key events because some Mac text fields ignore typed spaces.
+        if newValue.hasPrefix(baseline) {
+            let suffix = String(newValue.dropFirst(baseline.count))
+            for character in suffix {
+                sendLiveCharacter(character)
+            }
+            baseline = newValue
+            return
+        }
+
+        // Backspacing from the end is also safe and enables true remote deletion.
+        if baseline.hasPrefix(newValue), baseline.count > newValue.count {
+            let deletes = baseline.count - newValue.count
+            for _ in 0..<deletes {
+                session.send(.keyDown(code: 51, flags: 0))
+                session.send(.keyUp(code: 51, flags: 0))
+            }
+            baseline = newValue
+            return
+        }
+
+        // Do not emulate an arbitrary middle replacement by deleting the entire
+        // focused value: in an editor that value may be a whole document. Restore
+        // the safe baseline instead and let arrows/shortcuts handle cursor movement.
+        applyingRemote = true
+        inputText = baseline
+        applyingRemote = false
+        session.flashAction("CodeKey\nEdit the end of Mac text", success: false)
+        Haptics.error()
+    }
+
+    private func sendLiveCharacter(_ character: Character) {
+        if character == " " {
+            session.send(.keyDown(code: 49, flags: 0))
+            session.send(.keyUp(code: 49, flags: 0))
+        } else {
+            session.send(.typeText(String(character)))
+        }
     }
 
     private func buildFlags() -> UInt64 {
