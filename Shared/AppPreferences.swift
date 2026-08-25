@@ -32,7 +32,7 @@ struct AppPreferences: Codable, Equatable {
     var airMouseDeadZone = 0.04
     var presentationProfile: PresentationProfile = .keynote
     var presentationPointerStyle: PresentationPointerStyle = .laser
-    var showDeveloperDiagnostics = true
+    var showDeveloperDiagnostics = false
     var autoConnect = true
     var lastHostID: String?
     var bindings = GestureBindings()

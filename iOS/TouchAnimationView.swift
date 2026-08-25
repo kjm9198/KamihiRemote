@@ -65,32 +65,26 @@ struct TouchAnimationView: View {
     }
 
     private func ambientField(at time: TimeInterval, breathe: Double) -> some View {
+        // Idle: very subtle presence only — never compete with finger glass.
         let connected = state.isConnected
-        let radius = min(state.trackpadSize.width, state.trackpadSize.height) * (connected ? 0.45 : 0.3)
-        return ZStack {
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [
-                            Color(red: 0.35, green: 0.55, blue: 0.95).opacity(connected ? 0.20 + breathe * 0.08 : 0.07),
-                            Color.clear
-                        ],
-                        center: .center,
-                        startRadius: 8,
-                        endRadius: radius
-                    )
+        let radius = min(state.trackpadSize.width, state.trackpadSize.height) * 0.28
+        return Circle()
+            .fill(
+                RadialGradient(
+                    colors: [
+                        Color(red: 0.35, green: 0.55, blue: 0.95).opacity(connected ? 0.06 + breathe * 0.03 : 0.03),
+                        Color.clear
+                    ],
+                    center: .center,
+                    startRadius: 4,
+                    endRadius: radius
                 )
-                .frame(width: radius * 2, height: radius * 2)
-                .position(center)
-                .blur(radius: 20)
-
-            if connected && reduceMotion == false {
-                Circle()
-                    .stroke(.white.opacity(0.06 + breathe * 0.05), lineWidth: 1.0)
-                    .frame(width: 120 + breathe * 16, height: 120 + breathe * 16)
-                    .position(center)
-            }
-        }
+            )
+            .frame(width: radius * 2, height: radius * 2)
+            .position(center)
+            .blur(radius: 24)
+            .opacity(state.isFingerDown ? 0.35 : 1)
+            .allowsHitTesting(false)
     }
 
     @ViewBuilder

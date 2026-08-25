@@ -3,7 +3,6 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject private var session: RemoteSession
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     var body: some View {
         ZStack {
@@ -11,9 +10,27 @@ struct RootView: View {
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
             mainContent
+            if session.showsKeyboard {
+                KeyboardOverlayDock()
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
+        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: session.showsKeyboard)
         .sheet(isPresented: $session.showsSettings) {
             SettingsSheet().environmentObject(session)
+        }
+        .sheet(isPresented: $session.showsMedia) {
+            NavigationStack {
+                MediaScreen()
+                    .environmentObject(session)
+                    .navigationTitle("Media")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { session.showsMedia = false }
+                        }
+                    }
+            }
+            .presentationDetents([.medium, .large])
         }
         .onAppear { session.connectIfPossible() }
         .onChange(of: session.isConnected) { _, connected in
@@ -32,8 +49,11 @@ struct RootView: View {
                 height: max(0, proxy.size.height - insets.top - insets.bottom)
             )
             let landscape = contentSize.width > contentSize.height
+            let immersiveController = session.selectedTab == .controller && landscape
             Group {
-                if horizontalSizeClass == .regular && contentSize.width >= 700 {
+                if immersiveController {
+                    ControllerScreen()
+                } else if horizontalSizeClass == .regular && contentSize.width >= 700 {
                     padLayout(size: contentSize)
                 } else if landscape {
                     landscapeShell(size: contentSize)
@@ -52,49 +72,53 @@ struct RootView: View {
 
     private func padLayout(size: CGSize) -> some View {
         HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 16) {
-                header
+            VStack(alignment: .leading, spacing: KamihiUI.gap) {
+                compactHeader
                 ConnectionStatusChip()
-                tabRail()
+                primaryNav(axis: .vertical)
                 Spacer(minLength: 0)
+                utilityColumn
             }
-            .frame(width: min(230, max(180, size.width * 0.28)))
-            .padding(.leading, 12)
-            .padding(.vertical, 12)
+            .frame(width: min(220, max(168, size.width * 0.26)))
+            .padding(.leading, KamihiUI.pad)
+            .padding(.vertical, KamihiUI.pad)
             screenBody
-                .padding(12)
+                .padding(KamihiUI.pad)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
     private func portraitLayout(size: CGSize) -> some View {
         VStack(spacing: 0) {
-            HStack(alignment: .top) {
-                header
+            HStack(alignment: .center, spacing: 8) {
+                compactHeader
                 Spacer(minLength: 8)
                 ConnectionStatusChip()
+                utilityRow
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
             screenBody
                 .padding(.top, 6)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            bottomBar
+            primaryNav(axis: .horizontal)
+                .padding(.horizontal, 12)
                 .padding(.bottom, 8)
         }
         .frame(width: size.width, height: size.height)
     }
 
     private func landscapeShell(size: CGSize) -> some View {
-        let railWidth = min(76, max(56, size.width * 0.10))
+        let railWidth = min(84, max(64, size.width * 0.11))
         return HStack(alignment: .top, spacing: 10) {
             VStack(spacing: 10) {
-                header
+                compactHeader
                     .frame(maxWidth: .infinity, alignment: .leading)
                 ConnectionStatusChip()
                 Spacer(minLength: 8)
-                tabRail()
+                primaryNav(axis: .vertical)
                 Spacer(minLength: 0)
+                utilityColumn
             }
             .frame(width: railWidth)
             screenBody
@@ -109,13 +133,9 @@ struct RootView: View {
     private var screenBody: some View {
         switch session.selectedTab {
         case .trackpad:
-            TrackpadCanvas()
+            TrackpadCanvas(chrome: .full)
         case .slides:
             PresentationScreen()
-        case .keyboard:
-            KeyboardScreen()
-        case .media:
-            MediaScreen()
         case .deck:
             DeckScreen()
         case .controller:
@@ -123,92 +143,126 @@ struct RootView: View {
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("KAMIHI REMOTE")
+    private var compactHeader: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("KAMIHI")
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .tracking(2.4)
-                .foregroundStyle(.white.opacity(0.62))
-            Text(session.isConnected ? (session.hostName.isEmpty ? "Mac" : session.hostName) : session.statusText)
-                .font(.system(size: 16, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.92))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .tracking(KamihiUI.labelTracking)
+                .foregroundStyle(.white.opacity(0.55))
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Kamihi Remote, \(session.isConnected ? "connected" : session.statusText)")
+        .accessibilityLabel("Kamihi Remote")
         .allowsHitTesting(false)
     }
 
-    private var bottomBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                ForEach(RemoteTab.allCases) { tab in
-                    tabButton(tab)
-                }
-                Button { session.showsSettings = true } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 18, weight: .medium))
-                        .frame(width: 48, height: 44)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.white.opacity(0.78))
-                .accessibilityLabel("Settings")
+    private var utilityRow: some View {
+        HStack(spacing: 8) {
+            utilityButton(systemName: "keyboard", label: "Keyboard", selected: session.showsKeyboard) {
+                session.showsKeyboard.toggle()
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 8)
+            utilityButton(systemName: "playpause", label: "Media") {
+                session.showsMedia = true
+            }
+            utilityButton(systemName: "gearshape", label: "Settings") {
+                session.showsSettings = true
+            }
         }
-        .glassEffect(.regular.interactive(), in: .capsule)
-        .padding(.horizontal, 12)
     }
 
-    private func tabRail() -> some View {
+    private var utilityColumn: some View {
         VStack(spacing: 8) {
-            ForEach(RemoteTab.allCases) { tab in
-                Button { session.selectedTab = tab } label: {
-                    Image(systemName: symbol(for: tab))
-                        .font(.system(size: 18, weight: .semibold))
-                        .frame(width: 44, height: 44)
-                        .opacity(session.selectedTab == tab ? 1 : 0.45)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.white)
-                .accessibilityLabel(tab.title)
-                .accessibilityAddTraits(session.selectedTab == tab ? .isSelected : [])
+            utilityButton(systemName: "keyboard", label: "Keyboard", selected: session.showsKeyboard) {
+                session.showsKeyboard.toggle()
             }
-            Button { session.showsSettings = true } label: {
-                Image(systemName: "gearshape").frame(width: 44, height: 44)
+            utilityButton(systemName: "playpause", label: "Media") {
+                session.showsMedia = true
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.white.opacity(0.8))
-            .accessibilityLabel("Settings")
+            utilityButton(systemName: "gearshape", label: "Settings") {
+                session.showsSettings = true
+            }
         }
-        .padding(8)
-        .glassEffect(.regular.interactive(), in: .capsule)
     }
 
-    private func tabButton(_ tab: RemoteTab) -> some View {
-        Button { session.selectedTab = tab } label: {
-            Image(systemName: symbol(for: tab))
-                .font(.system(size: 16, weight: .semibold))
-                .frame(width: 44, height: 44)
-                .opacity(session.selectedTab == tab ? 1 : 0.45)
+    private func utilityButton(systemName: String, label: String, selected: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 17, weight: .semibold))
+                .frame(width: KamihiUI.controlHeight, height: KamihiUI.controlHeight)
+                .opacity(selected ? 1 : 0.72)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+        .glassEffect(.regular.interactive(), in: .circle)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func primaryNav(axis: Axis) -> some View {
+        let tabs = RemoteTab.allCases
+        return Group {
+            if axis == .horizontal {
+                HStack(spacing: 0) {
+                    ForEach(tabs) { tab in
+                        primaryTabButton(tab)
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 6)
+                .glassEffect(.regular.interactive(), in: .capsule)
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(tabs) { tab in
+                        primaryTabButton(tab, vertical: true)
+                    }
+                }
+                .padding(8)
+                .glassEffect(.regular.interactive(), in: .capsule)
+            }
+        }
+    }
+
+    private func primaryTabButton(_ tab: RemoteTab, vertical: Bool = false) -> some View {
+        let selected = session.selectedTab == tab
+        return Button {
+            session.selectedTab = tab
+            if tab == .controller {
+                session.showsKeyboard = false
+            }
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: symbol(for: tab))
+                    .font(.system(size: vertical ? 18 : 16, weight: .semibold))
+                Text(tab.title)
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: KamihiUI.controlHeight)
+            .opacity(selected ? 1 : 0.48)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.white)
         .accessibilityLabel(tab.title)
-        .accessibilityAddTraits(session.selectedTab == tab ? .isSelected : [])
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func symbol(for tab: RemoteTab) -> String {
         switch tab {
         case .trackpad: return "hand.draw"
         case .slides: return "rectangle.on.rectangle"
-        case .keyboard: return "keyboard"
-        case .media: return "playpause"
         case .deck: return "square.grid.3x3"
         case .controller: return "gamecontroller"
         }
+    }
+}
+
+/// Shared pointer surface — full mode or embedded region without duplicate chrome.
+struct PointerSurface: View {
+    @EnvironmentObject private var session: RemoteSession
+    var chrome: TrackpadCanvas.Chrome = .minimal
+
+    var body: some View {
+        TrackpadCanvas(chrome: chrome)
     }
 }
 
@@ -216,37 +270,24 @@ struct ModeShell<Controls: View>: View {
     @EnvironmentObject private var session: RemoteSession
     var pointerRatio: CGFloat = 0.56
     var compactPointerHeight: CGFloat = 168
-    var showsPointerOverride: Bool? = nil
     @ViewBuilder var controls: () -> Controls
 
     var body: some View {
         GeometryReader { geo in
             let landscape = geo.size.width > geo.size.height * 1.05
-            let showPointer = showsPointerOverride ?? session.preferences.alwaysShowPointerPad
             Group {
-                if showPointer == false {
-                    VStack(spacing: 8) {
-                        pointerToggleBar
-                        controls()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                } else if landscape {
-                    HStack(spacing: 10) {
-                        VStack(spacing: 8) {
-                            pointerToggleBar
-                            TrackpadCanvas()
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        }
-                        .frame(width: max(180, geo.size.width * pointerRatio))
+                if landscape {
+                    HStack(spacing: KamihiUI.gap) {
+                        PointerSurface(chrome: .minimal)
+                            .frame(width: max(180, geo.size.width * pointerRatio))
                         controls()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 } else {
-                    VStack(spacing: 8) {
+                    VStack(spacing: KamihiUI.gap) {
                         controls()
                             .frame(maxWidth: .infinity)
-                        pointerToggleBar
-                        TrackpadCanvas()
+                        PointerSurface(chrome: .minimal)
                             .frame(minHeight: 120, maxHeight: min(compactPointerHeight, max(130, geo.size.height * 0.36)))
                     }
                 }
@@ -254,33 +295,16 @@ struct ModeShell<Controls: View>: View {
             .frame(width: geo.size.width, height: geo.size.height)
         }
     }
-
-    private var pointerToggleBar: some View {
-        HStack {
-            Button {
-                session.preferences.alwaysShowPointerPad.toggle()
-                session.preferences.save()
-            } label: {
-                Label(
-                    session.preferences.alwaysShowPointerPad ? "Hide Pointer" : "Show Pointer",
-                    systemImage: session.preferences.alwaysShowPointerPad ? "hand.raised.slash" : "hand.draw"
-                )
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.white)
-            .glassEffect(.regular.interactive(), in: .capsule)
-            .accessibilityLabel(session.preferences.alwaysShowPointerPad ? "Hide pointer pad" : "Show pointer pad")
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 4)
-    }
 }
 
 struct TrackpadCanvas: View {
+    enum Chrome {
+        case full
+        case minimal
+    }
+
     @EnvironmentObject private var session: RemoteSession
+    var chrome: Chrome = .full
 
     var body: some View {
         ZStack {
@@ -288,7 +312,6 @@ struct TrackpadCanvas: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
                 .accessibilityLabel("Mac trackpad")
-                // Animation overlay shares the exact UIKit trackpad frame — no separate GeometryReader size drift.
                 .overlay {
                     TouchAnimationView(state: fitted(session.engine.animation, size: session.engine.canvasSize))
                         .allowsHitTesting(false)
@@ -296,7 +319,7 @@ struct TrackpadCanvas: View {
 
             if let banner = session.gestureBanner {
                 Text(banner)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .font(KamihiUI.bodyFont)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .glassEffect(.regular.interactive(), in: .capsule)
@@ -309,74 +332,19 @@ struct TrackpadCanvas: View {
             if session.preferences.showDeveloperDiagnostics {
                 debugHUD.allowsHitTesting(false)
             }
-            VStack {
-                Spacer()
-                HStack(spacing: 8) {
-                    precisionButton
-                    gestureProbe("MC", "Mission Control") { session.send(.system(.missionControl)) }
-                    gestureProbe("Exposé", "App Exposé") { session.send(.system(.appExpose)) }
-                    if session.selectedTab != .trackpad {
-                        pointerPadToggle
+            if chrome == .full, session.preferences.showDeveloperDiagnostics {
+                VStack {
+                    Spacer()
+                    HStack(spacing: 8) {
+                        gestureProbe("MC", "Mission Control") { session.send(.system(.missionControl)) }
+                        gestureProbe("Exposé", "App Exposé") { session.send(.system(.appExpose)) }
+                        Spacer(minLength: 0)
                     }
-                    if session.selectedTab == .slides {
-                        laserButton
-                    }
-                    Spacer(minLength: 0)
+                    .padding(12)
                 }
-                .padding(12)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var precisionButton: some View {
-        Button {
-            session.precisionActive.toggle()
-            session.pointerMode = .macCursor
-        } label: {
-            Label(session.precisionActive ? "Precision" : "Pointer", systemImage: session.precisionActive ? "scope" : "cursorarrow")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.white)
-        .glassEffect(.regular.interactive(), in: .capsule)
-        .accessibilityLabel("Mac cursor")
-        .accessibilityValue(session.precisionActive ? "Precision on" : "Off")
-    }
-
-    private var pointerPadToggle: some View {
-        Button {
-            session.preferences.alwaysShowPointerPad.toggle()
-            session.preferences.save()
-        } label: {
-            Label("Hide Pad", systemImage: "hand.raised.slash")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.white)
-        .glassEffect(.regular.interactive(), in: .capsule)
-        .accessibilityLabel("Hide pointer pad")
-    }
-
-    private var laserButton: some View {
-        Button {
-            session.pointerMode = session.pointerMode == .presentationLaser ? .macCursor : .presentationLaser
-            session.send(.laserVisible(session.pointerMode == .presentationLaser))
-        } label: {
-            Label("Laser", systemImage: "circle.fill")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(session.pointerMode == .presentationLaser ? .red : .white)
-        .glassEffect(.regular.interactive(), in: .capsule)
-        .accessibilityLabel("Presentation laser")
-        .accessibilityValue(session.pointerMode == .presentationLaser ? "On" : "Off")
     }
 
     private func gestureProbe(_ title: String, _ accessibility: String, action: @escaping () -> Void) -> some View {
@@ -401,7 +369,7 @@ struct TrackpadCanvas: View {
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
             Text("Touch IDs:")
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
-            ForEach(Array(anim.fingers.prefix(4).enumerated()), id: \.element.id) { index, finger in
+            ForEach(Array(anim.fingers.prefix(4))) { finger in
                 Text("  #\(finger.id)  x: \(Int(finger.point.x))  y: \(Int(finger.point.y))")
                     .font(.system(size: 10, design: .monospaced))
             }
@@ -419,7 +387,7 @@ struct TrackpadCanvas: View {
         }
         .foregroundStyle(.white.opacity(0.85))
         .padding(10)
-        .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: KamihiUI.radiusSmall, style: .continuous))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(10)
         .accessibilityHidden(true)
@@ -428,7 +396,6 @@ struct TrackpadCanvas: View {
     private func fitted(_ state: TouchAnimationState, size: CGSize) -> TouchAnimationState {
         var copy = state
         let canvas = size.width > 1 && size.height > 1 ? size : state.trackpadSize
-        // Points are already in UIKit trackpad coordinates. Keep them 1:1 with the overlay.
         copy.trackpadSize = canvas.width > 1 ? canvas : CGSize(width: 390, height: 640)
         copy.isConnected = session.isConnected
         copy.isPrecision = session.precisionActive
@@ -448,8 +415,10 @@ struct ConnectionStatusChip: View {
                 Circle()
                     .fill(session.isConnected ? Color.green.opacity(0.9) : Color.white.opacity(0.28))
                     .frame(width: 8, height: 8)
-                Text(session.isConnected ? "Connected" : session.statusText)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                Text(session.isConnected
+                     ? (session.hostName.isEmpty ? "Mac" : session.hostName)
+                     : session.statusText)
+                    .font(KamihiUI.captionFont)
                     .lineLimit(1)
             }
             .padding(.horizontal, 10)

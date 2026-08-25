@@ -3,40 +3,102 @@ import SwiftUI
 struct PresentationScreen: View {
     @EnvironmentObject private var session: RemoteSession
 
+    private var isLaser: Bool { session.pointerMode == .presentationLaser }
+
     var body: some View {
-        ModeShell {
-            VStack(spacing: 12) {
-                Text("PRESENTATION")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .tracking(2)
-                    .foregroundStyle(.white.opacity(0.6))
-                HStack(spacing: 10) {
-                    bigButton("Previous", "chevron.left") { send(.previous) }
-                    bigButton("Next", "chevron.right") { send(.next) }
+        GeometryReader { geo in
+            let landscape = geo.size.width > geo.size.height * 1.05
+            Group {
+                if landscape {
+                    landscapeLayout
+                } else {
+                    portraitLayout
                 }
-                HStack(spacing: 10) {
-                    smallButton("Start", "play.fill") { send(.start) }
-                    smallButton("Black", "rectangle.fill") { send(.black) }
-                    smallButton("End", "xmark") { send(.end) }
-                    smallButton("Laser", "circle.fill") {
-                        session.pointerMode = session.pointerMode == .presentationLaser ? .macCursor : .presentationLaser
-                        session.send(.laserVisible(session.pointerMode == .presentationLaser))
-                        send(.pointer)
-                    }
-                }
-                Picker("Profile", selection: $session.preferences.presentationProfile) {
-                    ForEach(PresentationProfile.allCases) { profile in
-                        Text(profile.title).tag(profile)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: session.preferences.presentationProfile) { _, _ in
-                    session.preferences.save()
-                }
-                Spacer(minLength: 0)
             }
-            .padding(12)
+            .frame(width: geo.size.width, height: geo.size.height)
+            .padding(KamihiUI.pad)
         }
+    }
+
+    private var portraitLayout: some View {
+        VStack(spacing: KamihiUI.gap) {
+            HStack {
+                Text("PRESENTATION")
+                    .font(KamihiUI.titleFont)
+                    .tracking(KamihiUI.labelTracking)
+                    .foregroundStyle(.white.opacity(0.55))
+                Spacer()
+                pointerModeControl
+            }
+
+            HStack(spacing: KamihiUI.gap) {
+                bigButton("Previous", "chevron.left") { send(.previous) }
+                bigButton("Next", "chevron.right") { send(.next) }
+            }
+            .frame(maxHeight: 96)
+
+            PointerSurface(chrome: .minimal)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: KamihiUI.radiusLarge, style: .continuous))
+
+            HStack(spacing: KamihiUI.gap) {
+                smallButton("Start", "play.fill") { send(.start) }
+                smallButton("Black", "rectangle.fill") { send(.black) }
+                smallButton("End", "xmark") { send(.end) }
+            }
+
+            Picker("Profile", selection: $session.preferences.presentationProfile) {
+                ForEach(PresentationProfile.allCases) { profile in
+                    Text(profile.title).tag(profile)
+                }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: session.preferences.presentationProfile) { _, _ in
+                session.preferences.save()
+            }
+        }
+    }
+
+    private var landscapeLayout: some View {
+        VStack(spacing: KamihiUI.gap) {
+            HStack {
+                Text("PRESENTATION")
+                    .font(KamihiUI.titleFont)
+                    .tracking(KamihiUI.labelTracking)
+                    .foregroundStyle(.white.opacity(0.55))
+                Spacer()
+                pointerModeControl
+            }
+            HStack(spacing: KamihiUI.gap) {
+                bigButton("Previous", "chevron.left") { send(.previous) }
+                bigButton("Next", "chevron.right") { send(.next) }
+            }
+            .frame(maxHeight: 120)
+            PointerSurface(chrome: .minimal)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: KamihiUI.radiusLarge, style: .continuous))
+            HStack(spacing: KamihiUI.gap) {
+                smallButton("Start", "play.fill") { send(.start) }
+                smallButton("Black", "rectangle.fill") { send(.black) }
+                smallButton("End", "xmark") { send(.end) }
+            }
+        }
+    }
+
+    private var pointerModeControl: some View {
+        Picker("Pointer", selection: Binding(
+            get: { isLaser ? 1 : 0 },
+            set: { value in
+                session.pointerMode = value == 1 ? .presentationLaser : .macCursor
+                session.send(.laserVisible(value == 1))
+            }
+        )) {
+            Text("Cursor").tag(0)
+            Text("Laser").tag(1)
+        }
+        .pickerStyle(.segmented)
+        .frame(maxWidth: 180)
+        .accessibilityLabel("Pointer mode")
     }
 
     private func send(_ action: PresentationAction) {
@@ -50,11 +112,12 @@ struct PresentationScreen: View {
                 Image(systemName: symbol).font(.system(size: 24, weight: .semibold))
                 Text(title)
             }
-            .frame(maxWidth: .infinity, minHeight: 72)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(minHeight: 72)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.white)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: KamihiUI.radiusLarge))
         .accessibilityLabel(title)
     }
 
@@ -62,7 +125,7 @@ struct PresentationScreen: View {
         Button(action: action) {
             Label(title, systemImage: symbol)
                 .labelStyle(.titleAndIcon)
-                .frame(maxWidth: .infinity, minHeight: 44)
+                .frame(maxWidth: .infinity, minHeight: KamihiUI.controlHeight)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.white)
@@ -71,120 +134,24 @@ struct PresentationScreen: View {
     }
 }
 
-struct KeyboardScreen: View {
-    @EnvironmentObject private var session: RemoteSession
-    @State private var text = ""
-    @State private var command = false
-    @State private var option = false
-    @State private var control = false
-    @State private var shift = false
-
-    var body: some View {
-        ModeShell(pointerRatio: 0.48, compactPointerHeight: 120) {
-            VStack(spacing: 12) {
-                Text("KEYBOARD")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .tracking(2)
-                    .foregroundStyle(.white.opacity(0.6))
-                TextField("Type to the Mac", text: $text)
-                    .textFieldStyle(.plain)
-                    .padding(14)
-                    .glassEffect(.regular, in: .rect(cornerRadius: 16))
-                    .foregroundStyle(.white)
-                    .onSubmit { sendText() }
-                    .submitLabel(.send)
-                    .accessibilityLabel("Text to the Mac")
-                HStack {
-                    modifier("⌘", $command)
-                    modifier("⌥", $option)
-                    modifier("⌃", $control)
-                    modifier("⇧", $shift)
-                }
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
-                    ForEach(["esc", "tab", "return", "space", "left", "right", "up", "down"], id: \.self) { key in
-                        Button(key) { tap(key) }
-                            .buttonStyle(.plain)
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .foregroundStyle(.white)
-                            .glassEffect(.regular.interactive(), in: .capsule)
-                            .accessibilityLabel(key)
-                    }
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(12)
-        }
-    }
-
-    private func modifier(_ title: String, _ value: Binding<Bool>) -> some View {
-        Button(title) { value.wrappedValue.toggle() }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .foregroundStyle(value.wrappedValue ? .black : .white)
-            .background(value.wrappedValue ? Color.white : Color.clear, in: Capsule())
-            .glassEffect(.regular.interactive(), in: .capsule)
-            .accessibilityLabel(title)
-            .accessibilityAddTraits(value.wrappedValue ? .isSelected : [])
-    }
-
-    private func flags() -> UInt64 {
-        var value: UInt64 = 0
-        if command { value |= 1 << 20 }
-        if shift { value |= 1 << 17 }
-        if option { value |= 1 << 19 }
-        if control { value |= 1 << 18 }
-        return value
-    }
-
-    private func tap(_ name: String) {
-        let code: UInt16
-        switch name {
-        case "esc": code = 53
-        case "tab": code = 48
-        case "return": code = 36
-        case "space": code = 49
-        case "left": code = 123
-        case "right": code = 124
-        case "up": code = 126
-        default: code = 125
-        }
-        session.send(.keyDown(code: code, flags: flags()))
-        session.send(.keyUp(code: code, flags: flags()))
-        Haptics.click()
-    }
-
-    private func sendText() {
-        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return }
-        session.send(.typeText(value))
-        text = ""
-    }
-}
-
 struct MediaScreen: View {
     @EnvironmentObject private var session: RemoteSession
 
     var body: some View {
-        ModeShell {
-            VStack(spacing: 16) {
-                Text("MEDIA")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .tracking(2)
-                    .foregroundStyle(.white.opacity(0.6))
-                HStack(spacing: 12) {
-                    media("backward.end.fill", "Previous track") { session.send(.media(.previous)) }
-                    media("playpause.fill", "Play pause", size: 32) { session.send(.media(.playPause)) }
-                    media("forward.end.fill", "Next track") { session.send(.media(.next)) }
-                }
-                HStack(spacing: 12) {
-                    media("speaker.minus.fill", "Volume down") { session.send(.media(.volumeDown)) }
-                    media("speaker.slash.fill", "Mute") { session.send(.media(.mute)) }
-                    media("speaker.plus.fill", "Volume up") { session.send(.media(.volumeUp)) }
-                }
-                Spacer(minLength: 0)
+        VStack(spacing: 16) {
+            HStack(spacing: 12) {
+                media("backward.end.fill", "Previous track") { session.send(.media(.previous)) }
+                media("playpause.fill", "Play pause", size: 32) { session.send(.media(.playPause)) }
+                media("forward.end.fill", "Next track") { session.send(.media(.next)) }
             }
-            .padding(12)
+            HStack(spacing: 12) {
+                media("speaker.minus.fill", "Volume down") { session.send(.media(.volumeDown)) }
+                media("speaker.slash.fill", "Mute") { session.send(.media(.mute)) }
+                media("speaker.plus.fill", "Volume up") { session.send(.media(.volumeUp)) }
+            }
+            Spacer(minLength: 0)
         }
+        .padding(KamihiUI.pad)
     }
 
     private func media(_ symbol: String, _ label: String, size: CGFloat = 24, action: @escaping () -> Void) -> some View {
@@ -195,62 +162,129 @@ struct MediaScreen: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.white)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: KamihiUI.radiusMedium))
         .accessibilityLabel(label)
     }
 }
 
 struct DeckScreen: View {
     @EnvironmentObject private var session: RemoteSession
+    @State private var showsAdd = false
+    @State private var showsAppGallery = false
+    @State private var editing: DeckButton?
 
     var body: some View {
-        ModeShell(pointerRatio: 0.42, compactPointerHeight: 150) {
-            VStack(spacing: 10) {
-                HStack {
-                    Text("DECK")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .tracking(2)
-                        .foregroundStyle(.white.opacity(0.6))
-                    Spacer()
-                    Button("Edit") { session.showsDeckEditor = true }
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.8))
-                        .accessibilityLabel("Edit deck")
+        VStack(spacing: KamihiUI.gap) {
+            HStack {
+                Text("DECK")
+                    .font(KamihiUI.titleFont)
+                    .tracking(KamihiUI.labelTracking)
+                    .foregroundStyle(.white.opacity(0.55))
+                Spacer()
+                Button {
+                    showsAdd = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 17, weight: .semibold))
+                        .frame(width: KamihiUI.controlHeight, height: KamihiUI.controlHeight)
                 }
-                GeometryReader { geo in
-                    let columns = max(3, min(6, max(1, Int(geo.size.width / 92))))
-                    ScrollView {
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: columns), spacing: 10) {
-                            ForEach(session.deck) { button in
-                                Button {
-                                    run(button)
-                                } label: {
-                                    VStack(spacing: 8) {
-                                        Image(systemName: button.symbol).font(.system(size: 20, weight: .semibold))
-                                        Text(button.title)
-                                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                            .lineLimit(2)
-                                            .minimumScaleFactor(0.8)
-                                            .multilineTextAlignment(.center)
-                                    }
-                                    .frame(maxWidth: .infinity, minHeight: 72)
-                                    .padding(6)
+                .buttonStyle(.plain)
+                .foregroundStyle(.white)
+                .glassEffect(.regular.interactive(), in: .circle)
+                .accessibilityLabel("Add deck action")
+                Button("Edit") { session.showsDeckEditor = true }
+                    .font(KamihiUI.captionFont)
+                    .foregroundStyle(.white.opacity(0.8))
+                    .accessibilityLabel("Edit deck")
+            }
+
+            GeometryReader { geo in
+                let columns = max(3, min(6, max(1, Int(geo.size.width / 100))))
+                ScrollView {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: KamihiUI.gap), count: columns), spacing: KamihiUI.gap) {
+                        ForEach(session.deck) { button in
+                            Button { run(button) } label: {
+                                VStack(spacing: 8) {
+                                    Image(systemName: button.symbol)
+                                        .font(.system(size: 22, weight: .semibold))
+                                    Text(button.title)
+                                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                        .lineLimit(2)
+                                        .minimumScaleFactor(0.8)
+                                        .multilineTextAlignment(.center)
                                 }
-                                .buttonStyle(.plain)
-                                .foregroundStyle(.white)
-                                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
-                                .accessibilityLabel(button.title)
+                                .frame(maxWidth: .infinity, minHeight: 78)
+                                .padding(6)
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.white)
+                            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: KamihiUI.radiusMedium))
+                            .accessibilityLabel(button.title)
+                            .contextMenu {
+                                Button("Edit") { editing = button }
+                                Button("Remove", role: .destructive) { remove(button) }
                             }
                         }
-                        .padding(.bottom, 8)
                     }
+                    .padding(.bottom, 8)
                 }
             }
-            .padding(12)
+        }
+        .padding(KamihiUI.pad)
+        .confirmationDialog("Choose an Action", isPresented: $showsAdd, titleVisibility: .visible) {
+            Button("Application") {
+                session.send(.requestAppList)
+                showsAppGallery = true
+            }
+            Button("Shortcut") { add(.shortcut, title: "Shortcut", symbol: "command", payload: "cmd+c") }
+            Button("Website") { add(.openURL, title: "Website", symbol: "globe", payload: "https://") }
+            Button("System") { add(.system, title: "Mission Control", symbol: "rectangle.3.group", payload: SystemAction.missionControl.rawValue) }
+            Button("Cancel", role: .cancel) {}
+        }
+        .sheet(isPresented: $showsAppGallery) {
+            MacAppGallery { app in
+                add(.openApp, title: app.displayName, symbol: "app", payload: app.bundleIdentifier)
+                showsAppGallery = false
+            }
+            .environmentObject(session)
         }
         .sheet(isPresented: $session.showsDeckEditor) {
             DeckEditorSheet().environmentObject(session)
         }
+        .sheet(item: $editing) { button in
+            NavigationStack {
+                DeckTileEditor(
+                    button: Binding(
+                        get: { session.deck.first(where: { $0.id == button.id }) ?? button },
+                        set: { updated in
+                            if let idx = session.deck.firstIndex(where: { $0.id == updated.id }) {
+                                session.deck[idx] = updated
+                                DeckButton.save(session.deck)
+                            }
+                        }
+                    ),
+                    apps: session.hostApps
+                )
+                .navigationTitle("Edit Tile")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { editing = nil }
+                    }
+                }
+            }
+        }
+    }
+
+    private func add(_ kind: DeckButton.Kind, title: String, symbol: String, payload: String) {
+        let tile = DeckButton(id: UUID().uuidString, title: title, symbol: symbol, kind: kind, payload: payload)
+        session.deck.append(tile)
+        DeckButton.save(session.deck)
+        Haptics.gesture()
+    }
+
+    private func remove(_ button: DeckButton) {
+        session.deck.removeAll { $0.id == button.id }
+        DeckButton.save(session.deck)
     }
 
     private func run(_ button: DeckButton) {
@@ -278,11 +312,62 @@ struct DeckScreen: View {
     }
 }
 
+struct MacAppGallery: View {
+    @EnvironmentObject private var session: RemoteSession
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    var onPick: (HostAppEntry) -> Void
+
+    private var filtered: [HostAppEntry] {
+        let apps = session.hostApps.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard q.isEmpty == false else { return apps }
+        return apps.filter {
+            $0.displayName.localizedCaseInsensitiveContains(q)
+                || $0.bundleIdentifier.localizedCaseInsensitiveContains(q)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if session.hostApps.isEmpty {
+                    Text("Waiting for Mac apps… Connect and try again.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(filtered) { app in
+                    Button {
+                        onPick(app)
+                        dismiss()
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(app.displayName)
+                            Text(app.bundleIdentifier)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .searchable(text: $query, prompt: "Search apps")
+            .navigationTitle("Choose an App")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Refresh") { session.send(.requestAppList) }
+                }
+            }
+            .onAppear { session.send(.requestAppList) }
+        }
+    }
+}
+
 struct DeckEditorSheet: View {
     @EnvironmentObject private var session: RemoteSession
     @Environment(\.dismiss) private var dismiss
     @State private var draft: [DeckButton] = []
-    @State private var adding = false
 
     var body: some View {
         NavigationStack {
@@ -296,9 +381,6 @@ struct DeckEditorSheet: View {
                 }
                 .onMove { draft.move(fromOffsets: $0, toOffset: $1) }
                 .onDelete { draft.remove(atOffsets: $0) }
-                Button("Add tile") {
-                    draft.append(DeckButton(id: UUID().uuidString, title: "New", symbol: "plus.app", kind: .openApp, payload: "com.apple.Safari"))
-                }
             }
             .navigationTitle("Edit Deck")
             .toolbar {
@@ -323,7 +405,6 @@ struct DeckEditorSheet: View {
 struct DeckTileEditor: View {
     @Binding var button: DeckButton
     var apps: [HostAppEntry]
-    @State private var urlText = ""
 
     var body: some View {
         Form {
