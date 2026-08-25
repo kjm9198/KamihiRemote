@@ -52,8 +52,16 @@ struct HostView: View {
     private var overview: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("Kamihi Remote Host")
-                    .font(.largeTitle.weight(.semibold))
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("Kamihi Remote Host")
+                        .font(.largeTitle.weight(.semibold))
+                    Text("v0.4.2")
+                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.accentColor.opacity(0.18), in: Capsule())
+                        .foregroundStyle(Color.accentColor)
+                }
                 Text(host.server.clientConnected ? "Phone connected" : "Waiting for your iPhone or iPad on this Wi-Fi.")
                     .foregroundStyle(.secondary)
 

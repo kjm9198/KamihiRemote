@@ -63,10 +63,19 @@ struct KamihiPolishedRootView: View {
     private var portraitLayout: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Text("KAMIHI")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .tracking(KamihiUI.labelTracking)
-                    .foregroundStyle(.white.opacity(0.55))
+                HStack(spacing: 6) {
+                    Text("KAMIHI")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .tracking(KamihiUI.labelTracking)
+                        .foregroundStyle(.white.opacity(0.85))
+                    Text("v0.4.2")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.cyan.opacity(0.22), in: Capsule())
+                        .overlay(Capsule().stroke(Color.cyan.opacity(0.55), lineWidth: 0.8))
+                        .foregroundStyle(.cyan)
+                }
                 Spacer(minLength: 8)
                 CompactConnectionLabel()
                 keyboardButton
@@ -88,11 +97,16 @@ struct KamihiPolishedRootView: View {
     private var landscapeLayout: some View {
         HStack(spacing: 8) {
             VStack(spacing: 8) {
-                Circle()
-                    .fill(session.isConnected ? Color.green.opacity(0.9) : Color.white.opacity(0.28))
-                    .frame(width: 9, height: 9)
-                    .padding(.top, 2)
-                    .accessibilityLabel(session.isConnected ? "Connected" : session.statusText)
+                VStack(spacing: 2) {
+                    Circle()
+                        .fill(session.isConnected ? Color.green.opacity(0.9) : Color.white.opacity(0.28))
+                        .frame(width: 9, height: 9)
+                        .padding(.top, 2)
+                        .accessibilityLabel(session.isConnected ? "Connected" : session.statusText)
+                    Text("v0.4.2")
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.cyan)
+                }
 
                 primaryNav(horizontal: false)
 
@@ -115,10 +129,19 @@ struct KamihiPolishedRootView: View {
     private var tabletLayout: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("KAMIHI")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .tracking(KamihiUI.labelTracking)
-                    .foregroundStyle(.white.opacity(0.55))
+                HStack(spacing: 6) {
+                    Text("KAMIHI")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .tracking(KamihiUI.labelTracking)
+                        .foregroundStyle(.white.opacity(0.85))
+                    Text("v0.4.2")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.cyan.opacity(0.22), in: Capsule())
+                        .overlay(Capsule().stroke(Color.cyan.opacity(0.55), lineWidth: 0.8))
+                        .foregroundStyle(.cyan)
+                }
                 CompactConnectionLabel()
                 primaryNav(horizontal: false)
                 Spacer(minLength: 0)

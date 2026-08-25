@@ -547,7 +547,7 @@ final class GestureEngine {
         let dx = center.x - start.x
         let dy = center.y - start.y
         lastCentroid = center
-        if hypot(dx, dy) > 10 {
+        if hypot(dx, dy) >= 6 {
             let wasLocked = mode == .threeFingerSwipe
             mode = .threeFingerSwipe
             lockAxis(dx: dx, dy: dy)
@@ -567,7 +567,7 @@ final class GestureEngine {
         let dx = center.x - start.x
         let dy = center.y - start.y
         lastCentroid = center
-        if hypot(dx, dy) > 10 {
+        if hypot(dx, dy) >= 6 {
             let wasLocked = mode == .fourFingerSwipe
             mode = .fourFingerSwipe
             lockAxis(dx: dx, dy: dy)

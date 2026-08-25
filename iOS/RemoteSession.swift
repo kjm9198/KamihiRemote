@@ -159,7 +159,9 @@ final class RemoteSession: ObservableObject, CommandSending {
 
     func send(_ command: RemoteCommand) {
         if case .system(let action) = command {
-            flashGesture(action.title)
+            flashGesture(label(for: command))
+        } else if case .rightClick = command {
+            flashGesture("Options / Right Click")
         }
         if pointerMode == .presentationLaser, case .move = command {
             let size = engine.animation.trackpadSize
@@ -212,7 +214,16 @@ final class RemoteSession: ObservableObject, CommandSending {
 
     private func label(for command: RemoteCommand) -> String {
         switch command {
-        case .system(let action): return action.title
+        case .system(let action):
+            switch action {
+            case .previousDesktop: return "Desktop ◀"
+            case .nextDesktop: return "Desktop ▶"
+            case .missionControl: return "Mission Control ▲"
+            case .appExpose: return "App Exposé ▼"
+            case .showDesktop: return "Show Desktop"
+            default: return action.title
+            }
+        case .rightClick: return "Options / Right Click"
         case .openApp(let id): return id.split(separator: ".").last.map(String.init) ?? id
         case .shortcut(let spec): return spec
         case .openURL: return "Open URL"
