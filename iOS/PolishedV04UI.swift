@@ -337,7 +337,6 @@ private struct TrackpadBody: View {
 
                 if showDiagnostics && session.preferences.showDeveloperDiagnostics {
                     compactDebugHUD
-                        .allowsHitTesting(false)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
@@ -349,25 +348,33 @@ private struct TrackpadBody: View {
         let stats = engine.stats
         let tel = session.telemetry
         let deck = session.deckTrace
-        return VStack(alignment: .leading, spacing: 2) {
-            Text("TCP \(tel.tcpReady ? "✓" : "✗")  UDP \(tel.udpConfigured ? "✓" : "✗")  RTT \(tel.rttMilliseconds)ms")
-            Text("HB \(Int(tel.lastHeartbeatAge * 1000))ms  sess \(tel.sessionShort)")
-            Text("Touches \(stats.activeFingers) · \(debug.mode) · \(stats.movePerSecond)/s")
-            Text("Last \(tel.lastCommand)")
+        return VStack(alignment: .leading, spacing: 3) {
+            Text("TCP \(tel.tcpReady ? "✓" : "✗")  UDP \(tel.udpConfigured ? "✓" : "✗")  RTT \(tel.rttMilliseconds)ms  HB \(Int(tel.lastHeartbeatAge * 1000))ms")
+            Text("Touches: UIKit \(stats.activeFingers) · Engine \(debug.activeCount) · \(debug.mode)")
+            Text("Centroid: (\(Int(debug.currentCentroid.x)), \(Int(debug.currentCentroid.y))) · Δ(\(Int(debug.cumulativeX)), \(Int(debug.cumulativeY)))")
+            Text("Axis: \(debug.axis) · Dir: \(debug.direction) · [\(debug.isLocked ? "LOCKED" : "UNLOCKED")]")
+            Text("Cmd: \(debug.lastCommand) · Last: \(tel.lastCommand)")
             if deck.title.isEmpty == false {
-                Text("DECK \(deck.title)")
-                Text("sent \(deck.sent ? "✓" : "✗") recv \(deck.received ? "✓" : "✗") exec \(deck.executed ? "✓" : "✗") \(deck.latencyMilliseconds.map { "\($0)ms" } ?? "")")
-                Text(deck.message)
+                Text("ACK: \(deck.title) [\(deck.executed ? "✓" : (deck.received ? "…" : "✗"))] \(deck.latencyMilliseconds.map { "\($0)ms" } ?? "") \(deck.message)")
             }
+            HStack(spacing: 6) {
+                Button("SEND ←") { session.send(.system(.previousDesktop)) }
+                Button("SEND →") { session.send(.system(.nextDesktop)) }
+                Button("SEND ▲") { session.send(.system(.missionControl)) }
+                Button("SEND ▼") { session.send(.system(.appExpose)) }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.mini)
+            .tint(.white.opacity(0.18))
+            .padding(.top, 2)
         }
-        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-        .foregroundStyle(.white.opacity(0.78))
+        .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+        .foregroundStyle(.white.opacity(0.85))
         .padding(.horizontal, 9)
         .padding(.vertical, 7)
-        .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(10)
-        .accessibilityHidden(true)
     }
 
     private func fitted(_ state: TouchAnimationState, size: CGSize) -> TouchAnimationState {

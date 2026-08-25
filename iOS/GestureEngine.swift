@@ -338,22 +338,22 @@ final class GestureEngine {
                 mouseIsDown = false
                 Haptics.dragEnd()
             case .threeFingerSwipe, .threeFingerCandidate:
-                if isTap, maxClusterCount == 3 {
+                if isTap, peakMovement < 10, maxClusterCount == 3 {
                     commands.append(.shortcut("cmd+ctrl+d"))
                     Haptics.click()
                 } else if didEmitSwipe == false {
-                    if let action = committedAction ?? threeFingerActionFromPeak(), action != .none {
+                    if let action = committedAction ?? threeFingerActionFromCumulative(), action != .none {
                         commands.append(.system(action))
                         didEmitSwipe = true
                         Haptics.gesture()
                     }
                 }
             case .fourFingerSwipe, .fourFingerCandidate:
-                if isTap, maxClusterCount == 4 {
+                if isTap, peakMovement < 10, maxClusterCount == 4 {
                     commands.append(.system(.showDesktop))
                     Haptics.click()
                 } else if didEmitSwipe == false {
-                    if let action = committedAction ?? fourFingerActionFromPeak(), action != .none {
+                    if let action = committedAction ?? fourFingerActionFromCumulative(), action != .none {
                         commands.append(.system(action))
                         didEmitSwipe = true
                         Haptics.gesture()
@@ -361,7 +361,7 @@ final class GestureEngine {
                 }
             case .twoFingerCandidate, .scrolling, .pinching:
                 let scrollEnd = scrollEngine.end(isTap: isTap)
-                // Any tap that registered 2 fingers is unconditionally a 2-finger right-click (Options)
+                // 2-finger tap triggered when 2 fingers tapped
                 if isTap, maxClusterCount == 2, preferences.twoFingerSecondaryClick {
                     commands.append(.rightClick)
                     Haptics.rightClick()
@@ -383,7 +383,7 @@ final class GestureEngine {
                 if mouseIsDown {
                     commands.append(.mouseUp)
                     mouseIsDown = false
-                } else if isTap, maxClusterCount == 1, preferences.tapToClick {
+                } else if isTap, preferences.tapToClick {
                     let isDouble = timestamp - lastClickTime < 0.3
                     lastClickTime = timestamp
                     clickPulse += 1
@@ -521,22 +521,24 @@ final class GestureEngine {
         return current.y > start.y ? preferences.bindings.fourFingerDown : preferences.bindings.fourFingerUp
     }
 
-    /// Infer direction from cumulative centroid when the swipe never fully locked an axis.
-    private func threeFingerActionFromPeak() -> SystemAction? {
+    /// Infer direction from cumulative centroid when the swipe never locked on the fly before release.
+    private func threeFingerActionFromCumulative() -> SystemAction? {
         guard let start = startCentroid, let current = lastCentroid else { return nil }
         let dx = current.x - start.x
         let dy = current.y - start.y
-        if abs(dx) > abs(dy) {
+        guard hypot(dx, dy) >= 28.0 else { return nil }
+        if abs(dx) >= abs(dy) {
             return dx > 0 ? preferences.bindings.threeFingerRight : preferences.bindings.threeFingerLeft
         }
         return dy > 0 ? preferences.bindings.threeFingerDown : preferences.bindings.threeFingerUp
     }
 
-    private func fourFingerActionFromPeak() -> SystemAction? {
+    private func fourFingerActionFromCumulative() -> SystemAction? {
         guard let start = startCentroid, let current = lastCentroid else { return nil }
         let dx = current.x - start.x
         let dy = current.y - start.y
-        if abs(dx) > abs(dy) {
+        guard hypot(dx, dy) >= 28.0 else { return nil }
+        if abs(dx) >= abs(dy) {
             return dx > 0 ? preferences.bindings.fourFingerRight : preferences.bindings.fourFingerLeft
         }
         return dy > 0 ? preferences.bindings.fourFingerDown : preferences.bindings.fourFingerUp
@@ -544,19 +546,41 @@ final class GestureEngine {
 
     private func processThreeFingerSwipe(center: CGPoint) -> [RemoteCommand] {
         guard let start = startCentroid else { return [] }
-        let dx = center.x - start.x
-        let dy = center.y - start.y
+        let totalDx = center.x - start.x
+        let totalDy = center.y - start.y
+        let distance = hypot(totalDx, totalDy)
         lastCentroid = center
-        if hypot(dx, dy) >= 6 {
-            let wasLocked = mode == .threeFingerSwipe
-            mode = .threeFingerSwipe
-            lockAxis(dx: dx, dy: dy)
-            let action = threeFingerAction()
-            committedAction = action
-            if wasLocked == false, didEmitSwipe == false, let action, action != .none {
-                didEmitSwipe = true
-                Haptics.gesture()
-                return [.system(action)]
+        peakMovement = max(peakMovement, distance)
+
+        // Lock threshold: 34 pt cumulative distance from start
+        if distance >= 34.0 {
+            if swipeAxis == nil {
+                let absX = abs(totalDx)
+                let absY = abs(totalDy)
+                if absX >= absY * 1.25 {
+                    swipeAxis = .horizontal
+                } else if absY >= absX * 1.25 {
+                    swipeAxis = .vertical
+                } else if distance >= 45.0 {
+                    swipeAxis = absX >= absY ? .horizontal : .vertical
+                }
+            }
+
+            if let axis = swipeAxis {
+                mode = .threeFingerSwipe
+                let action: SystemAction
+                if axis == .horizontal {
+                    action = totalDx > 0 ? preferences.bindings.threeFingerRight : preferences.bindings.threeFingerLeft
+                } else {
+                    action = totalDy > 0 ? preferences.bindings.threeFingerDown : preferences.bindings.threeFingerUp
+                }
+                committedAction = action
+
+                if didEmitSwipe == false && action != .none {
+                    didEmitSwipe = true
+                    Haptics.gesture()
+                    return [.system(action)]
+                }
             }
         }
         return []
@@ -564,29 +588,43 @@ final class GestureEngine {
 
     private func processFourFingerSwipe(center: CGPoint) -> [RemoteCommand] {
         guard let start = startCentroid else { return [] }
-        let dx = center.x - start.x
-        let dy = center.y - start.y
+        let totalDx = center.x - start.x
+        let totalDy = center.y - start.y
+        let distance = hypot(totalDx, totalDy)
         lastCentroid = center
-        if hypot(dx, dy) >= 6 {
-            let wasLocked = mode == .fourFingerSwipe
-            mode = .fourFingerSwipe
-            lockAxis(dx: dx, dy: dy)
-            let action = fourFingerAction()
-            committedAction = action
-            if wasLocked == false, didEmitSwipe == false, let action, action != .none {
-                didEmitSwipe = true
-                Haptics.gesture()
-                return [.system(action)]
+        peakMovement = max(peakMovement, distance)
+
+        if distance >= 34.0 {
+            if swipeAxis == nil {
+                let absX = abs(totalDx)
+                let absY = abs(totalDy)
+                if absX >= absY * 1.25 {
+                    swipeAxis = .horizontal
+                } else if absY >= absX * 1.25 {
+                    swipeAxis = .vertical
+                } else if distance >= 45.0 {
+                    swipeAxis = absX >= absY ? .horizontal : .vertical
+                }
+            }
+
+            if let axis = swipeAxis {
+                mode = .fourFingerSwipe
+                let action: SystemAction
+                if axis == .horizontal {
+                    action = totalDx > 0 ? preferences.bindings.fourFingerRight : preferences.bindings.fourFingerLeft
+                } else {
+                    action = totalDy > 0 ? preferences.bindings.fourFingerDown : preferences.bindings.fourFingerUp
+                }
+                committedAction = action
+
+                if didEmitSwipe == false && action != .none {
+                    didEmitSwipe = true
+                    Haptics.gesture()
+                    return [.system(action)]
+                }
             }
         }
         return []
-    }
-
-    private func lockAxis(dx: CGFloat, dy: CGFloat) {
-        if swipeAxis == nil {
-            // Horizontal bias for switching desktops
-            swipeAxis = abs(dx) >= abs(dy) * 0.7 ? .horizontal : .vertical
-        }
     }
 
     private func replaceActive(_ active: [FingerSample]) {
@@ -666,12 +704,34 @@ final class GestureEngine {
     private func makeDebug() -> GestureDebug {
         let start = startCentroid ?? .zero
         let current = lastCentroid ?? start
+        let totalDx = current.x - start.x
+        let totalDy = current.y - start.y
+        var axisStr = "none"
+        var dirStr = "none"
+        if let axis = swipeAxis {
+            axisStr = axis == .horizontal ? "horizontal" : "vertical"
+            if axis == .horizontal {
+                dirStr = totalDx > 0 ? "right" : "left"
+            } else {
+                dirStr = totalDy > 0 ? "down" : "up"
+            }
+        }
+        var cmdStr = "none"
+        if let action = committedAction {
+            cmdStr = action.title
+        }
         return GestureDebug(
             activeCount: fingers.count,
             points: currentPoints(),
             mode: mode.rawValue,
-            cumulativeX: current.x - start.x,
-            cumulativeY: current.y - start.y,
+            startCentroid: start,
+            currentCentroid: current,
+            cumulativeX: totalDx,
+            cumulativeY: totalDy,
+            axis: axisStr,
+            direction: dirStr,
+            isLocked: swipeAxis != nil || mode == .threeFingerSwipe || mode == .fourFingerSwipe,
+            lastCommand: cmdStr,
             scrollIntent: scrollEngine.intent.rawValue
         )
     }
