@@ -90,6 +90,7 @@ enum VoiceProjectStore {
 private struct SmartVibeIntent {
     let label: String
     let instruction: String
+    var wantsMacContext: Bool = false
 }
 
 private enum SmartVibeInterpreter {
@@ -107,7 +108,8 @@ private enum SmartVibeInterpreter {
         if fixes.contains(normalized) {
             return SmartVibeIntent(
                 label: "Fix it",
-                instruction: "Inspect the current error or broken behavior in the existing project state. Find the root cause, implement the fix rather than only explaining it, run the relevant tests/lint/build, fix regressions you introduce, and keep going until the verification is green. Preserve unrelated work."
+                instruction: "Inspect the current error or broken behavior in the existing project state. Find the root cause, implement the fix rather than only explaining it, run the relevant tests/lint/build, fix regressions you introduce, and keep going until the verification is green. Preserve unrelated work.",
+                wantsMacContext: normalized == "fix this"
             )
         }
 
@@ -147,7 +149,19 @@ private enum SmartVibeInterpreter {
         if reviews.contains(normalized) {
             return SmartVibeIntent(
                 label: "Review + fix",
-                instruction: "Review the current diff and surrounding implementation for correctness, regressions, security issues, performance problems, accessibility gaps and brittle behavior. Fix concrete high-impact issues you find, then run the relevant verification. Do not manufacture issues or rewrite unrelated code."
+                instruction: "Review the current diff and surrounding implementation for correctness, regressions, security issues, performance problems, accessibility gaps and brittle behavior. Fix concrete high-impact issues you find, then run the relevant verification. Do not manufacture issues or rewrite unrelated code.",
+                wantsMacContext: normalized == "review this"
+            )
+        }
+
+        let contextOnly: Set<String> = [
+            "use current text", "use mac text", "use this text", "send current text"
+        ]
+        if contextOnly.contains(normalized) {
+            return SmartVibeIntent(
+                label: "Use Mac context",
+                instruction: "Use the attached focused Mac text as the primary context. Determine what it contains, infer the most useful next coding action from the current project state, implement that action where appropriate, and verify the result. If the text is only informational and no code change is warranted, explain the useful conclusion instead.",
+                wantsMacContext: true
             )
         }
 
@@ -200,6 +214,16 @@ enum VoiceAgentRouter {
             await pause(180)
         }
 
+        var macContext: String?
+        if smartIntent?.wantsMacContext == true {
+            status("Reading Mac context…")
+            macContext = await session.captureFocusedTextForVibe()
+            if macContext != nil {
+                status("Mac context attached")
+                await pause(140)
+            }
+        }
+
         let instruction = smartIntent?.instruction ?? cleanPrompt
         var contextLines: [String] = []
         if let project {
@@ -209,11 +233,16 @@ enum VoiceAgentRouter {
             contextLines.append("Active Mac app: \(session.activeAppName)")
         }
 
+        var body = instruction
+        if let macContext {
+            body += "\n\nCurrent focused Mac text:\n---\n\(macContext)\n---"
+        }
+
         let effectivePrompt: String
         if contextLines.isEmpty {
-            effectivePrompt = instruction
+            effectivePrompt = body
         } else {
-            effectivePrompt = contextLines.joined(separator: "\n") + "\n\n" + instruction
+            effectivePrompt = contextLines.joined(separator: "\n") + "\n\n" + body
         }
 
         switch destination {
