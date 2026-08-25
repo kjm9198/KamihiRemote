@@ -35,7 +35,9 @@ final class ReliableClient {
     }
 
     func connect(to endpoint: NWEndpoint, pairingCode: String) {
-        stop(notify: false)
+        // A reconnect must not discard commands the user issued while the transport
+        // was down. Only an explicit stop should clear the queue.
+        stop(notify: false, clearPendingCommands: false)
         self.pairingCode = pairingCode
         generation += 1
         let capturedGeneration = generation
@@ -93,10 +95,10 @@ final class ReliableClient {
     }
 
     func stop() {
-        stop(notify: false)
+        stop(notify: false, clearPendingCommands: true)
     }
 
-    private func stop(notify: Bool) {
+    private func stop(notify: Bool, clearPendingCommands: Bool) {
         heartbeat?.cancel()
         heartbeat = nil
         connection?.stateUpdateHandler = nil
@@ -104,7 +106,9 @@ final class ReliableClient {
         connection = nil
         buffer.removeAll()
         pendingHeartbeat = nil
-        pendingCommands.removeAll()
+        if clearPendingCommands {
+            pendingCommands.removeAll()
+        }
         let wasReady = isReady
         isReady = false
         if notify, wasReady {
