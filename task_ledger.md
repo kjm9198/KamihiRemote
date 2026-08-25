@@ -26,6 +26,7 @@
 | **Presentation** | Slides Control & Profiles | IMPLEMENTED | Keynote, PowerPoint, and Generic profiles in `PresentationScreen` |
 | **Presentation** | Laser Pointer Overlay | IMPLEMENTED | Live coordinate mapping in `LaserOverlay.swift` & `RemoteCommand.laser` |
 | **Keyboard** | Modifiers & Key Combinations | IMPLEMENTED | Sticky modifier flags & safe release on disconnect/background |
+| **Keyboard** | Mirrored Mac Text Editing | BUILD TESTED | Append/delete fast paths plus deterministic full-field replacement for divergent/mid-field edits in `KeyboardOverlayDock` |
 | **Media** | System Media Keys | IMPLEMENTED | MediaAction wire encoding & InputEngine integration |
 | **Deck** | Real macOS App Picker | IMPLEMENTED | Enumerate `/System/Applications`, `/Applications`, `~/Applications` |
 | **Deck** | Real Actions (URL, App, Shortcut) | IMPLEMENTED | `NSWorkspace.OpenConfiguration` with `activates = true` in `AppCatalog.swift` |
@@ -34,8 +35,8 @@
 | **Security** | Device Revocation | IMPLEMENTED | `HostSession.revokeDevice` removes peer & resets connections |
 | **Transport** | Connection State Machine & Reconnect | IMPLEMENTED | Scheduled exponential backoff reconnects in `RemoteSession.swift` |
 | **Transport** | Preserve Queued Commands Across Reconnect | IMPLEMENTED | `ReliableClient.connect` now preserves commands queued while TCP is down; explicit user stop still clears them |
-| **Transport** | Direct Wi-Fi & LAN Network.framework| IMPLEMENTED | `NWParameters.includePeerToPeer = true` across TCP and UDP |
-| **Transport** | CoreBluetooth (BLE) Transport | IMPLEMENTED | Service & characteristic UUIDs configured in `RemoteConstants` |
+| **Transport** | Direct Wi-Fi & LAN Network.framework | IMPLEMENTED | `NWParameters.includePeerToPeer = true` across TCP and UDP |
+| **Transport** | CoreBluetooth (BLE) Transport | PLANNED / PLACEHOLDER | UUIDs and placeholder status types exist, but there is not yet a working scanner, peripheral, characteristic subscription, authentication, or command data path |
 | **Controller** | Simultaneous Touches & Snapshot | IMPLEMENTED | Compact state snapshot serialization in `RemoteCommand.controller` |
 | **Air Mouse** | CoreMotion IMU Tracking | IMPLEMENTED | IMU tracking & sensitivity configuration in `TouchInputEngine` & `AppPreferences` |
-
+| **Verification** | Native iOS + macOS CI | AUTOMATED TESTED | `.github/workflows/native-ci.yml` runs protocol/crypto self-checks, builds both native schemes, then runs iPhone simulator UI smoke captures |
