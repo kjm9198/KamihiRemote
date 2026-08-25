@@ -1,7 +1,9 @@
 import Foundation
 
 struct GestureBindings: Codable, Equatable {
+    /// Finger swipe LEFT → Control+Left (Previous Desktop)
     var threeFingerLeft: SystemAction = .previousDesktop
+    /// Finger swipe RIGHT → Control+Right (Next Desktop)
     var threeFingerRight: SystemAction = .nextDesktop
     var threeFingerUp: SystemAction = .missionControl
     var threeFingerDown: SystemAction = .appExpose
@@ -78,7 +80,11 @@ struct AppPreferences: Codable, Equatable {
     static func load() -> AppPreferences {
         if let data = UserDefaults.standard.data(forKey: storageKey),
            let decoded = decodeFlexible(data) {
-            return decoded
+            var prefs = decoded
+            prefs.bindings.threeFingerLeft = .previousDesktop
+            prefs.bindings.threeFingerRight = .nextDesktop
+            prefs.twoFingerSecondaryClick = true
+            return prefs
         }
 
         for legacyKey in ["appPreferences.v4", "appPreferences.v3", "appPreferences.v2"] {
@@ -127,32 +133,41 @@ struct DeckButton: Codable, Equatable, Identifiable {
     var payload: String
 
     enum Kind: String, Codable {
-        case shortcut, openApp, openURL, system, presentation, media
+        case shortcut, openApp, openURL, system, presentation, media, dictate
     }
 
+    /// Agent / editing focused default deck.
     static let defaultLayout: [DeckButton] = [
-        .init(id: "safari", title: "Safari", symbol: "safari", kind: .openApp, payload: "com.apple.Safari"),
-        .init(id: "finder", title: "Finder", symbol: "folder", kind: .openApp, payload: "com.apple.finder"),
-        .init(id: "music", title: "Music", symbol: "music.note", kind: .openApp, payload: "com.apple.Music"),
         .init(id: "copy", title: "Copy", symbol: "doc.on.doc", kind: .shortcut, payload: "cmd+c"),
         .init(id: "paste", title: "Paste", symbol: "doc.on.clipboard", kind: .shortcut, payload: "cmd+v"),
-        .init(id: "undo", title: "Undo", symbol: "arrow.uturn.backward", kind: .shortcut, payload: "cmd+z"),
+        .init(id: "selectAll", title: "Select All", symbol: "selection.pin.in.out", kind: .shortcut, payload: "cmd+a"),
+        .init(id: "selectLine", title: "Select Line", symbol: "text.line.first.and.arrowtriangle.forward", kind: .shortcut, payload: "selectLine"),
+        .init(id: "cursor", title: "Cursor", symbol: "chevron.left.forwardslash.chevron.right", kind: .openApp, payload: "com.todesktop.230313mzl4w4u92"),
+        .init(id: "chatgpt", title: "ChatGPT", symbol: "bubble.left.and.text.bubble.right", kind: .openApp, payload: "com.openai.chat"),
+        .init(id: "finder", title: "Finder", symbol: "folder", kind: .openApp, payload: "com.apple.finder"),
+        .init(id: "dictate", title: "Dictate", symbol: "mic.fill", kind: .dictate, payload: "prompt"),
         .init(id: "deskL", title: "Desktop ←", symbol: "rectangle.leadinghalf.inset.filled", kind: .system, payload: SystemAction.previousDesktop.rawValue),
-        .init(id: "mission", title: "Mission", symbol: "square.grid.3x3", kind: .system, payload: SystemAction.missionControl.rawValue),
         .init(id: "deskR", title: "Desktop →", symbol: "rectangle.trailinghalf.inset.filled", kind: .system, payload: SystemAction.nextDesktop.rawValue),
-        .init(id: "showDesk", title: "Show Desktop", symbol: "menubar.dock.rectangle", kind: .system, payload: SystemAction.showDesktop.rawValue)
+        .init(id: "mission", title: "Mission", symbol: "square.grid.3x3", kind: .system, payload: SystemAction.missionControl.rawValue),
+        .init(id: "undo", title: "Undo", symbol: "arrow.uturn.backward", kind: .shortcut, payload: "cmd+z")
     ]
 
+    static let storageKey = "deckLayout.v2"
+
     static func load() -> [DeckButton] {
-        guard let data = UserDefaults.standard.data(forKey: "deckLayout.v1"),
-              let decoded = try? JSONDecoder().decode([DeckButton].self, from: data)
-        else { return defaultLayout }
-        return decoded.map(Self.migrated)
+        if let data = UserDefaults.standard.data(forKey: storageKey),
+           let decoded = try? JSONDecoder().decode([DeckButton].self, from: data) {
+            return decoded.map(Self.migrated)
+        }
+        // Force the new agent-oriented layout once; keep v1 only if user already customized v2.
+        let layout = defaultLayout
+        save(layout)
+        return layout
     }
 
     static func save(_ buttons: [DeckButton]) {
         if let data = try? JSONEncoder().encode(buttons) {
-            UserDefaults.standard.set(data, forKey: "deckLayout.v1")
+            UserDefaults.standard.set(data, forKey: storageKey)
         }
     }
 
@@ -163,6 +178,8 @@ struct DeckButton: Codable, Equatable, Identifiable {
             case "safari": copy.payload = "com.apple.Safari"
             case "finder": copy.payload = "com.apple.finder"
             case "music": copy.payload = "com.apple.Music"
+            case "chatgpt", "chat gpt": copy.payload = "com.openai.chat"
+            case "cursor": copy.payload = "com.todesktop.230313mzl4w4u92"
             default: break
             }
         }

@@ -48,6 +48,8 @@ final class GestureEngine {
     private var startCentroid: CGPoint?
     private var peakMovement: CGFloat = 0
     private var maxClusterCount: Int = 0
+    private var startFingerCount: Int = 0
+    private var twoFingerHoldStart: TimeInterval?
     private var swipeAxis: Axis?
     private var committedAction: SystemAction?
     private var didEmitSwipe = false
@@ -142,6 +144,12 @@ final class GestureEngine {
         Haptics.prepare()
         replaceActive(active)
         maxClusterCount = max(maxClusterCount, fingers.count)
+        if startFingerCount == 0 {
+            startFingerCount = fingers.count
+        }
+        if fingers.count >= 2, twoFingerHoldStart == nil {
+            twoFingerHoldStart = timestamp
+        }
         startTime = timestamp
         lastTimestamp = timestamp
         peakMovement = 0
@@ -186,7 +194,7 @@ final class GestureEngine {
             // 2-finger scroll if iOS briefly drops a touch before the swipe locks.
             let stickyTwo = maxClusterCount >= 2
                 && fingers.count == 1
-                && (mode == .twoFingerCandidate || mode == .scrolling || mode == .pinching)
+                && (mode == .scrolling || mode == .pinching)
             let stickyThree = maxClusterCount >= 3
                 && fingers.count > 0
                 && fingers.count < 3
@@ -310,7 +318,9 @@ final class GestureEngine {
                 debug: makeDebug()
             )
         }
-        if remaining > 0 && (mode == .scrolling || mode == .pinching || mode == .twoFingerCandidate) && maxClusterCount >= 2 {
+        // Keep committed scroll/pinch locked until all fingers lift. Uncommitted
+        // two-finger candidates may demote so 2→1 can resume pointer control.
+        if remaining > 0 && (mode == .scrolling || mode == .pinching) && maxClusterCount >= 2 {
             lastCentroid = centroid(currentPoints())
             lastFingerIDs = Set(fingers.keys)
             snapshotPreviousFingers()
@@ -353,9 +363,33 @@ final class GestureEngine {
                 }
             case .twoFingerCandidate, .scrolling, .pinching:
                 let scrollEnd = scrollEngine.end(isTap: isTap)
-                if isTap, maxClusterCount == 2, preferences.twoFingerSecondaryClick {
+                // Options / secondary click: only a true two-finger tap.
+                // Ignore accidental second-finger brushes that started as one finger.
+                let stableTwoFingerTap = isTap
+                    && maxClusterCount == 2
+                    && startFingerCount >= 2
+                    && preferences.twoFingerSecondaryClick
+                    && (timestamp - (twoFingerHoldStart ?? startTime)) >= 0.045
+                if stableTwoFingerTap {
                     commands.append(.rightClick)
                     Haptics.rightClick()
+                } else if isTap, maxClusterCount == 1, preferences.tapToClick {
+                    // Fall through shouldn't happen in this case; one-finger handled below.
+                    commands.append(contentsOf: scrollEnd)
+                } else if isTap == false {
+                    commands.append(contentsOf: scrollEnd)
+                } else if isTap, startFingerCount == 1, maxClusterCount <= 2, preferences.tapToClick {
+                    // Started as one finger — treat as left click even if a brief second contact appeared.
+                    let isDouble = timestamp - lastClickTime < 0.3
+                    lastClickTime = timestamp
+                    clickPulse += 1
+                    if isDouble {
+                        commands.append(.doubleClick)
+                        doubleClickPulse += 1
+                    } else {
+                        commands.append(.click)
+                    }
+                    Haptics.click()
                 } else {
                     commands.append(contentsOf: scrollEnd)
                 }
@@ -363,7 +397,7 @@ final class GestureEngine {
                 if mouseIsDown {
                     commands.append(.mouseUp)
                     mouseIsDown = false
-                } else if isTap, maxClusterCount == 1, preferences.tapToClick {
+                } else if isTap, startFingerCount == 1, maxClusterCount <= 2, preferences.tapToClick {
                     let isDouble = timestamp - lastClickTime < 0.3
                     lastClickTime = timestamp
                     clickPulse += 1
@@ -588,6 +622,8 @@ final class GestureEngine {
         lastDy = 0
         peakMovement = 0
         maxClusterCount = 0
+        startFingerCount = 0
+        twoFingerHoldStart = nil
         lastFingerIDs.removeAll()
     }
 
