@@ -26,7 +26,10 @@ enum FocusedTextBridge {
             return FocusedTextSnapshot(text: "", editable: false)
         }
 
-        let element = unsafeBitCast(focusedValue, to: AXUIElement.self)
+        guard CFGetTypeID(focusedValue) == AXUIElementGetTypeID() else {
+            return FocusedTextSnapshot(text: "", editable: false)
+        }
+        let element = focusedValue as! AXUIElement
 
         if isSecure(element) {
             return FocusedTextSnapshot(text: "", editable: false)
