@@ -57,8 +57,10 @@ final class HostSession: ObservableObject {
         accessibility.promptIfNeeded()
         refreshAddress()
         refreshQR()
+        #if DEBUG
         RemotePacket.runSelfChecks()
         _ = SessionCrypto.runSelfChecks()
+        #endif
         NotificationCenter.default.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { _ in
             InputEngine.releaseAll()
         }
@@ -194,7 +196,6 @@ final class HostSession: ObservableObject {
             }
         case .pairRequest(let deviceID, let deviceName, let publicKey, let code):
             let fresh = Date() < pairingExpiresAt
-            let pubData = Data(base64Encoded: publicKey) ?? Data()
             if let peer = TrustedPeerStore.load().first(where: { $0.deviceID == deviceID }) {
                 completeHandshake(to: connection, deviceName: deviceName, peerPublicKey: peer.publicKey)
                 let macPub = keys.publicKeyData.base64EncodedString()
@@ -221,9 +222,45 @@ final class HostSession: ObservableObject {
             InputEngine.releaseAll()
         case .revokeDevice(let deviceID):
             revokeDevice(deviceID)
+
+        case .shortcut(let spec) where spec == SideChannelMessage.focusSnapshotShortcut:
+            let snapshot = FocusedTextBridge.snapshot()
+            tcp.send(
+                .pong(hostName: SideChannelMessage.focusSnapshot(text: snapshot.text, editable: snapshot.editable)),
+                token: pairingCode,
+                to: connection
+            )
+
+        case .openApp(let bundleID):
+            let ok = InputEngine.openApplication(bundleID)
+            acknowledge(kind: DeckButton.Kind.openApp.rawValue, payload: bundleID, success: ok, to: connection)
+        case .openURL(let url):
+            let ok = InputEngine.openURL(url)
+            acknowledge(kind: DeckButton.Kind.openURL.rawValue, payload: url, success: ok, to: connection)
+        case .shortcut(let spec):
+            let ok = InputEngine.shortcut(spec)
+            acknowledge(kind: DeckButton.Kind.shortcut.rawValue, payload: spec, success: ok, to: connection)
+        case .system(let action):
+            let ok = InputEngine.perform(action)
+            acknowledge(kind: DeckButton.Kind.system.rawValue, payload: action.rawValue, success: ok, to: connection)
+        case .presentation(let action, let profile):
+            let ok = InputEngine.presentation(action, profile: profile)
+            acknowledge(kind: DeckButton.Kind.presentation.rawValue, payload: action.rawValue, success: ok, to: connection)
+        case .media(let action):
+            let ok = InputEngine.media(action)
+            acknowledge(kind: DeckButton.Kind.media.rawValue, payload: action.rawValue, success: ok, to: connection)
+
         default:
             _ = InputEngine.apply(command)
         }
+    }
+
+    private func acknowledge(kind: String, payload: String, success: Bool, to connection: NWConnection) {
+        tcp.send(
+            .pong(hostName: SideChannelMessage.actionAck(kind: kind, payload: payload, success: success)),
+            token: pairingCode,
+            to: connection
+        )
     }
 }
 
