@@ -63,12 +63,26 @@ final class RemoteSession: ObservableObject, CommandSending {
         engine.attach(self)
         engine.preferences = preferences
         Haptics.level = preferences.hapticLevel
+
+        // Discovery changes are infrequent and can safely invalidate the shell.
         browser.objectWillChange.receive(on: RunLoop.main).sink { [weak self] _ in
             self?.objectWillChange.send()
         }.store(in: &cancellables)
-        udp.objectWillChange.receive(on: RunLoop.main).sink { [weak self] _ in
-            self?.objectWillChange.send()
-        }.store(in: &cancellables)
+
+        // Do NOT forward UDPClient.objectWillChange. MOVE traffic can run at display
+        // rate and forwarding every packet used to invalidate the entire SwiftUI tree.
+        // Sample telemetry at 4 Hz instead so touch visuals and controls stay smooth.
+        Timer.publish(every: 0.25, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let rps = self.udp.realtimePacketsPerSecond
+                if self.telemetry.realtimePacketsPerSecond != rps {
+                    self.telemetry.realtimePacketsPerSecond = rps
+                }
+            }
+            .store(in: &cancellables)
+
         tcp.onCommand = { [weak self] command in
             Task { @MainActor in self?.handleIncoming(command) }
         }
