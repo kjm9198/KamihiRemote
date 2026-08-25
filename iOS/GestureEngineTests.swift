@@ -28,11 +28,17 @@ enum GestureEngineTests {
         return true
     }
 
-    private static func engine() -> GestureEngine {
+    private static func engine(tapToClick: Bool = false) -> GestureEngine {
         let engine = GestureEngine()
-        engine.preferences.tapToClick = true
+        engine.preferences.tapToClick = tapToClick
         engine.preferences.twoFingerSecondaryClick = true
         engine.preferences.scrollFeel = .macLike
+        return engine
+    }
+
+    private static func defaultEngine() -> GestureEngine {
+        let engine = GestureEngine()
+        precondition(engine.preferences.tapToClick == false, "tap to click off by default")
         return engine
     }
 
@@ -44,20 +50,18 @@ enum GestureEngineTests {
     }
 
     private static func oneFingerTap() {
-        let g = engine()
-        g.preferences.tapToClick = true
+        let g = engine(tapToClick: true)
         _ = g.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 80, y: 80))], timestamp: 2, phase: .began, in: size)
         let ended = g.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 81, y: 80))], timestamp: 2.08, phase: .ended, in: size)
         precondition(ended.commands.contains(.click), "tap to click when enabled")
-        let g2 = engine()
-        precondition(g2.preferences.tapToClick == false, "tap to click off by default")
+        let g2 = defaultEngine()
         _ = g2.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 80, y: 80))], timestamp: 2, phase: .began, in: size)
         let noClick = g2.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 81, y: 80))], timestamp: 2.08, phase: .ended, in: size)
         precondition(noClick.commands.contains(.click) == false, "single tap must not click by default")
     }
 
     private static func doubleClick() {
-        let g = engine()
+        let g = engine(tapToClick: true)
         _ = g.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 80, y: 80))], timestamp: 3, phase: .began, in: size)
         _ = g.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 80, y: 80))], timestamp: 3.05, phase: .ended, in: size)
         _ = g.ingest(samples: [FingerSample(id: 2, point: CGPoint(x: 80, y: 80))], timestamp: 3.12, phase: .began, in: size)

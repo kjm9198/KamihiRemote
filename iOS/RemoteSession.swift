@@ -92,8 +92,10 @@ final class RemoteSession: ObservableObject, CommandSending {
         if preferences.autoConnect {
             connectIfPossible()
         }
+        #if DEBUG
         GestureEngineTests.runSelfChecks()
         _ = SessionCrypto.runSelfChecks()
+        #endif
         transport.noteWiredUnsupported()
     }
 
