@@ -6,7 +6,7 @@ struct KamihiRemoteApp: App {
 
     var body: some Scene {
         WindowGroup {
-            KamihiPolishedRootView()
+            KamihiV042RootView()
                 .environmentObject(session)
                 .preferredColorScheme(.dark)
                 .statusBarHidden(true)
