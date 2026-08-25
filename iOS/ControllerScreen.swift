@@ -3,71 +3,38 @@ import UIKit
 
 struct ControllerScreen: View {
     @EnvironmentObject private var session: RemoteSession
-    @Environment(\.verticalSizeClass) private var verticalSizeClass
-
-    private var isPortrait: Bool { verticalSizeClass == .regular }
 
     var body: some View {
-        Group {
-            if isPortrait {
-                rotatePrompt
-            } else {
-                immersivePad
+        GeometryReader { geo in
+            let compact = geo.size.height > geo.size.width * 1.05
+            ZStack(alignment: .topLeading) {
+                ControllerPadView(session: session, compact: compact)
+                    .frame(width: geo.size.width, height: geo.size.height)
+                if compact == false {
+                    Button {
+                        session.selectedTab = .trackpad
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 15, weight: .bold))
+                            .frame(width: KamihiUI.controlHeight, height: KamihiUI.controlHeight)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.white)
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .padding(12)
+                    .accessibilityLabel("Leave controller")
+                }
             }
         }
         .onDisappear {
             session.sendController(.neutral)
         }
     }
-
-    private var rotatePrompt: some View {
-        VStack(spacing: 18) {
-            Spacer()
-            Image(systemName: "gamecontroller.fill")
-                .font(.system(size: 56, weight: .medium))
-                .foregroundStyle(.white.opacity(0.9))
-            Text("Controller Mode")
-                .font(.system(size: 22, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white)
-            Text("Rotate your iPhone to play")
-                .font(KamihiUI.bodyFont)
-                .foregroundStyle(.white.opacity(0.65))
-            Label("Rotate", systemImage: "rotate.right")
-                .font(KamihiUI.bodyFont)
-                .foregroundStyle(.white)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 12)
-                .glassEffect(.regular.interactive(), in: .capsule)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Controller mode. Rotate your iPhone to play.")
-    }
-
-    private var immersivePad: some View {
-        ZStack(alignment: .topLeading) {
-            ControllerPadView(session: session)
-                .ignoresSafeArea(edges: .bottom)
-            Button {
-                session.selectedTab = .trackpad
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 15, weight: .bold))
-                    .frame(width: KamihiUI.controlHeight, height: KamihiUI.controlHeight)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.white)
-            .glassEffect(.regular.interactive(), in: .circle)
-            .padding(12)
-            .accessibilityLabel("Leave controller")
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
 }
 
 struct ControllerPadView: UIViewRepresentable {
     let session: RemoteSession
+    var compact: Bool = false
 
     func makeUIView(context: Context) -> ControllerUIView {
         let view = ControllerUIView()
@@ -81,6 +48,7 @@ struct ControllerPadView: UIViewRepresentable {
 
     func updateUIView(_ uiView: ControllerUIView, context: Context) {
         uiView.session = session
+        uiView.compactLayout = compact
         uiView.layout = session.preferences.controllerLayout
         uiView.deadZone = CGFloat(session.preferences.stickDeadZone)
         uiView.sensitivity = CGFloat(session.preferences.stickSensitivity)
@@ -91,6 +59,7 @@ struct ControllerPadView: UIViewRepresentable {
 
 final class ControllerUIView: UIView {
     weak var session: RemoteSession?
+    var compactLayout = false
     var layout: ControllerLayout = .standard
     var deadZone: CGFloat = 0.12
     var sensitivity: CGFloat = 1
@@ -139,84 +108,111 @@ final class ControllerUIView: UIView {
         drawButtonCluster(ctx)
         drawShoulders(ctx)
         drawCenter(ctx)
-        if layout == .fps || layout == .racing {
+        if layout == .fps || layout == .racing, compactLayout == false {
             drawStick(in: rightStickFrame, value: CGPoint(x: CGFloat(state.rightX), y: CGFloat(state.rightY)), ctx: ctx)
         }
     }
 
-    // MARK: - Proportional layout regions
+    /// Usable drawing area — respects safe area and keeps controls on-screen.
+    private var layoutBounds: CGRect {
+        let inset = safeAreaInsets
+        let pad: CGFloat = compactLayout ? 6 : 10
+        return bounds
+            .inset(by: inset)
+            .insetBy(dx: pad, dy: pad)
+    }
 
     private var leftControlsRegion: CGRect {
-        CGRect(x: bounds.minX, y: bounds.minY + bounds.height * 0.18,
-               width: bounds.width * 0.38, height: bounds.height * 0.62)
+        let b = layoutBounds
+        if compactLayout {
+            return CGRect(x: b.minX, y: b.midY - b.height * 0.22,
+                          width: b.width * 0.42, height: b.height * 0.44)
+        }
+        return CGRect(x: b.minX, y: b.minY + b.height * 0.16,
+                      width: b.width * 0.36, height: b.height * 0.58)
     }
 
     private var rightControlsRegion: CGRect {
-        CGRect(x: bounds.maxX - bounds.width * 0.38, y: bounds.minY + bounds.height * 0.18,
-               width: bounds.width * 0.38, height: bounds.height * 0.62)
+        let b = layoutBounds
+        if compactLayout {
+            return CGRect(x: b.maxX - b.width * 0.42, y: b.midY - b.height * 0.22,
+                          width: b.width * 0.42, height: b.height * 0.44)
+        }
+        return CGRect(x: b.maxX - b.width * 0.36, y: b.minY + b.height * 0.16,
+                      width: b.width * 0.36, height: b.height * 0.58)
     }
 
     private var shoulderRegion: CGRect {
-        CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: bounds.height * 0.22)
+        let b = layoutBounds
+        return CGRect(x: b.minX, y: b.minY, width: b.width, height: b.height * (compactLayout ? 0.18 : 0.20))
     }
 
     private var centerRegion: CGRect {
-        CGRect(x: bounds.midX - bounds.width * 0.18, y: bounds.maxY - bounds.height * 0.22,
-               width: bounds.width * 0.36, height: bounds.height * 0.18)
+        let b = layoutBounds
+        let h = compactLayout ? b.height * 0.14 : b.height * 0.16
+        return CGRect(x: b.midX - b.width * 0.20, y: b.maxY - h - 4,
+                      width: b.width * 0.40, height: h)
     }
 
     private var leftStickFrame: CGRect {
-        let side = min(max(110, leftControlsRegion.width * 0.72), 160)
+        let maxSide = compactLayout ? 100.0 : 150.0
+        let minSide = compactLayout ? 72.0 : 100.0
+        let side = min(max(minSide, leftControlsRegion.width * 0.78), maxSide)
         let x = leftControlsRegion.midX - side / 2
         let y = leftControlsRegion.midY - side / 2
-        return CGRect(x: x, y: y, width: side, height: side)
+        return clampFrame(CGRect(x: x, y: y, width: side, height: side))
     }
 
     private var rightStickFrame: CGRect {
-        let side = min(max(90, rightControlsRegion.width * 0.48), 130)
-        return CGRect(
-            x: rightControlsRegion.minX + 12,
-            y: rightControlsRegion.maxY - side - 8,
+        let side = min(max(80, rightControlsRegion.width * 0.44), 120)
+        let frame = CGRect(
+            x: rightControlsRegion.minX + 8,
+            y: rightControlsRegion.maxY - side - 6,
             width: side,
             height: side
         )
+        return clampFrame(frame)
     }
 
     private var buttonFrames: [(ControllerButton, CGRect)] {
-        let r = min(max(42, rightControlsRegion.width * 0.22), 54)
-        let gap = r * 0.85
-        let cx = rightControlsRegion.midX + rightControlsRegion.width * 0.08
-        let cy = rightControlsRegion.midY - rightControlsRegion.height * 0.06
+        let r = min(max(compactLayout ? 34 : 40, rightControlsRegion.width * 0.24), compactLayout ? 44 : 52)
+        let gap = r * 0.82
+        let cx = rightControlsRegion.midX
+        let cy = rightControlsRegion.midY
         return [
-            (.y, CGRect(x: cx - r / 2, y: cy - gap - r / 2, width: r, height: r)),
-            (.x, CGRect(x: cx - gap - r / 2, y: cy - r / 2, width: r, height: r)),
-            (.b, CGRect(x: cx + gap - r / 2, y: cy - r / 2, width: r, height: r)),
-            (.a, CGRect(x: cx - r / 2, y: cy + gap - r / 2, width: r, height: r))
+            (.y, clampFrame(CGRect(x: cx - r / 2, y: cy - gap - r / 2, width: r, height: r))),
+            (.x, clampFrame(CGRect(x: cx - gap - r / 2, y: cy - r / 2, width: r, height: r))),
+            (.b, clampFrame(CGRect(x: cx + gap - r / 2, y: cy - r / 2, width: r, height: r))),
+            (.a, clampFrame(CGRect(x: cx - r / 2, y: cy + gap - r / 2, width: r, height: r)))
         ]
     }
 
     private var l1Frame: CGRect {
-        CGRect(x: shoulderRegion.minX + 16, y: shoulderRegion.minY + 10,
-               width: shoulderRegion.width * 0.18, height: 36)
+        let w = min(shoulderRegion.width * 0.20, 88)
+        return clampFrame(CGRect(x: shoulderRegion.minX + 4, y: shoulderRegion.minY + 4, width: w, height: 32))
     }
     private var r1Frame: CGRect {
-        CGRect(x: shoulderRegion.maxX - shoulderRegion.width * 0.18 - 16, y: shoulderRegion.minY + 10,
-               width: shoulderRegion.width * 0.18, height: 36)
+        let w = min(shoulderRegion.width * 0.20, 88)
+        return clampFrame(CGRect(x: shoulderRegion.maxX - w - 4, y: shoulderRegion.minY + 4, width: w, height: 32))
     }
     private var l2Frame: CGRect {
-        CGRect(x: l1Frame.minX, y: l1Frame.maxY + 8, width: l1Frame.width, height: 28)
+        clampFrame(CGRect(x: l1Frame.minX, y: l1Frame.maxY + 4, width: l1Frame.width, height: 24))
     }
     private var r2Frame: CGRect {
-        CGRect(x: r1Frame.minX, y: r1Frame.maxY + 8, width: r1Frame.width, height: 28)
+        clampFrame(CGRect(x: r1Frame.minX, y: r1Frame.maxY + 4, width: r1Frame.width, height: 24))
     }
     private var viewFrame: CGRect {
-        CGRect(x: centerRegion.minX, y: centerRegion.midY - 18, width: 52, height: 36)
+        clampFrame(CGRect(x: centerRegion.minX, y: centerRegion.midY - 16, width: 46, height: 32))
     }
     private var menuFrame: CGRect {
-        CGRect(x: centerRegion.midX - 26, y: centerRegion.midY - 18, width: 52, height: 36)
+        clampFrame(CGRect(x: centerRegion.midX - 23, y: centerRegion.midY - 16, width: 46, height: 32))
     }
     private var startFrame: CGRect {
-        CGRect(x: centerRegion.maxX - 52, y: centerRegion.midY - 18, width: 52, height: 36)
+        clampFrame(CGRect(x: centerRegion.maxX - 46, y: centerRegion.midY - 16, width: 46, height: 32))
+    }
+
+    private func clampFrame(_ frame: CGRect) -> CGRect {
+        layoutBounds.intersection(frame)
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -248,13 +244,13 @@ final class ControllerUIView: UIView {
             return
         }
         guard began else { return }
-        if leftStickFrame.insetBy(dx: -12, dy: -12).contains(point) {
+        if leftStickFrame.insetBy(dx: -10, dy: -10).contains(point) {
             identities[key] = .stick
             stickTouch = key
             update(.stick, at: point)
             return
         }
-        if (layout == .fps || layout == .racing), rightStickFrame.insetBy(dx: -8, dy: -8).contains(point) {
+        if (layout == .fps || layout == .racing), compactLayout == false, rightStickFrame.insetBy(dx: -8, dy: -8).contains(point) {
             identities[key] = .rightStick
             rightStickTouch = key
             update(.rightStick, at: point)
@@ -267,7 +263,7 @@ final class ControllerUIView: UIView {
         if viewFrame.contains(point) { press(.view, key: key); return }
         if menuFrame.contains(point) { press(.menu, key: key); return }
         if startFrame.contains(point) { press(.start, key: key); return }
-        for (button, frame) in buttonFrames where frame.insetBy(dx: -8, dy: -8).contains(point) {
+        for (button, frame) in buttonFrames where frame.insetBy(dx: -6, dy: -6).contains(point) {
             press(button, key: key)
             return
         }
@@ -318,6 +314,7 @@ final class ControllerUIView: UIView {
     }
 
     private func stickValue(_ point: CGPoint, in frame: CGRect) -> CGPoint {
+        guard frame.width > 1, frame.height > 1 else { return .zero }
         let center = CGPoint(x: frame.midX, y: frame.midY)
         var dx = (point.x - center.x) / (frame.width / 2)
         var dy = (point.y - center.y) / (frame.height / 2)
@@ -357,9 +354,10 @@ final class ControllerUIView: UIView {
     }
 
     private func drawStick(in frame: CGRect, value: CGPoint, ctx: CGContext) {
+        guard frame.width > 4, frame.height > 4 else { return }
         UIColor.white.withAlphaComponent(0.12).setStroke()
         ctx.setLineWidth(2)
-        ctx.strokeEllipse(in: frame.insetBy(dx: 6, dy: 6))
+        ctx.strokeEllipse(in: frame.insetBy(dx: 4, dy: 4))
         let knob = CGSize(width: frame.width * 0.42, height: frame.height * 0.42)
         let x = frame.midX + value.x * (frame.width / 2 - knob.width / 2) - knob.width / 2
         let y = frame.midY + value.y * (frame.height / 2 - knob.height / 2) - knob.height / 2
@@ -375,12 +373,13 @@ final class ControllerUIView: UIView {
             .x: UIColor(red: 0.45, green: 0.42, blue: 0.95, alpha: 0.85),
             .y: UIColor(red: 0.95, green: 0.78, blue: 0.28, alpha: 0.85)
         ]
-        for (button, frame) in buttonFrames {
+        for (button, frame) in buttonFrames where frame.width > 4 {
             (state.isDown(button) ? colors[button]?.withAlphaComponent(1) : colors[button]?.withAlphaComponent(0.45))?.setFill()
             ctx.fillEllipse(in: frame)
             let text = labels[button] ?? ""
+            let fontSize: CGFloat = compactLayout ? 13 : 16
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: 16, weight: .bold),
+                .font: UIFont.systemFont(ofSize: fontSize, weight: .bold),
                 .foregroundColor: UIColor.white
             ]
             let size = text.size(withAttributes: attrs)
@@ -402,11 +401,13 @@ final class ControllerUIView: UIView {
     }
 
     private func drawPill(_ frame: CGRect, title: String, down: Bool, ctx: CGContext) {
-        let path = UIBezierPath(roundedRect: frame, cornerRadius: 12)
+        guard frame.width > 4, frame.height > 4 else { return }
+        let path = UIBezierPath(roundedRect: frame, cornerRadius: 10)
         UIColor.white.withAlphaComponent(down ? 0.32 : 0.12).setFill()
         path.fill()
+        let fontSize: CGFloat = compactLayout ? 10 : 12
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 12, weight: .semibold),
+            .font: UIFont.systemFont(ofSize: fontSize, weight: .semibold),
             .foregroundColor: UIColor.white
         ]
         let size = title.size(withAttributes: attrs)

@@ -17,7 +17,8 @@ enum GestureEngineTests {
         slowScroll()
         fastScrollMomentum()
         frameRateIndependence()
-        pinchLock()
+        horizontalThreeFingerSwipe()
+        pinchDisabled()
         fingerCountTransitions()
         asyncThreeFingerRelease()
         threeFingerCumulative()
@@ -44,9 +45,15 @@ enum GestureEngineTests {
 
     private static func oneFingerTap() {
         let g = engine()
+        g.preferences.tapToClick = true
         _ = g.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 80, y: 80))], timestamp: 2, phase: .began, in: size)
         let ended = g.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 81, y: 80))], timestamp: 2.08, phase: .ended, in: size)
-        precondition(ended.commands.contains(.click), "tap to click")
+        precondition(ended.commands.contains(.click), "tap to click when enabled")
+        let g2 = engine()
+        precondition(g2.preferences.tapToClick == false, "tap to click off by default")
+        _ = g2.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 80, y: 80))], timestamp: 2, phase: .began, in: size)
+        let noClick = g2.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 81, y: 80))], timestamp: 2.08, phase: .ended, in: size)
+        precondition(noClick.commands.contains(.click) == false, "single tap must not click by default")
     }
 
     private static func doubleClick() {
@@ -147,14 +154,34 @@ enum GestureEngineTests {
         precondition(diff < 0.08, "Frame rate independent physics test failed: 60Hz=\(distance60) vs 120Hz=\(distance120)")
     }
 
-    private static func pinchLock() {
+    private static func pinchDisabled() {
         let g = engine()
         let a = [FingerSample(id: 1, point: CGPoint(x: 140, y: 200)), FingerSample(id: 2, point: CGPoint(x: 180, y: 200))]
         _ = g.ingest(samples: a, timestamp: 7, phase: .began, in: size)
         let b = [FingerSample(id: 1, point: CGPoint(x: 80, y: 200)), FingerSample(id: 2, point: CGPoint(x: 260, y: 200))]
         let moved = g.ingest(samples: b, timestamp: 7.05, phase: .moved, in: size)
         let zoomed = moved.commands.contains { if case .zoom = $0 { return true } else { return false } }
-        precondition(zoomed || moved.debug.scrollIntent == "pinch" || moved.debug.mode == "pinching", "pinch lock")
+        precondition(zoomed == false, "pinch must not zoom")
+        precondition(moved.debug.scrollIntent != "pinch", "pinch intent disabled")
+    }
+
+    private static func horizontalThreeFingerSwipe() {
+        let g = engine()
+        let start = [
+            FingerSample(id: 1, point: CGPoint(x: 80, y: 200)),
+            FingerSample(id: 2, point: CGPoint(x: 120, y: 200)),
+            FingerSample(id: 3, point: CGPoint(x: 160, y: 200))
+        ]
+        _ = g.ingest(samples: start, timestamp: 10, phase: .began, in: size)
+        let swiped = start.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x + 40, y: $0.point.y)) }
+        let locked = g.ingest(samples: swiped, timestamp: 10.06, phase: .moved, in: size)
+        precondition(g.mode == .threeFingerSwipe, "horizontal three finger swipe locks")
+        precondition(locked.commands.contains(.system(.nextDesktop)), "swipe right fires next desktop")
+        let left = start.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x - 40, y: $0.point.y)) }
+        let g2 = engine()
+        _ = g2.ingest(samples: start, timestamp: 11, phase: .began, in: size)
+        let lockedLeft = g2.ingest(samples: left, timestamp: 11.06, phase: .moved, in: size)
+        precondition(lockedLeft.commands.contains(.system(.previousDesktop)), "swipe left fires previous desktop")
     }
 
     private static func fingerCountTransitions() {
@@ -162,11 +189,11 @@ enum GestureEngineTests {
         _ = g.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 100, y: 100))], timestamp: 8, phase: .began, in: size)
         precondition(g.mode == .tapCandidate || g.mode == .pointer)
         _ = g.ingest(samples: [FingerSample(id: 2, point: CGPoint(x: 140, y: 110))], timestamp: 8.02, phase: .began, in: size)
-        precondition(g.mode == .twoFingerCandidate || g.mode == .scrolling || g.mode == .pinching)
+        precondition(g.mode == .twoFingerCandidate || g.mode == .scrolling)
         _ = g.ingest(samples: [FingerSample(id: 3, point: CGPoint(x: 180, y: 120))], timestamp: 8.04, phase: .began, in: size)
         precondition(g.mode == .threeFingerCandidate)
         _ = g.ingest(samples: [FingerSample(id: 3, point: CGPoint(x: 180, y: 120))], timestamp: 8.05, phase: .ended, in: size)
-        precondition(g.mode == .twoFingerCandidate || g.mode == .scrolling || g.mode == .pinching)
+        precondition(g.mode == .twoFingerCandidate || g.mode == .scrolling)
         _ = g.ingest(samples: [FingerSample(id: 2, point: CGPoint(x: 140, y: 110))], timestamp: 8.06, phase: .ended, in: size)
         precondition(g.mode == .pointer || g.mode == .tapCandidate || g.mode == .dragging)
     }

@@ -21,7 +21,7 @@ struct AppPreferences: Codable, Equatable {
     var scrollSpeed = 1.0
     var scrollFeel: ScrollFeel = .macLike
     var scrollMomentum = 0.93
-    var tapToClick = true
+    var tapToClick = false
     var twoFingerSecondaryClick = true
     var hapticLevel: HapticLevel = .normal
     var orientation: OrientationMode = .automatic
@@ -66,7 +66,7 @@ struct AppPreferences: Codable, Equatable {
 
     var effectiveScrollGain: Double {
         switch scrollFeel {
-        case .macLike: return 1.15 * scrollSpeed
+        case .macLike: return 1.35 * scrollSpeed
         case .direct: return 1.0 * scrollSpeed
         case .custom: return scrollSpeed
         }

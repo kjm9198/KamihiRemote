@@ -206,10 +206,10 @@ struct TouchAnimationView: View {
     }
 
     private func orbSize(count: Int) -> CGFloat {
-        if count == 1 { return state.isDragging ? 104 : 88 }
-        if count == 2 { return 68 }
-        if count == 3 { return 56 }
-        return 48
+        if count == 1 { return state.isDragging ? 52 : 44 }
+        if count == 2 { return 56 }
+        if count == 3 { return 48 }
+        return 42
     }
 
     private var groupStretch: CGFloat {

@@ -62,6 +62,7 @@ struct RootView: View {
                 }
             }
             .frame(width: contentSize.width, height: contentSize.height, alignment: .topLeading)
+            .clipped()
             .padding(.leading, insets.leading)
             .padding(.trailing, insets.trailing)
             .padding(.top, insets.top)
@@ -109,9 +110,9 @@ struct RootView: View {
     }
 
     private func landscapeShell(size: CGSize) -> some View {
-        let railWidth = min(84, max(64, size.width * 0.11))
-        return HStack(alignment: .top, spacing: 10) {
-            VStack(spacing: 10) {
+        let railWidth = min(72, max(52, size.width * 0.09))
+        return HStack(alignment: .top, spacing: 6) {
+            VStack(spacing: 8) {
                 compactHeader
                     .frame(maxWidth: .infinity, alignment: .leading)
                 ConnectionStatusChip()
@@ -123,9 +124,10 @@ struct RootView: View {
             .frame(width: railWidth)
             screenBody
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 6)
         .frame(width: size.width, height: size.height)
     }
 
