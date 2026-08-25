@@ -208,7 +208,7 @@ final class HostSession: ObservableObject {
                 return
             }
             pendingPairing = PendingPairing(deviceID: deviceID, deviceName: deviceName, publicKey: publicKey, code: code, connection: connection)
-            NSApp.activate(ignoringOtherApps: true)
+            NSApp.activate()
         case .requestAppList:
             let apps = AppCatalog.launchableApplications()
             tcp.send(.appListBegin(count: apps.count), token: pairingCode, to: connection)
@@ -240,6 +240,17 @@ final class HostSession: ObservableObject {
         case .shortcut(let spec):
             let ok = InputEngine.shortcut(spec)
             acknowledge(kind: DeckButton.Kind.shortcut.rawValue, payload: spec, success: ok, to: connection)
+        case .system(let action) where action == .previousDesktop || action == .nextDesktop:
+            SpaceSwitchVerifier.perform(action) { [weak self] success in
+                Task { @MainActor in
+                    self?.acknowledge(
+                        kind: DeckButton.Kind.system.rawValue,
+                        payload: action.rawValue,
+                        success: success,
+                        to: connection
+                    )
+                }
+            }
         case .system(let action):
             let ok = InputEngine.perform(action)
             acknowledge(kind: DeckButton.Kind.system.rawValue, payload: action.rawValue, success: ok, to: connection)
