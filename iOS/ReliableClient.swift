@@ -36,20 +36,29 @@ final class ReliableClient {
         parameters.includePeerToPeer = true
         let connection = NWConnection(to: endpoint, using: parameters)
         self.connection = connection
-        connection.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            if case .ready = state {
-                self.isReady = true
-                if let host = NetworkEndpoint.hostString(from: connection.currentPath?.remoteEndpoint) {
-                    self.onPathResolved?(host)
+        connection.stateUpdateHandler = { [weak self, weak connection] state in
+            guard let self, let connection else { return }
+            self.queue.async {
+                switch state {
+                case .ready:
+                    self.isReady = true
+                    if let host = NetworkEndpoint.hostString(from: connection.currentPath?.remoteEndpoint) {
+                        self.onPathResolved?(host)
+                    }
+                    self.flushPending()
+                    self.startHeartbeat()
+                case .waiting, .failed, .cancelled:
+                    self.isReady = false
+                    self.heartbeat?.cancel()
+                    self.heartbeat = nil
+                default:
+                    break
                 }
-                self.flushPending()
-                self.startHeartbeat()
+                self.onState?(state)
             }
-            self.onState?(state)
         }
         connection.start(queue: queue)
-        receive()
+        receive(from: connection)
     }
 
     func send(_ command: RemoteCommand) {
@@ -58,6 +67,11 @@ final class ReliableClient {
             if self.isReady {
                 self.write(command)
             } else {
+                // Keep only a bounded amount of reliable work while reconnecting.
+                // Never let stale commands grow without limit.
+                if self.pendingCommands.count >= 64 {
+                    self.pendingCommands.removeFirst(self.pendingCommands.count - 63)
+                }
                 self.pendingCommands.append(command)
             }
         }
@@ -66,6 +80,7 @@ final class ReliableClient {
     func stop() {
         heartbeat?.cancel()
         heartbeat = nil
+        connection?.stateUpdateHandler = nil
         connection?.cancel()
         connection = nil
         buffer.removeAll()
@@ -75,15 +90,26 @@ final class ReliableClient {
     }
 
     private func flushPending() {
+        guard isReady else { return }
         let queued = pendingCommands
         pendingCommands.removeAll()
         queued.forEach(write)
     }
 
     private func write(_ command: RemoteCommand) {
-        guard let connection else { return }
+        guard let connection, isReady else {
+            pendingCommands.append(command)
+            return
+        }
         let data = RemotePacket.encodeV1(token: pairingCode, command: command)
-        connection.send(content: data, completion: .contentProcessed { _ in })
+        connection.send(content: data, completion: .contentProcessed { [weak self, weak connection] error in
+            guard let self, let connection else { return }
+            if let error {
+                self.queue.async {
+                    self.handleBrokenConnection(connection, error: error)
+                }
+            }
+        })
     }
 
     private func startHeartbeat() {
@@ -91,7 +117,7 @@ final class ReliableClient {
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + 0.4, repeating: RemoteConstants.heartbeatInterval)
         timer.setEventHandler { [weak self] in
-            guard let self else { return }
+            guard let self, self.isReady else { return }
             self.heartbeatID += 1
             let id = self.heartbeatID
             self.pendingHeartbeat = (id, Date())
@@ -101,17 +127,45 @@ final class ReliableClient {
         heartbeat = timer
     }
 
-    private func receive() {
-        connection?.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, isComplete, error in
-            guard let self else { return }
-            if let data, !data.isEmpty {
-                self.buffer.append(data)
-                self.drain()
-            }
-            if error == nil, isComplete == false, self.connection != nil {
-                self.receive()
+    private func receive(from sourceConnection: NWConnection) {
+        sourceConnection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self, weak sourceConnection] data, _, isComplete, error in
+            guard let self, let sourceConnection else { return }
+            self.queue.async {
+                // Ignore callbacks from a connection that has already been replaced.
+                guard self.connection === sourceConnection else { return }
+
+                if let data, !data.isEmpty {
+                    self.buffer.append(data)
+                    self.drain()
+                }
+
+                if let error {
+                    self.handleBrokenConnection(sourceConnection, error: error)
+                    return
+                }
+
+                if isComplete {
+                    self.handleBrokenConnection(sourceConnection, error: .posix(.ECONNRESET))
+                    return
+                }
+
+                if self.connection === sourceConnection {
+                    self.receive(from: sourceConnection)
+                }
             }
         }
+    }
+
+    private func handleBrokenConnection(_ broken: NWConnection, error: NWError) {
+        guard connection === broken else { return }
+        isReady = false
+        heartbeat?.cancel()
+        heartbeat = nil
+        pendingHeartbeat = nil
+        broken.stateUpdateHandler = nil
+        broken.cancel()
+        connection = nil
+        onState?(.failed(error))
     }
 
     private func drain() {
