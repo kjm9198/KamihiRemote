@@ -95,9 +95,28 @@ final class RemoteSession: ObservableObject, CommandSending {
         #if DEBUG
         GestureEngineTests.runSelfChecks()
         _ = SessionCrypto.runSelfChecks()
+        applyUITestLaunchOverrides()
         #endif
         transport.noteWiredUnsupported()
     }
+
+    #if DEBUG
+    /// Simulator smoke-test hooks: `-KamihiUITestTab controller|present|deck` and `-KamihiUITestKeyboard`.
+    private func applyUITestLaunchOverrides() {
+        let args = ProcessInfo.processInfo.arguments
+        if let index = args.firstIndex(of: "-KamihiUITestTab"), index + 1 < args.count {
+            switch args[index + 1].lowercased() {
+            case "controller": selectedTab = .controller
+            case "present", "slides": selectedTab = .slides
+            case "deck": selectedTab = .deck
+            default: break
+            }
+        }
+        if args.contains("-KamihiUITestKeyboard") {
+            showsKeyboard = true
+        }
+    }
+    #endif
 
     var isConnected: Bool { connectionState == .connected }
 
