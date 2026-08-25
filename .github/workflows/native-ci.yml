@@ -20,7 +20,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: native-ci-v2-${{ github.ref }}
+  group: native-ci-v3-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -68,6 +68,7 @@ jobs:
             build
 
       - name: Simulator UI smoke screenshots
+        timeout-minutes: 4
         env:
           SIM: iPhone 17
           DERIVED: /tmp/KamihiDerivedAudit
