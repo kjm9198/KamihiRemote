@@ -55,19 +55,24 @@ jobs:
             build
 
       - name: Build iOS app for Simulator
+        env:
+          DERIVED: /tmp/KamihiDerivedAudit
         run: |
           xcodebuild \
             -project KamihiRemote.xcodeproj \
             -scheme KamihiRemote \
             -configuration Debug \
-            -destination 'generic/platform=iOS Simulator' \
+            -destination 'platform=iOS Simulator,name=iPhone 17' \
+            -derivedDataPath "$DERIVED" \
             CODE_SIGNING_ALLOWED=NO \
             build
 
       - name: Simulator UI smoke screenshots
         env:
           SIM: iPhone 17
+          DERIVED: /tmp/KamihiDerivedAudit
           OUT: /tmp/kamihi-ui-shots
+          SKIP_BUILD: '1'
         run: scripts/sim-ui-smoke.sh
 
       - name: Upload UI smoke evidence
