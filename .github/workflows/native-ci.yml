@@ -10,7 +10,6 @@ on:
       - 'scripts/**'
       - '.github/workflows/native-ci.yml'
   push:
-    branches: [main]
     paths:
       - 'iOS/**'
       - 'macOS/**'
