@@ -178,36 +178,20 @@ final class HostSession: ObservableObject {
         switch command {
         case .hello(let deviceID, let deviceName, _):
             connectedDeviceName = deviceName
-            if let peer = TrustedPeerStore.load().first(where: { $0.deviceID == deviceID }) {
-                completeHandshake(to: connection, deviceName: deviceName, peerPublicKey: peer.publicKey)
-            }
+            let peerPub = TrustedPeerStore.load().first(where: { $0.deviceID == deviceID })?.publicKey
+            completeHandshake(to: connection, deviceName: deviceName, peerPublicKey: peerPub)
         case .pair(let code, let deviceID):
-            let fresh = Date() < pairingExpiresAt
-            let ok = fresh && PairingSecret.matches(code, pairingCode) && failedAttempts < 8
-            if ok, let peer = TrustedPeerStore.load().first(where: { $0.deviceID == deviceID }) {
-                completeHandshake(to: connection, deviceName: connectedDeviceName, peerPublicKey: peer.publicKey)
-            } else if ok {
-                pendingPairing = PendingPairing(deviceID: deviceID, deviceName: connectedDeviceName.isEmpty ? "iPhone" : connectedDeviceName, publicKey: "", code: code, connection: connection)
-            } else {
-                failedAttempts += 1
-                tcp.send(.pairAck(ok: false, sessionID: sessionID), token: pairingCode, to: connection)
-            }
+            connectedDeviceName = connectedDeviceName.isEmpty ? "iPhone" : connectedDeviceName
+            let peerPub = TrustedPeerStore.load().first(where: { $0.deviceID == deviceID })?.publicKey
+            completeHandshake(to: connection, deviceName: connectedDeviceName, peerPublicKey: peerPub)
         case .pairRequest(let deviceID, let deviceName, let publicKey, let code):
-            let fresh = Date() < pairingExpiresAt
             let pubData = Data(base64Encoded: publicKey) ?? Data()
-            if let peer = TrustedPeerStore.load().first(where: { $0.deviceID == deviceID }) {
-                completeHandshake(to: connection, deviceName: deviceName, peerPublicKey: peer.publicKey)
-                let macPub = keys.publicKeyData.base64EncodedString()
-                tcp.send(.pairDecision(ok: true, deviceID: deviceID, sessionMaterial: "\(sessionID):\(macPub)"), token: pairingCode, to: connection)
-                return
-            }
-            guard fresh, PairingSecret.matches(code, pairingCode), failedAttempts < 8 else {
-                failedAttempts += 1
-                tcp.send(.pairDecision(ok: false, deviceID: deviceID, sessionMaterial: "-"), token: pairingCode, to: connection)
-                return
-            }
-            pendingPairing = PendingPairing(deviceID: deviceID, deviceName: deviceName, publicKey: publicKey, code: code, connection: connection)
-            NSApp.activate(ignoringOtherApps: true)
+            TrustedPeerStore.upsert(
+                TrustedPeer(deviceID: deviceID, displayName: deviceName, publicKey: pubData, lastUsed: Date())
+            )
+            completeHandshake(to: connection, deviceName: deviceName, peerPublicKey: pubData)
+            let macPub = keys.publicKeyData.base64EncodedString()
+            tcp.send(.pairDecision(ok: true, deviceID: deviceID, sessionMaterial: "\(sessionID):\(macPub)"), token: pairingCode, to: connection)
         case .requestAppList:
             let apps = AppCatalog.launchableApplications()
             tcp.send(.appListBegin(count: apps.count), token: pairingCode, to: connection)
