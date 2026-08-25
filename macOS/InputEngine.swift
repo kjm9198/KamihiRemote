@@ -156,15 +156,21 @@ enum InputEngine {
         case .none:
             return true
         case .missionControl:
+            // Prefer opening Mission Control.app — more reliable than Control+Up when
+            // the user remapped Mission Control shortcuts.
+            if openMissionControlApp() { return true }
             return hotkey(key: CGKeyCode(kVK_UpArrow), flags: .maskControl)
         case .appExpose:
-            return hotkey(key: CGKeyCode(kVK_DownArrow), flags: .maskControl)
+            // Control+Down is Application Windows / App Exposé by default.
+            if hotkey(key: CGKeyCode(kVK_DownArrow), flags: .maskControl) { return true }
+            return hotkey(key: CGKeyCode(kVK_F10), flags: [])
         case .previousDesktop:
             return hotkey(key: CGKeyCode(kVK_LeftArrow), flags: .maskControl)
         case .nextDesktop:
             return hotkey(key: CGKeyCode(kVK_RightArrow), flags: .maskControl)
         case .showDesktop:
-            return hotkey(key: CGKeyCode(kVK_F11), flags: [])
+            if hotkey(key: CGKeyCode(kVK_F11), flags: []) { return true }
+            return hotkey(key: CGKeyCode(kVK_ANSI_D), flags: [.maskCommand, .maskControl])
         case .launchpad:
             return hotkey(key: CGKeyCode(kVK_F4), flags: [])
         case .playPause:
@@ -172,6 +178,17 @@ enum InputEngine {
         case .customShortcut:
             return true
         }
+    }
+
+    @discardableResult
+    private static func openMissionControlApp() -> Bool {
+        let path = "/System/Applications/Mission Control.app"
+        let url = URL(fileURLWithPath: path)
+        guard FileManager.default.fileExists(atPath: path) else { return false }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+        return true
     }
 
     @discardableResult

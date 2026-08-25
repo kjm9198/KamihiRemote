@@ -309,15 +309,17 @@ struct TrackpadCanvas: View {
                 }
                 VStack {
                     Spacer()
-                    HStack {
+                    HStack(spacing: 8) {
                         precisionButton
+                        gestureProbe("MC", "Mission Control") { session.send(.system(.missionControl)) }
+                        gestureProbe("Exposé", "App Exposé") { session.send(.system(.appExpose)) }
                         if session.selectedTab != .trackpad {
                             pointerPadToggle
                         }
                         if session.selectedTab == .slides {
                             laserButton
                         }
-                        Spacer()
+                        Spacer(minLength: 0)
                     }
                     .padding(12)
                 }
@@ -374,6 +376,19 @@ struct TrackpadCanvas: View {
         .glassEffect(.regular.interactive(), in: .capsule)
         .accessibilityLabel("Presentation laser")
         .accessibilityValue(session.pointerMode == .presentationLaser ? "On" : "Off")
+    }
+
+    private func gestureProbe(_ title: String, _ accessibility: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .accessibilityLabel(accessibility)
     }
 
     private var debugHUD: some View {

@@ -173,17 +173,52 @@ final class GestureEngine {
 
         var commands = takeQueued()
         let ids = Set(fingers.keys)
-        if ids != lastFingerIDs && mode != .threeFingerSwipe && mode != .fourFingerSwipe {
-            let cancelScroll = applyCount(fingers.count, timestamp: timestamp, points: points)
-            commands.append(contentsOf: cancelScroll)
+        if ids != lastFingerIDs {
+            // Sticky multi-finger: once we've seen 3+ contacts, do not demote to
+            // 2-finger scroll if iOS briefly drops a touch before the swipe locks.
+            let stickyThree = maxClusterCount >= 3
+                && fingers.count > 0
+                && fingers.count < 3
+                && (mode == .threeFingerCandidate || mode == .threeFingerSwipe || mode == .twoFingerCandidate || mode == .scrolling)
+            let stickyFour = maxClusterCount >= 4
+                && fingers.count > 0
+                && fingers.count < 4
+                && (mode == .fourFingerCandidate || mode == .fourFingerSwipe || mode == .threeFingerCandidate || mode == .threeFingerSwipe)
+            if stickyFour {
+                if mode != .fourFingerSwipe { mode = .fourFingerCandidate }
+                lastFingerIDs = ids
+                lastCentroid = center
+                lastTimestamp = timestamp
+                return GestureOutput(
+                    commands: commands,
+                    animation: makeAnimation(fingers: currentAnimationFingers(), size: size, down: true, dragging: false),
+                    debug: makeDebug()
+                )
+            }
+            if stickyThree {
+                if mode != .threeFingerSwipe { mode = .threeFingerCandidate }
+                lastFingerIDs = ids
+                lastCentroid = center
+                lastTimestamp = timestamp
+                return GestureOutput(
+                    commands: commands,
+                    animation: makeAnimation(fingers: currentAnimationFingers(), size: size, down: true, dragging: false),
+                    debug: makeDebug()
+                )
+            }
+            if mode != .threeFingerSwipe && mode != .fourFingerSwipe {
+                let cancelScroll = applyCount(fingers.count, timestamp: timestamp, points: points)
+                commands.append(contentsOf: cancelScroll)
+                lastFingerIDs = ids
+                lastCentroid = center
+                lastTimestamp = timestamp
+                return GestureOutput(
+                    commands: commands,
+                    animation: makeAnimation(fingers: currentAnimationFingers(), size: size, down: true, dragging: mouseIsDown),
+                    debug: makeDebug()
+                )
+            }
             lastFingerIDs = ids
-            lastCentroid = center
-            lastTimestamp = timestamp
-            return GestureOutput(
-                commands: commands,
-                animation: makeAnimation(fingers: currentAnimationFingers(), size: size, down: true, dragging: mouseIsDown),
-                debug: makeDebug()
-            )
         }
 
         switch mode {
