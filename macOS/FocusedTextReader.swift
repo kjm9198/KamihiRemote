@@ -13,18 +13,32 @@ enum FocusedTextReader {
         if isSecure(ui) {
             return (.secure, "")
         }
+
+        var role: CFTypeRef?
+        AXUIElementCopyAttributeValue(ui, kAXRoleAttribute as CFString, &role)
+        let roleName = (role as? String) ?? ""
+
         var settable: DarwinBoolean = false
         _ = AXUIElementIsAttributeSettable(ui, kAXValueAttribute as CFString, &settable)
+
         var value: CFTypeRef?
         let valueStatus = AXUIElementCopyAttributeValue(ui, kAXValueAttribute as CFString, &value)
-        guard valueStatus == .success, let raw = value else {
-            return (.unavailable, "Live text unavailable here")
-        }
-        if CFGetTypeID(raw) == CFStringGetTypeID() {
+        if valueStatus == .success, let raw = value, CFGetTypeID(raw) == CFStringGetTypeID() {
             let text = raw as! String
             return (.value, text)
         }
+
+        if isTextEditable(roleName: roleName, settable: settable.boolValue) {
+            return (.value, "")
+        }
+
         return (.unavailable, "Live text unavailable here")
+    }
+
+    private static func isTextEditable(roleName: String, settable: Bool) -> Bool {
+        if settable { return true }
+        let editableRoles = ["AXTextField", "AXTextArea", "AXSearchField", "AXComboBox", "AXWebArea"]
+        return editableRoles.contains(roleName)
     }
 
     private static func isSecure(_ element: AXUIElement) -> Bool {

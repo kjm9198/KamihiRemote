@@ -177,7 +177,17 @@ final class RemoteSession: ObservableObject, CommandSending {
         }
         if command.isRealtime {
             udp.send(command)
+            if command == .click || command == .doubleClick {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+                    self?.requestFocusedText()
+                }
+            }
             return
+        }
+        if command == .click || command == .doubleClick {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+                self?.requestFocusedText()
+            }
         }
         if command.shouldAcknowledge {
             sendAcknowledged(command, title: label(for: command))
@@ -438,6 +448,9 @@ final class RemoteSession: ObservableObject, CommandSending {
         case .focusedText(let status, let value):
             focusedTextStatus = status
             focusedTextValue = value
+            if status == .value || status == .secure {
+                showsKeyboard = true
+            }
         case .activeApp(let bundleID, let name):
             activeAppBundleID = bundleID
             activeAppName = name
@@ -572,14 +585,13 @@ enum ConnectionState: String {
 }
 
 enum RemoteTab: String, CaseIterable, Identifiable {
-    case vibe, trackpad, deck, codeKey, controller
+    case vibe, trackpad, deck, controller
     var id: String { rawValue }
     var title: String {
         switch self {
         case .vibe: return "Vibe"
         case .trackpad: return "Trackpad"
         case .deck: return "Deck"
-        case .codeKey: return "CodeKey"
         case .controller: return "Gamepad"
         }
     }

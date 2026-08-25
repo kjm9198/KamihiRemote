@@ -143,10 +143,7 @@ struct KamihiPolishedRootView: View {
                 CompactConnectionLabel()
                 primaryNav(horizontal: false)
                 Spacer(minLength: 0)
-                HStack(spacing: 8) {
-                    keyboardButton
-                    moreMenu
-                }
+                moreMenu
             }
             .frame(width: 188)
             .padding(12)
@@ -167,27 +164,9 @@ struct KamihiPolishedRootView: View {
         case .deck:
             DeckScreen()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .codeKey:
-            CodingKeyboardScreen()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .controller:
             PolishedControllerScreen(immersive: false)
         }
-    }
-
-    private var keyboardButton: some View {
-        Button {
-            session.showsKeyboard.toggle()
-        } label: {
-            Image(systemName: "keyboard")
-                .font(.system(size: 17, weight: .semibold))
-                .frame(width: KamihiUI.controlHeight, height: KamihiUI.controlHeight)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.white.opacity(session.showsKeyboard ? 1 : 0.76))
-        .glassEffect(.regular.interactive(), in: .circle)
-        .accessibilityLabel("Keyboard")
-        .accessibilityAddTraits(session.showsKeyboard ? .isSelected : [])
     }
 
     private var moreMenu: some View {
@@ -264,7 +243,6 @@ struct KamihiPolishedRootView: View {
         case .vibe: return "bolt.fill"
         case .trackpad: return "hand.draw"
         case .deck: return "square.grid.3x3"
-        case .codeKey: return "keyboard"
         case .controller: return "gamecontroller"
         }
     }

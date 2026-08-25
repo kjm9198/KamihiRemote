@@ -140,8 +140,6 @@ struct RootView: View {
             PolishedRemoteCombinedScreen()
         case .deck:
             DeckScreen()
-        case .codeKey:
-            CodingKeyboardScreen()
         case .controller:
             ControllerScreen()
         }
@@ -255,7 +253,6 @@ struct RootView: View {
         case .vibe: return "bolt.fill"
         case .trackpad: return "hand.draw"
         case .deck: return "square.grid.3x3"
-        case .codeKey: return "keyboard"
         case .controller: return "gamecontroller"
         }
     }

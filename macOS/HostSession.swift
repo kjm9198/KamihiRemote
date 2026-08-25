@@ -52,6 +52,12 @@ final class HostSession: ObservableObject {
             KeyboardGamepad.shared.reset()
         }
 
+        server.onUserAction = { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                self?.checkAndBroadcastFocusedText()
+            }
+        }
+
         server.start(pairingCode: pairingCode)
         tcp.start()
         advertise()
@@ -69,7 +75,15 @@ final class HostSession: ObservableObject {
         }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
             self?.broadcastActiveApp()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self?.checkAndBroadcastFocusedText()
+            }
         }
+    }
+
+    func checkAndBroadcastFocusedText() {
+        let snapshot = FocusedTextReader.snapshot()
+        tcp.broadcast(.focusedText(status: snapshot.status, value: snapshot.value), token: pairingCode)
     }
 
     func broadcastActiveApp(to connection: NWConnection? = nil) {

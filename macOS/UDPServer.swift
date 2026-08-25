@@ -9,6 +9,8 @@ final class UDPServer: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var stats = HostPipelineStats()
 
+    var onUserAction: (() -> Void)?
+
     let port: UInt16 = RemoteConstants.defaultPort
     let hostName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
 
@@ -203,9 +205,11 @@ final class UDPServer: ObservableObject {
         case .click:
             name = "CLICK"
             posted = InputEngine.click()
+            DispatchQueue.main.async { self.onUserAction?() }
         case .doubleClick:
             name = "DOUBLE_CLICK"
             posted = InputEngine.doubleClick()
+            DispatchQueue.main.async { self.onUserAction?() }
         case .rightClick:
             name = "RIGHT_CLICK"
             posted = InputEngine.rightClick()
@@ -220,6 +224,7 @@ final class UDPServer: ObservableObject {
         case .mouseUp:
             name = "MOUSE_UP"
             posted = InputEngine.mouseUp()
+            DispatchQueue.main.async { self.onUserAction?() }
         default:
             name = command.name
             posted = InputEngine.apply(command)

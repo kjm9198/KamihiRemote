@@ -1,308 +1,244 @@
 import SwiftUI
 
-/// Vibe Mode Mission Control — Developer command center for supervising and controlling your Mac.
+/// Vibe Mode Mission Control — Compact developer command HUD + integrated Trackpad.
 struct VibeHubScreen: View {
     @EnvironmentObject private var session: RemoteSession
     @State private var commandInput = ""
     @State private var showsDictateSheet = false
     @State private var isDevServerRunning = true
-    @State private var projectState = "Running :3000"
     @State private var activeProject = "KamihiRemote"
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 14) {
-                heroStatusCard
-                aiCommandBar
-                projectLauncherCard
-                quickActionsGrid
-                quickWorkspaceJumpRow
+        GeometryReader { geo in
+            let trackpadHeight = max(180, geo.size.height * 0.46)
+            let topHeight = max(180, geo.size.height - trackpadHeight - 12)
+
+            VStack(spacing: 8) {
+                // Top Mission Control HUD (Scrollable if needed on smaller screens)
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 10) {
+                        heroStatusRow
+                        projectBar
+                        aiCommandBar
+                        quickActionsRow
+                    }
+                    .padding(.horizontal, KamihiUI.pad)
+                    .padding(.top, 4)
+                    .padding(.bottom, 2)
+                }
+                .frame(height: topHeight)
+
+                // Bottom Integrated Trackpad Surface
+                VStack(spacing: 4) {
+                    HStack {
+                        Text("TRACKPAD")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .tracking(1.2)
+                            .foregroundStyle(.white.opacity(0.4))
+                        Spacer()
+                        Text("1-finger move • 2-finger scroll • 3-finger Spaces")
+                            .font(.system(size: 9, weight: .regular, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.3))
+                    }
+                    .padding(.horizontal, KamihiUI.pad)
+
+                    PolishedTrackpadSurface(showDiagnostics: false)
+                        .clipShape(RoundedRectangle(cornerRadius: KamihiUI.radiusLarge, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: KamihiUI.radiusLarge, style: .continuous)
+                                .stroke(.white.opacity(0.08), lineWidth: 1)
+                        )
+                        .padding(.horizontal, KamihiUI.pad)
+                        .padding(.bottom, 4)
+                }
+                .frame(height: trackpadHeight)
             }
-            .padding(.horizontal, KamihiUI.pad)
-            .padding(.top, 6)
-            .padding(.bottom, 24)
         }
         .sheet(isPresented: $showsDictateSheet) {
             DictatePromptSheet().environmentObject(session)
         }
     }
 
-    private var heroStatusCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(session.isConnected ? Color.green : Color.orange)
-                        .frame(width: 8, height: 8)
-                    Text(session.hostName.isEmpty ? "MacBook Pro" : session.hostName)
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                }
+    private var heroStatusRow: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(session.isConnected ? Color.green : Color.orange)
+                    .frame(width: 7, height: 7)
+                Text(session.hostName.isEmpty ? "Mac" : session.hostName)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+            }
 
-                Spacer()
+            Spacer()
 
+            if !session.activeAppName.isEmpty {
                 HStack(spacing: 4) {
-                    Text(session.telemetry.transport)
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    if session.telemetry.rttMilliseconds > 0 {
-                        Text("\(session.telemetry.rttMilliseconds)ms")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    }
+                    Image(systemName: "macwindow")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text(session.activeAppName)
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
-                .background(Color.cyan.opacity(0.18), in: Capsule())
-                .foregroundStyle(.cyan)
-            }
-
-            HStack(spacing: 8) {
-                HStack(spacing: 5) {
-                    Image(systemName: "macwindow")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text(session.activeAppName.isEmpty ? "Finder" : session.activeAppName)
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
                 .background(Color.white.opacity(0.08), in: Capsule())
                 .foregroundStyle(.white.opacity(0.85))
+            }
 
-                Spacer()
-
-                Text("VIBE MODE ACTIVE")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .tracking(1.2)
-                    .foregroundStyle(.cyan.opacity(0.8))
+            if session.telemetry.rttMilliseconds > 0 {
+                Text("\(session.telemetry.rttMilliseconds)ms")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.cyan.opacity(0.18), in: Capsule())
+                    .foregroundStyle(.cyan)
             }
         }
-        .padding(14)
-        .glassEffect(.regular, in: .rect(cornerRadius: KamihiUI.radiusLarge))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .glassEffect(.regular, in: .rect(cornerRadius: KamihiUI.radiusMedium))
+    }
+
+    private var projectBar: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(isDevServerRunning ? Color.green : Color.red)
+                    .frame(width: 6, height: 6)
+                Text(activeProject)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                Text(isDevServerRunning ? ":3000" : "off")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(isDevServerRunning ? .green : .red)
+            }
+
+            Spacer()
+
+            Button {
+                session.sendAcknowledged(.openURL("http://localhost:3000"), title: "Preview")
+                Haptics.touchTap()
+            } label: {
+                Label("Preview", systemImage: "globe")
+                    .font(.system(size: 11, weight: .semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .capsule)
+            .foregroundStyle(.white.opacity(0.9))
+
+            Button {
+                isDevServerRunning.toggle()
+                if isDevServerRunning {
+                    session.send(.typeText("npm run dev\n"))
+                } else {
+                    session.send(.shortcut("ctrl+c"))
+                }
+                Haptics.touchTap()
+            } label: {
+                Image(systemName: isDevServerRunning ? "stop.fill" : "play.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .padding(6)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .circle)
+            .foregroundStyle(isDevServerRunning ? .orange : .green)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .glassEffect(.regular, in: .rect(cornerRadius: KamihiUI.radiusMedium))
     }
 
     private var aiCommandBar: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("AI COMMAND BAR")
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .tracking(1.0)
-                .foregroundStyle(.cyan.opacity(0.85))
-
-            HStack(spacing: 8) {
-                TextField("Ask Mac agent / run command…", text: $commandInput)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 14, design: .rounded))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .glassEffect(.regular, in: .rect(cornerRadius: KamihiUI.radiusMedium))
-                    .foregroundStyle(.white)
-                    .submitLabel(.send)
-                    .onSubmit {
-                        executeCommand()
-                    }
-
-                Button {
-                    showsDictateSheet = true
-                    Haptics.touchTap()
-                } label: {
-                    Image(systemName: "mic.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                        .frame(width: 42, height: 42)
-                        .foregroundStyle(.white)
-                }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: .circle)
-                .accessibilityLabel("Voice prompt")
-
-                if !commandInput.isEmpty {
-                    Button {
-                        executeCommand()
-                    } label: {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 28, weight: .semibold))
-                            .foregroundStyle(.cyan)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Send command")
-                }
-            }
-
-            // Quick suggestion chips
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    suggestionChip("Fix failing tests") { sendPrompt("Fix the failing tests in current project") }
-                    suggestionChip("git status") { session.send(.typeText("git status\n")) }
-                    suggestionChip("npm run dev") { session.send(.typeText("npm run dev\n")) }
-                    suggestionChip("git commit") { sendPrompt("Commit current staged changes") }
-                }
-            }
-        }
-        .padding(14)
-        .glassEffect(.regular, in: .rect(cornerRadius: KamihiUI.radiusLarge))
-    }
-
-    private func suggestionChip(_ title: String, action: @escaping () -> Void) -> some View {
-        Button {
-            action()
-            Haptics.touchTap()
-        } label: {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+        HStack(spacing: 6) {
+            TextField("Ask agent / run command…", text: $commandInput)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13, design: .rounded))
                 .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Color.white.opacity(0.08), in: Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.8))
-                .foregroundStyle(.white.opacity(0.85))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var projectLauncherCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("ACTIVE PROJECT")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.45))
-                    Text(activeProject)
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                }
-
-                Spacer()
-
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(isDevServerRunning ? Color.green : Color.red)
-                        .frame(width: 7, height: 7)
-                    Text(isDevServerRunning ? "localhost:3000 ●" : "Stopped")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .foregroundStyle(isDevServerRunning ? .green : .red)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.black.opacity(0.25), in: Capsule())
-            }
-
-            HStack(spacing: 8) {
-                Button {
-                    // Open localhost in Safari on Mac
-                    session.sendAcknowledged(.openURL("http://localhost:3000"), title: "Open Localhost")
-                    Haptics.touchTap()
-                } label: {
-                    Label("Preview", systemImage: "globe")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(maxWidth: .infinity, minHeight: 36)
-                }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: KamihiUI.radiusMedium))
+                .padding(.vertical, 8)
+                .glassEffect(.regular, in: .rect(cornerRadius: KamihiUI.radiusMedium))
                 .foregroundStyle(.white)
+                .submitLabel(.send)
+                .onSubmit {
+                    executeCommand()
+                }
 
+            Button {
+                showsDictateSheet = true
+                Haptics.touchTap()
+            } label: {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 34, height: 34)
+                    .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .circle)
+            .accessibilityLabel("Voice prompt")
+
+            if !commandInput.isEmpty {
                 Button {
-                    isDevServerRunning.toggle()
-                    if isDevServerRunning {
-                        session.send(.typeText("npm run dev\n"))
-                    } else {
-                        session.send(.shortcut("ctrl+c"))
-                    }
-                    Haptics.touchTap()
+                    executeCommand()
                 } label: {
-                    Label(isDevServerRunning ? "Stop Server" : "Start Server", systemImage: isDevServerRunning ? "stop.fill" : "play.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(maxWidth: .infinity, minHeight: 36)
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(.cyan)
                 }
                 .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: KamihiUI.radiusMedium))
-                .foregroundStyle(isDevServerRunning ? .orange : .green)
             }
         }
-        .padding(14)
-        .glassEffect(.regular, in: .rect(cornerRadius: KamihiUI.radiusLarge))
     }
 
-    private var quickActionsGrid: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("QUICK WORKFLOW ACTIONS")
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .tracking(1.0)
-                .foregroundStyle(.white.opacity(0.45))
-
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                actionTile(title: "Git Status", symbol: "arrow.triangle.branch", color: .cyan) {
+    private var quickActionsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                quickChip("Git Status", icon: "arrow.triangle.branch") {
                     session.send(.typeText("git status\n"))
                 }
-                actionTile(title: "Git Diff", symbol: "doc.text.magnifyingglass", color: .cyan) {
+                quickChip("Git Diff", icon: "doc.text.magnifyingglass") {
                     session.send(.typeText("git diff\n"))
                 }
-                actionTile(title: "Desktop ←", symbol: "arrow.left.square.fill", color: .indigo) {
+                quickChip("Desktop ←", icon: "arrow.left.square.fill") {
                     session.send(.system(.previousDesktop))
                 }
-                actionTile(title: "Desktop →", symbol: "arrow.right.square.fill", color: .indigo) {
+                quickChip("Desktop →", icon: "arrow.right.square.fill") {
                     session.send(.system(.nextDesktop))
                 }
-                actionTile(title: "Mission Control", symbol: "rectangle.3.group.fill", color: .indigo) {
+                quickChip("Mission", icon: "rectangle.3.group.fill") {
                     session.send(.system(.missionControl))
                 }
-                actionTile(title: "Screenshot", symbol: "camera.viewfinder", color: .cyan) {
+                quickChip("Screenshot", icon: "camera.viewfinder") {
                     session.send(.shortcut("cmd+shift+4"))
                 }
             }
         }
     }
 
-    private func actionTile(title: String, symbol: String, color: Color, action: @escaping () -> Void) -> some View {
+    private func quickChip(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button {
             action()
             Haptics.touchTap()
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: symbol)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(color)
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.cyan)
                 Text(title)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-                Spacer()
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.85))
             }
-            .padding(.horizontal, 12)
-            .frame(minHeight: 44)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .glassEffect(.regular.interactive(), in: .capsule)
         }
         .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: KamihiUI.radiusMedium))
-    }
-
-    private var quickWorkspaceJumpRow: some View {
-        HStack(spacing: 8) {
-            jumpButton(title: "Trackpad", symbol: "hand.draw.fill", tab: .trackpad)
-            jumpButton(title: "Deck", symbol: "square.grid.2x2.fill", tab: .deck)
-            jumpButton(title: "CodeKey", symbol: "keyboard.fill", tab: .codeKey)
-        }
-    }
-
-    private func jumpButton(title: String, symbol: String, tab: RemoteTab) -> some View {
-        Button {
-            session.selectedTab = tab
-            Haptics.touchTap()
-        } label: {
-            VStack(spacing: 4) {
-                Image(systemName: symbol)
-                    .font(.system(size: 15, weight: .semibold))
-                Text(title)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-            }
-            .frame(maxWidth: .infinity, minHeight: 48)
-            .foregroundStyle(.white.opacity(0.8))
-        }
-        .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: KamihiUI.radiusMedium))
     }
 
     private func executeCommand() {
         guard !commandInput.isEmpty else { return }
-        sendPrompt(commandInput)
+        session.send(.typeText(commandInput + "\n"))
         commandInput = ""
         Haptics.touchTap()
-    }
-
-    private func sendPrompt(_ text: String) {
-        session.send(.typeText(text + "\n"))
     }
 }
