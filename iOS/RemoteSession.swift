@@ -70,9 +70,12 @@ final class RemoteSession: ObservableObject, CommandSending {
         transport = TransportManager(lanReady: { true })
         engine.attach(self)
         engine.preferences = preferences
-        Haptics.level = preferences.hapticLevel
         browser.objectWillChange.receive(on: RunLoop.main).sink { [weak self] _ in
-            self?.objectWillChange.send()
+            guard let self else { return }
+            self.objectWillChange.send()
+            if self.connectionState != .connected {
+                self.connectIfPossible()
+            }
         }.store(in: &cancellables)
         // Do NOT forward UDP packet publishes into the shell — that rebuilt Deck/Settings at 120 Hz.
         tcp.onCommand = { [weak self] command in
@@ -268,12 +271,12 @@ final class RemoteSession: ObservableObject, CommandSending {
         persist()
         engine.preferences = preferences
         Haptics.level = preferences.hapticLevel
-        if let last = preferences.lastHostID, let host = PairedHostStore.load().first(where: { $0.hostID == last }) {
+        if let host = browser.hosts.first(where: { $0.isResolved }) ?? browser.hosts.first {
             connect(to: host)
             return
         }
-        if let discovered = browser.hosts.first {
-            connect(to: discovered)
+        if let last = preferences.lastHostID, let host = PairedHostStore.load().first(where: { $0.hostID == last }) {
+            connect(to: host)
             return
         }
         let host = manualAddress.trimmingCharacters(in: .whitespacesAndNewlines)

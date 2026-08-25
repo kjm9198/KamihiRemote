@@ -272,15 +272,25 @@ private struct CompactConnectionLabel: View {
     @EnvironmentObject private var session: RemoteSession
 
     var body: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(session.isConnected ? Color.green.opacity(0.9) : Color.white.opacity(0.28))
-                .frame(width: 8, height: 8)
-            Text(session.isConnected ? (session.hostName.isEmpty ? "Mac" : session.hostName) : session.statusText)
-                .font(KamihiUI.captionFont)
-                .lineLimit(1)
+        Button {
+            if !session.isConnected {
+                session.connectIfPossible()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(session.isConnected ? Color.green.opacity(0.9) : (session.connectionState == .connecting ? Color.yellow.opacity(0.9) : Color.white.opacity(0.35)))
+                    .frame(width: 8, height: 8)
+                Text(session.isConnected ? (session.hostName.isEmpty ? "Connected" : session.hostName) : (session.connectionState == .connecting ? "Connecting…" : session.statusText))
+                    .font(KamihiUI.captionFont)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Color.white.opacity(0.10), in: Capsule())
+            .foregroundStyle(.white.opacity(0.90))
         }
-        .foregroundStyle(.white.opacity(0.82))
+        .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
     }
 }
