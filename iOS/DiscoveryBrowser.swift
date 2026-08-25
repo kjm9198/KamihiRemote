@@ -38,6 +38,10 @@ final class DiscoveryBrowser: ObservableObject {
         browser = nil
     }
 
+    func stopIfNeeded() {
+        stop()
+    }
+
     private func handle(_ results: Set<NWBrowser.Result>) {
         var discovered: [DiscoveredHost] = []
         for result in results {

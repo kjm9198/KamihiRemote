@@ -99,7 +99,7 @@ final class TCPServer {
             buffer.removeSubrange(buffer.startIndex..<range.upperBound)
             if let line = String(data: lineData, encoding: .utf8) {
                 switch RemotePacket.parse(line) {
-                case .success(_, let command, _, _, _):
+                case .success(_, let command, _, _, _, _):
                     onCommand?(command, connection)
                 case .failure:
                     break

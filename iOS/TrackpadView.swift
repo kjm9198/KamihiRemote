@@ -10,7 +10,7 @@ struct TrackpadView: UIViewRepresentable {
         view.backgroundColor = .clear
         view.isOpaque = false
         view.isMultipleTouchEnabled = true
-        view.isExclusiveTouch = true
+        view.isExclusiveTouch = false
         view.isUserInteractionEnabled = true
         view.accessibilityLabel = "Mac trackpad"
         view.accessibilityHint = "Move one finger to control the Mac pointer. Two fingers scroll. Three fingers change desktops."
@@ -21,11 +21,14 @@ struct TrackpadView: UIViewRepresentable {
     func updateUIView(_ uiView: TrackpadUIView, context: Context) {
         uiView.engine = engine
         uiView.isUserInteractionEnabled = true
+        uiView.isMultipleTouchEnabled = true
     }
 }
 
 final class TrackpadUIView: UIView {
     weak var engine: TouchInputEngine?
+    private var identities: [ObjectIdentifier: Int] = [:]
+    private var nextIdentity = 1
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -42,24 +45,53 @@ final class TrackpadUIView: UIView {
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        forward(touches, phase: .began)
+        for touch in touches { identity(for: touch) }
+        forward(changed: touches, event: event, phase: .began)
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        forward(touches, phase: .moved)
+        forward(changed: touches, event: event, phase: .moved)
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        forward(touches, phase: .ended)
+        forward(changed: touches, event: event, phase: .ended)
+        for touch in touches { identities[ObjectIdentifier(touch)] = nil }
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        engine?.handleCancelled(in: bounds.size)
+        forward(changed: touches, event: event, phase: .cancelled)
+        for touch in touches { identities[ObjectIdentifier(touch)] = nil }
     }
 
-    private func forward(_ touches: Set<UITouch>, phase: UITouch.Phase) {
-        let samples = touches.map { FingerSample(id: $0.hash, point: $0.location(in: self)) }
-        let timestamp = touches.first?.timestamp ?? ProcessInfo.processInfo.systemUptime
-        engine?.handle(samples: samples, timestamp: timestamp, phase: phase, in: bounds.size)
+    private func forward(changed: Set<UITouch>, event: UIEvent?, phase: UITouch.Phase) {
+        let allInWindow = event?.allTouches?.filter { $0.view == self || $0.window == self.window } ?? changed
+        let activeTouches: [UITouch]
+        if phase == .ended || phase == .cancelled {
+            // Ending touches are excluded from activeTouches
+            activeTouches = allInWindow.filter { touch in
+                !changed.contains(touch) && (touch.phase == .began || touch.phase == .moved || touch.phase == .stationary)
+            }
+        } else {
+            activeTouches = allInWindow.filter { $0.phase != .ended && $0.phase != .cancelled }
+        }
+
+        let changedSamples = changed.map(sample)
+        let activeSamples = activeTouches.map(sample)
+        let timestamp = changed.first?.timestamp ?? ProcessInfo.processInfo.systemUptime
+        engine?.handle(changed: changedSamples, active: activeSamples, timestamp: timestamp, phase: phase, in: bounds.size)
+    }
+
+    private func sample(_ touch: UITouch) -> FingerSample {
+        FingerSample(id: identity(for: touch), point: touch.location(in: self), phase: touch.phase)
+    }
+
+    @discardableResult
+    private func identity(for touch: UITouch) -> Int {
+        let key = ObjectIdentifier(touch)
+        if let existing = identities[key] { return existing }
+        let value = nextIdentity
+        nextIdentity += 1
+        identities[key] = value
+        return value
     }
 }

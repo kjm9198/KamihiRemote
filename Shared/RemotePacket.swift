@@ -1,15 +1,19 @@
 import Foundation
+import CryptoKit
 
 enum RemotePacketResult: Equatable {
-    case success(token: String, command: RemoteCommand, legacy: Bool, sessionID: String?, sequence: UInt64?)
+    case success(token: String, command: RemoteCommand, legacy: Bool, sessionID: String?, sequence: UInt64?, isEncrypted: Bool)
     case failure(String)
 }
 
 enum RemotePacket {
-    static func parse(_ raw: String) -> RemotePacketResult {
+    static func parse(_ raw: String, sessionKey: SymmetricKey? = nil) -> RemotePacketResult {
         let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !line.isEmpty else { return .failure("empty packet") }
 
+        if line.hasPrefix("K3 ") {
+            return parseV3(line, sessionKey: sessionKey)
+        }
         if line.hasPrefix("K2 ") {
             return parseV2(line)
         }
@@ -33,6 +37,15 @@ enum RemotePacket {
         return Data("K2 \(sessionID) \(sequence) \(ts) \(command.wire)\n".utf8)
     }
 
+    static func encodeK3(sessionID: String, sequence: UInt64, command: RemoteCommand, key: SymmetricKey) throws -> Data {
+        let nonce = SessionCrypto.randomNonce()
+        let plaintext = Data(command.wire.utf8)
+        let sealed = try SessionCrypto.seal(plaintext: plaintext, key: key, nonceData: nonce)
+        let nonceB64 = nonce.base64EncodedString()
+        let cipherB64 = sealed.base64EncodedString()
+        return Data("K3 \(sessionID) \(sequence) \(nonceB64) \(cipherB64)\n".utf8)
+    }
+
     @discardableResult
     static func runSelfChecks() -> Bool {
         func coordsMatch(_ a: Double, _ b: Double) -> Bool {
@@ -40,18 +53,20 @@ enum RemotePacket {
         }
         func expectSuccess(_ raw: String, token expectedToken: String, _ expected: RemoteCommand, legacy expectedLegacy: Bool = false) {
             switch parse(raw) {
-            case .success(let token, let command, let legacy, _, _):
+            case .success(let token, let command, let legacy, _, _, _):
                 precondition(token == expectedToken, "Auth mismatch for \(raw): \(token)")
                 precondition(legacy == expectedLegacy, "Legacy flag mismatch for \(raw)")
                 switch (command, expected) {
                 case (.ping, .ping), (.click, .click), (.rightClick, .rightClick), (.mouseDown, .mouseDown), (.mouseUp, .mouseUp), (.releaseAll, .releaseAll):
                     break
-                case let (.move(dx, dy), .move(ex, ey)), let (.scroll(dx, dy), .scroll(ex, ey)):
+                case let (.move(dx, dy), .move(ex, ey)):
                     precondition(coordsMatch(dx, ex) && coordsMatch(dy, ey), "Vector mismatch for \(raw)")
+                case let (.scroll(dx, dy, phase), .scroll(ex, ey, expectedPhase)):
+                    precondition(coordsMatch(dx, ex) && coordsMatch(dy, ey) && phase == expectedPhase, "Scroll mismatch for \(raw)")
                 case let (.pong(name), .pong(expectedName)):
                     precondition(name == expectedName)
                 default:
-                    preconditionFailure("Unexpected parse for \(raw): \(command)")
+                    precondition(command == expected, "Unexpected parse for \(raw): \(command)")
                 }
             case .failure(let reason):
                 preconditionFailure("Expected success for \(raw), got \(reason)")
@@ -65,13 +80,20 @@ enum RemotePacket {
         expectSuccess("163158 MOVE 120.5 -80.25", token: "163158", .move(dx: 120.5, dy: -80.25))
         expectSuccess("163158 PING", token: "163158", .ping)
         expectSuccess("163158 CLICK", token: "163158", .click)
+        expectSuccess("163158 DOUBLE_CLICK", token: "163158", .doubleClick)
         expectSuccess("163158 RELEASE_ALL", token: "163158", .releaseAll)
         expectSuccess("163158 MOUSE_DOWN", token: "163158", .mouseDown)
         expectSuccess("163158 MOUSE_UP", token: "163158", .mouseUp)
+        expectSuccess("163158 SCROLL 1.5 -4.0", token: "163158", .scroll(dx: 1.5, dy: -4.0, phase: .changed))
+        expectSuccess("163158 SCROLL 1.5 -4.0 ended", token: "163158", .scroll(dx: 1.5, dy: -4.0, phase: .ended))
+        expectSuccess("163158 PRESENTATION next", token: "163158", .presentation(action: .next, profile: .keynote))
+        expectSuccess("163158 PRESENTATION start powerpoint", token: "163158", .presentation(action: .start, profile: .powerpoint))
+        expectSuccess("163158 OPEN_APP com.apple.Safari", token: "163158", .openApp(bundleID: "com.apple.Safari"))
+        expectSuccess("163158 SHORTCUT cmd+c", token: "163158", .shortcut("cmd+c"))
         expectSuccess("MOVE 163158 1.289 0.645", token: "163158", .move(dx: 1.289, dy: 0.645), legacy: true)
 
         switch parse("K2 sess-1 103 1710000000.000 MOVE 1.289 0.645") {
-        case .success(let token, let command, _, let session, let seq):
+        case .success(let token, let command, _, let session, let seq, _):
             precondition(token == "sess-1")
             precondition(session == "sess-1")
             precondition(seq == 103)
@@ -82,7 +104,38 @@ enum RemotePacket {
             preconditionFailure("v2 MOVE should parse: \(reason)")
         }
 
-        if case .success(let token, let command, _, _, _) = parse("000000 MOVE 1 2") {
+        // K3 Authenticated Encryption Self-Check
+        do {
+            let testKey = SymmetricKey(size: .bits256)
+            let rawData = try encodeK3(sessionID: "test-sess", sequence: 42, command: .move(dx: 3.5, dy: -1.25), key: testKey)
+            guard let rawStr = String(data: rawData, encoding: .utf8) else { preconditionFailure("K3 encoding invalid UTF8") }
+            switch parse(rawStr, sessionKey: testKey) {
+            case .success(let token, let cmd, _, let sess, let seq, let isEnc):
+                precondition(token == "test-sess")
+                precondition(sess == "test-sess")
+                precondition(seq == 42)
+                precondition(isEnc == true)
+                guard case .move(let dx, let dy) = cmd, coordsMatch(dx, 3.5), coordsMatch(dy, -1.25) else {
+                    preconditionFailure("K3 decrypted command mismatch")
+                }
+            case .failure(let err):
+                preconditionFailure("K3 parse failed: \(err)")
+            }
+
+            // Test corrupted ciphertext rejection
+            var corrupted = rawStr
+            corrupted = corrupted.replacingOccurrences(of: "A", with: "B")
+            switch parse(corrupted, sessionKey: testKey) {
+            case .failure:
+                break // successfully rejected
+            case .success:
+                preconditionFailure("corrupted K3 packet must not succeed")
+            }
+        } catch {
+            preconditionFailure("K3 self check threw error: \(error)")
+        }
+
+        if case .success(let token, let command, _, _, _, _) = parse("000000 MOVE 1 2") {
             precondition(token == "000000")
             guard case .move = command else { preconditionFailure("bad pairing code still parses command") }
         } else {
@@ -120,7 +173,7 @@ enum RemotePacket {
         }
 
         guard parts.count >= 2 else { return .failure("missing command") }
-        return decode(token: parts[0], command: parts[1], args: Array(parts.dropFirst(2)), legacy: legacy, sessionID: nil, sequence: nil)
+        return decode(token: parts[0], command: parts[1], args: Array(parts.dropFirst(2)), legacy: legacy, sessionID: nil, sequence: nil, isEncrypted: false)
     }
 
     private static func parseV2(_ line: String) -> RemotePacketResult {
@@ -128,75 +181,180 @@ enum RemotePacket {
         guard parts.count >= 5 else { return .failure("missing command") }
         let session = parts[1]
         guard let sequence = UInt64(parts[2]) else { return .failure("invalid sequence") }
-        return decode(token: session, command: parts[4], args: Array(parts.dropFirst(5)), legacy: false, sessionID: session, sequence: sequence)
+        return decode(token: session, command: parts[4], args: Array(parts.dropFirst(5)), legacy: false, sessionID: session, sequence: sequence, isEncrypted: false)
     }
 
-    private static func decode(token: String, command rawCommand: String, args: [String], legacy: Bool, sessionID: String?, sequence: UInt64?) -> RemotePacketResult {
+    private static func parseV3(_ line: String, sessionKey: SymmetricKey?) -> RemotePacketResult {
+        let parts = tokenize(line)
+        guard parts.count >= 5 else { return .failure("K3 missing fields") }
+        let session = parts[1]
+        guard let sequence = UInt64(parts[2]) else { return .failure("invalid sequence") }
+        guard let nonceData = Data(base64Encoded: parts[3]), nonceData.count == 12 else {
+            return .failure("invalid nonce")
+        }
+        guard let cipherData = Data(base64Encoded: parts[4]), cipherData.count > 16 else {
+            return .failure("invalid ciphertext")
+        }
+        guard let sessionKey else {
+            return .failure("no session key available to decrypt K3")
+        }
+
+        do {
+            let plaintextData = try SessionCrypto.open(ciphertextAndTag: cipherData, key: sessionKey, nonceData: nonceData)
+            guard let plainText = String(data: plaintextData, encoding: .utf8) else {
+                return .failure("decrypted plaintext not utf8")
+            }
+            let innerParts = tokenize(plainText)
+            guard !innerParts.isEmpty else { return .failure("empty decrypted command") }
+            return decode(token: session, command: innerParts[0], args: Array(innerParts.dropFirst()), legacy: false, sessionID: session, sequence: sequence, isEncrypted: true)
+        } catch {
+            return .failure("K3 auth tag verification failed")
+        }
+    }
+
+    private static func decode(token: String, command rawCommand: String, args: [String], legacy: Bool, sessionID: String?, sequence: UInt64?, isEncrypted: Bool) -> RemotePacketResult {
         let command = rawCommand.uppercased()
         switch command {
         case "PING":
-            return .success(token: token, command: .ping, legacy: legacy, sessionID: sessionID, sequence: sequence)
+            return .success(token: token, command: .ping, legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         case "PONG":
             let name = unquote(args.joined(separator: " "))
-            return .success(token: token, command: .pong(hostName: name.isEmpty ? "Mac" : name), legacy: legacy, sessionID: sessionID, sequence: sequence)
+            return .success(token: token, command: .pong(hostName: name.isEmpty ? "Mac" : name), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         case "MOVE":
-            return parseVector(token: token, command: "MOVE", args: args, legacy: legacy, sessionID: sessionID, sequence: sequence) { .move(dx: $0, dy: $1) }
+            return parseVector(token: token, command: "MOVE", args: args, legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted) { .move(dx: $0, dy: $1) }
         case "CLICK":
-            return .success(token: token, command: .click, legacy: legacy, sessionID: sessionID, sequence: sequence)
+            return .success(token: token, command: .click, legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "DOUBLE_CLICK":
+            return .success(token: token, command: .doubleClick, legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         case "RIGHT_CLICK":
-            return .success(token: token, command: .rightClick, legacy: legacy, sessionID: sessionID, sequence: sequence)
+            return .success(token: token, command: .rightClick, legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         case "SCROLL":
-            return parseVector(token: token, command: "SCROLL", args: args, legacy: legacy, sessionID: sessionID, sequence: sequence) { .scroll(dx: $0, dy: $1) }
+            return parseScroll(token: token, args: args, legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         case "MOUSE_DOWN":
-            return .success(token: token, command: .mouseDown, legacy: legacy, sessionID: sessionID, sequence: sequence)
+            return .success(token: token, command: .mouseDown, legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         case "MOUSE_UP":
-            return .success(token: token, command: .mouseUp, legacy: legacy, sessionID: sessionID, sequence: sequence)
+            return .success(token: token, command: .mouseUp, legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         case "RELEASE_ALL":
-            return .success(token: token, command: .releaseAll, legacy: legacy, sessionID: sessionID, sequence: sequence)
+            return .success(token: token, command: .releaseAll, legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         case "HEARTBEAT":
             guard args.count >= 2, let id = UInt64(args[0]), let ts = parseDouble(args[1]) else { return .failure("HEARTBEAT invalid") }
-            return .success(token: token, command: .heartbeat(id: id, timestamp: ts), legacy: legacy, sessionID: sessionID, sequence: sequence)
+            return .success(token: token, command: .heartbeat(id: id, timestamp: ts), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         case "HEARTBEAT_ACK":
             guard args.count >= 2, let id = UInt64(args[0]), let ts = parseDouble(args[1]) else { return .failure("HEARTBEAT_ACK invalid") }
-            return .success(token: token, command: .heartbeatAck(id: id, timestamp: ts), legacy: legacy, sessionID: sessionID, sequence: sequence)
+            return .success(token: token, command: .heartbeatAck(id: id, timestamp: ts), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         case "HELLO":
             guard args.count >= 3 else { return .failure("HELLO missing fields") }
             let deviceID = args.count > 1 ? args[1] : "-"
             let deviceName = unquote(args.dropFirst(2).dropLast().joined(separator: " "))
             let capabilities = args.last ?? "-"
-            return .success(token: token, command: .hello(deviceID: deviceID, deviceName: deviceName.isEmpty ? "iPhone" : deviceName, capabilities: capabilities), legacy: legacy, sessionID: sessionID, sequence: sequence)
+            return .success(token: token, command: .hello(deviceID: deviceID, deviceName: deviceName.isEmpty ? "iPhone" : deviceName, capabilities: capabilities), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         case "HELLO_ACK":
             guard args.count >= 4, let port = UInt16(args[3]) else { return .failure("HELLO_ACK missing fields") }
-            return .success(token: token, command: .helloAck(sessionID: args[0], hostName: unquote(args[1]), hostID: args[2], realtimePort: port), legacy: legacy, sessionID: sessionID, sequence: sequence)
+            return .success(token: token, command: .helloAck(sessionID: args[0], hostName: unquote(args[1]), hostID: args[2], realtimePort: port), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         case "PAIR":
             guard args.count >= 2 else { return .failure("PAIR missing fields") }
-            return .success(token: token, command: .pair(code: args[0], deviceID: args[1]), legacy: legacy, sessionID: sessionID, sequence: sequence)
+            return .success(token: token, command: .pair(code: args[0], deviceID: args[1]), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         case "PAIR_ACK":
             guard args.count >= 2 else { return .failure("PAIR_ACK missing fields") }
-            return .success(token: token, command: .pairAck(ok: args[0].uppercased() == "OK", sessionID: args[1]), legacy: legacy, sessionID: sessionID, sequence: sequence)
+            return .success(token: token, command: .pairAck(ok: args[0].uppercased() == "OK", sessionID: args[1]), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         case "KEY_DOWN":
             guard args.count >= 2, let code = UInt16(args[0]), let flags = UInt64(args[1]) else { return .failure("KEY_DOWN invalid") }
-            return .success(token: token, command: .keyDown(code: code, flags: flags), legacy: legacy, sessionID: sessionID, sequence: sequence)
+            return .success(token: token, command: .keyDown(code: code, flags: flags), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         case "KEY_UP":
             guard args.count >= 2, let code = UInt16(args[0]), let flags = UInt64(args[1]) else { return .failure("KEY_UP invalid") }
-            return .success(token: token, command: .keyUp(code: code, flags: flags), legacy: legacy, sessionID: sessionID, sequence: sequence)
+            return .success(token: token, command: .keyUp(code: code, flags: flags), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         case "TYPE":
-            return .success(token: token, command: .typeText(unquote(args.joined(separator: " "))), legacy: legacy, sessionID: sessionID, sequence: sequence)
+            return .success(token: token, command: .typeText(unquote(args.joined(separator: " "))), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         case "SYSTEM":
             guard let raw = args.first, let action = SystemAction(rawValue: raw) else { return .failure("unknown system action") }
-            return .success(token: token, command: .system(action), legacy: legacy, sessionID: sessionID, sequence: sequence)
+            return .success(token: token, command: .system(action), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         case "MEDIA":
             guard let raw = args.first, let action = MediaAction(rawValue: raw) else { return .failure("unknown media action") }
-            return .success(token: token, command: .media(action), legacy: legacy, sessionID: sessionID, sequence: sequence)
+            return .success(token: token, command: .media(action), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         case "PRESENTATION":
             guard let raw = args.first, let action = PresentationAction(rawValue: raw) else { return .failure("unknown presentation action") }
-            return .success(token: token, command: .presentation(action), legacy: legacy, sessionID: sessionID, sequence: sequence)
+            let profile = args.dropFirst().first.flatMap(PresentationProfile.init(rawValue:)) ?? .keynote
+            return .success(token: token, command: .presentation(action: action, profile: profile), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         case "PINCH":
             guard let delta = args.first.flatMap(parseDouble) else { return .failure("PINCH invalid") }
-            return .success(token: token, command: .pinch(delta: delta), legacy: legacy, sessionID: sessionID, sequence: sequence)
+            return .success(token: token, command: .pinch(delta: delta), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "ZOOM":
+            guard let raw = args.first, let action = ZoomAction(rawValue: raw) else { return .failure("ZOOM invalid") }
+            return .success(token: token, command: .zoom(action), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "OPEN_APP":
+            guard let bundle = args.first, bundle.isEmpty == false else { return .failure("OPEN_APP missing bundle") }
+            return .success(token: token, command: .openApp(bundleID: bundle), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "OPEN_URL":
+            return .success(token: token, command: .openURL(unquote(args.joined(separator: " "))), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "SHORTCUT":
+            guard let spec = args.first else { return .failure("SHORTCUT missing spec") }
+            return .success(token: token, command: .shortcut(spec), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "REQUEST_APP_LIST":
+            return .success(token: token, command: .requestAppList, legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "APP_LIST_BEGIN":
+            let count = args.first.flatMap { Int($0) } ?? 0
+            return .success(token: token, command: .appListBegin(count: count), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "APP_ENTRY":
+            guard args.count >= 2 else { return .failure("APP_ENTRY missing fields") }
+            return .success(token: token, command: .appEntry(name: unquote(args[0]), bundleID: args[1]), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "APP_LIST_END":
+            return .success(token: token, command: .appListEnd, legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "LASER":
+            return parseVector(token: token, command: "LASER", args: args, legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted) { .laser(x: $0, y: $1) }
+        case "LASER_VISIBLE":
+            let visible = (args.first ?? "0") != "0"
+            return .success(token: token, command: .laserVisible(visible), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "CONTROLLER":
+            return parseController(token: token, args: args, legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "PAIR_REQUEST":
+            guard args.count >= 4 else { return .failure("PAIR_REQUEST missing fields") }
+            return .success(token: token, command: .pairRequest(deviceID: args[0], deviceName: unquote(args[1]), publicKey: args[2], code: args[3]), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "PAIR_DECISION":
+            guard args.count >= 3 else { return .failure("PAIR_DECISION missing fields") }
+            return .success(token: token, command: .pairDecision(ok: args[0].uppercased() == "OK", deviceID: args[1], sessionMaterial: args[2]), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "REVOKE":
+            guard let deviceID = args.first else { return .failure("REVOKE missing device") }
+            return .success(token: token, command: .revokeDevice(deviceID: deviceID), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         default:
             return .failure("unknown command \"\(command)\"")
         }
+    }
+
+    private static func parseScroll(token: String, args: [String], legacy: Bool, sessionID: String?, sequence: UInt64?, isEncrypted: Bool) -> RemotePacketResult {
+        guard args.count >= 1 else { return .failure("SCROLL missing dx") }
+        guard args.count >= 2 else { return .failure("SCROLL missing dy") }
+        guard let dx = parseDouble(args[0]) else { return .failure("SCROLL dx invalid") }
+        guard let dy = parseDouble(args[1]) else { return .failure("SCROLL dy invalid") }
+        let phase = args.count >= 3 ? (ScrollPhase(rawValue: args[2]) ?? .changed) : .changed
+        return .success(token: token, command: .scroll(dx: dx, dy: dy, phase: phase), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+    }
+
+    private static func parseController(token: String, args: [String], legacy: Bool, sessionID: String?, sequence: UInt64?, isEncrypted: Bool) -> RemotePacketResult {
+        guard args.count >= 10,
+              let seq = UInt32(args[0]),
+              let ts = parseDouble(args[1]),
+              let lx = parseDouble(args[2]),
+              let ly = parseDouble(args[3]),
+              let rx = parseDouble(args[4]),
+              let ry = parseDouble(args[5]),
+              let lt = parseDouble(args[6]),
+              let rt = parseDouble(args[7]),
+              let buttons = UInt32(args[8]),
+              let dpad = UInt8(args[9])
+        else { return .failure("CONTROLLER invalid") }
+        let state = ControllerState(
+            sequence: seq,
+            timestamp: ts,
+            leftX: Float(lx),
+            leftY: Float(ly),
+            rightX: Float(rx),
+            rightY: Float(ry),
+            leftTrigger: Float(lt),
+            rightTrigger: Float(rt),
+            buttons: buttons,
+            dpad: dpad
+        )
+        return .success(token: token, command: .controller(state), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
     }
 
     private static func parseVector(
@@ -206,13 +364,14 @@ enum RemotePacket {
         legacy: Bool,
         sessionID: String?,
         sequence: UInt64?,
+        isEncrypted: Bool,
         make: (Double, Double) -> RemoteCommand
     ) -> RemotePacketResult {
         guard args.count >= 1 else { return .failure("\(command) missing dx") }
         guard args.count >= 2 else { return .failure("\(command) missing dy") }
         guard let dx = parseDouble(args[0]) else { return .failure("\(command) dx invalid") }
         guard let dy = parseDouble(args[1]) else { return .failure("\(command) dy invalid") }
-        return .success(token: token, command: make(dx, dy), legacy: legacy, sessionID: sessionID, sequence: sequence)
+        return .success(token: token, command: make(dx, dy), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
     }
 
     private static func tokenize(_ line: String) -> [String] {
@@ -246,9 +405,11 @@ enum RemotePacket {
 
     private static func looksLikeCommand(_ value: String) -> Bool {
         [
-            "PING", "PONG", "MOVE", "CLICK", "RIGHT_CLICK", "SCROLL", "MOUSE_DOWN", "MOUSE_UP",
+            "PING", "PONG", "MOVE", "CLICK", "DOUBLE_CLICK", "RIGHT_CLICK", "SCROLL", "MOUSE_DOWN", "MOUSE_UP",
             "RELEASE_ALL", "HEARTBEAT", "HEARTBEAT_ACK", "HELLO", "HELLO_ACK", "PAIR", "PAIR_ACK",
-            "KEY_DOWN", "KEY_UP", "TYPE", "SYSTEM", "MEDIA", "PRESENTATION", "PINCH"
+            "PAIR_REQUEST", "PAIR_DECISION", "KEY_DOWN", "KEY_UP", "TYPE", "SYSTEM", "MEDIA", "PRESENTATION",
+            "PINCH", "ZOOM", "OPEN_APP", "OPEN_URL", "SHORTCUT", "REQUEST_APP_LIST", "APP_LIST_BEGIN",
+            "APP_ENTRY", "APP_LIST_END", "LASER", "LASER_VISIBLE", "CONTROLLER", "REVOKE"
         ].contains(value.uppercased())
     }
 }
@@ -258,8 +419,8 @@ enum RemoteEnvelope {
         RemotePacket.encodeV1(token: token, command: command)
     }
 
-    static func decode(_ raw: String) -> (token: String, command: RemoteCommand)? {
-        if case .success(let token, let command, _, _, _) = RemotePacket.parse(raw) {
+    static func decode(_ raw: String, sessionKey: SymmetricKey? = nil) -> (token: String, command: RemoteCommand)? {
+        if case .success(let token, let command, _, _, _, _) = RemotePacket.parse(raw, sessionKey: sessionKey) {
             return (token, command)
         }
         return nil

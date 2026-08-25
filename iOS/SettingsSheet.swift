@@ -7,19 +7,9 @@ struct SettingsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Pairing") {
-                    TextField("Code from the Mac app", text: $session.pairingCode)
-                        .keyboardType(.numberPad)
-                        .font(.title2.monospacedDigit())
-                    Text("Open Kamihi Remote Host on your Mac and type the 6-digit code here.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Nearby Macs") {
+                Section("Devices") {
                     if session.browser.hosts.isEmpty {
-                        Text("Searching on this Wi-Fi…")
-                            .foregroundStyle(.secondary)
+                        Text("Searching on this Wi-Fi…").foregroundStyle(.secondary)
                     }
                     ForEach(session.browser.hosts) { host in
                         Button {
@@ -27,14 +17,11 @@ struct SettingsSheet: View {
                             dismiss()
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(host.name).foregroundStyle(.primary)
-                                Text(host.isResolved ? host.address : "Found on this Wi-Fi").font(.caption).foregroundStyle(.secondary)
+                                Text(host.name)
+                                Text(host.isResolved ? host.address : "Nearby").font(.caption).foregroundStyle(.secondary)
                             }
                         }
                     }
-                }
-
-                Section("Paired") {
                     ForEach(PairedHostStore.load()) { host in
                         HStack {
                             Button(host.displayName) {
@@ -42,32 +29,12 @@ struct SettingsSheet: View {
                                 dismiss()
                             }
                             Spacer()
-                            Button("Forget", role: .destructive) {
-                                session.forget(host.hostID)
-                            }
+                            Button("Forget", role: .destructive) { session.forget(host.hostID) }
                         }
                     }
-                }
-
-                Section("Manual IP") {
-                    TextField("IP address", text: $session.manualAddress)
-                        .keyboardType(.numbersAndPunctuation)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    TextField("Pairing code", text: $session.pairingCode)
+                    TextField("Temporary pairing code", text: $session.pairingCode)
                         .keyboardType(.numberPad)
-                    Stepper(value: $session.manualPort, in: 1024...65535) {
-                        HStack {
-                            Text("UDP port")
-                            Spacer()
-                            Text("\(session.manualPort)").foregroundStyle(.secondary).monospacedDigit()
-                        }
-                    }
-                    Button("Connect") {
-                        session.applySettingsAndConnect()
-                        dismiss()
-                    }
-                    .disabled(session.manualAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .font(.body.monospacedDigit())
                 }
 
                 Section("Trackpad") {
@@ -81,9 +48,23 @@ struct SettingsSheet: View {
                         Slider(value: $session.preferences.customSensitivity, in: 0.6...4.0, step: 0.1)
                     }
                     Toggle("Smoothing", isOn: $session.preferences.smoothingEnabled)
-                    Toggle("Natural scrolling", isOn: $session.preferences.naturalScrolling)
+                    Toggle("Always show pointer pad", isOn: $session.preferences.alwaysShowPointerPad)
                     Toggle("Tap to click", isOn: $session.preferences.tapToClick)
                     Toggle("Two-finger secondary click", isOn: $session.preferences.twoFingerSecondaryClick)
+                    Picker("Scroll feel", selection: $session.preferences.scrollFeel) {
+                        ForEach(ScrollFeel.allCases) { feel in
+                            Text(feel.title).tag(feel)
+                        }
+                    }
+                    Slider(value: $session.preferences.scrollSpeed, in: 0.4...2.4, step: 0.05) {
+                        Text("Scroll speed")
+                    }
+                    Toggle("Natural scrolling", isOn: $session.preferences.naturalScrolling)
+                    if session.preferences.scrollFeel == .custom {
+                        Slider(value: $session.preferences.scrollMomentum, in: 0.7...0.98, step: 0.01) {
+                            Text("Momentum")
+                        }
+                    }
                 }
 
                 Section("Gestures") {
@@ -95,18 +76,67 @@ struct SettingsSheet: View {
                     gesturePicker("4-finger right", $session.preferences.bindings.fourFingerRight)
                     gesturePicker("4-finger up", $session.preferences.bindings.fourFingerUp)
                     gesturePicker("4-finger down", $session.preferences.bindings.fourFingerDown)
+                    TextField("Pinch in", text: $session.preferences.pinchInShortcut)
+                    TextField("Pinch out", text: $session.preferences.pinchOutShortcut)
                 }
 
-                Section("Haptics") {
+                Section("Deck") {
+                    Button("Edit Deck") { session.showsDeckEditor = true }
+                    Text("Add applications after the Mac is connected. Kamihi asks the Mac for installed apps.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Presentation") {
+                    Picker("Profile", selection: $session.preferences.presentationProfile) {
+                        ForEach(PresentationProfile.allCases) { profile in
+                            Text(profile.title).tag(profile)
+                        }
+                    }
+                    Picker("Pointer style", selection: $session.preferences.presentationPointerStyle) {
+                        ForEach(PresentationPointerStyle.allCases) { style in
+                            Text(style.title).tag(style)
+                        }
+                    }
+                }
+
+                Section("Controller") {
+                    Picker("Layout", selection: $session.preferences.controllerLayout) {
+                        ForEach(ControllerLayout.allCases) { layout in
+                            Text(layout.title).tag(layout)
+                        }
+                    }
+                    Picker("Game mapping", selection: $session.preferences.gameMapping) {
+                        ForEach(GameMapping.allCases) { mapping in
+                            Text(mapping.title).tag(mapping)
+                        }
+                    }
+                    Slider(value: $session.preferences.stickDeadZone, in: 0.04...0.3, step: 0.01) { Text("Dead zone") }
+                    Slider(value: $session.preferences.stickSensitivity, in: 0.5...2.0, step: 0.05) { Text("Stick sensitivity") }
+                    Toggle("Haptics", isOn: $session.preferences.controllerHaptics)
+                    LabeledContent("Native Gamepad Driver", value: session.transport.nativeGamepadStatus)
+                }
+
+                Section("Connection") {
+                    Toggle("Automatic", isOn: $session.preferences.automaticTransport)
+                    Picker("Preferred transport", selection: $session.preferences.preferredTransport) {
+                        ForEach(TransportKind.allCases) { kind in
+                            Text(kind.title).tag(kind)
+                        }
+                    }
+                    LabeledContent("Active", value: session.telemetry.transport)
+                    Text(session.transport.wiredStatus)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Appearance") {
                     Picker("Haptics", selection: $session.preferences.hapticLevel) {
                         ForEach(HapticLevel.allCases) { level in
                             Text(level.title).tag(level)
                         }
                     }
                     .pickerStyle(.segmented)
-                }
-
-                Section("Orientation") {
                     Picker("Orientation", selection: $session.preferences.orientation) {
                         ForEach(OrientationMode.allCases) { mode in
                             Text(mode.title).tag(mode)
@@ -117,9 +147,23 @@ struct SettingsSheet: View {
                 Section("Developer") {
                     Toggle("Developer diagnostics", isOn: $session.preferences.showDeveloperDiagnostics)
                     LabeledContent("Protocol", value: "v\(RemoteConstants.protocolVersionString)")
-                    LabeledContent("Transport", value: session.telemetry.transport)
-                    LabeledContent("RTT", value: "\(session.telemetry.rttMilliseconds) ms")
+                    LabeledContent("RTT", value: session.telemetry.rttMilliseconds == 0 ? "—" : "\(session.telemetry.rttMilliseconds) ms")
                     LabeledContent("Reconnects", value: "\(session.telemetry.reconnects)")
+                    TextField("Manual IP", text: $session.manualAddress)
+                        .keyboardType(.numbersAndPunctuation)
+                        .textInputAutocapitalization(.never)
+                    Stepper(value: $session.manualPort, in: 1024...65535) {
+                        HStack {
+                            Text("UDP port")
+                            Spacer()
+                            Text("\(session.manualPort)").foregroundStyle(.secondary).monospacedDigit()
+                        }
+                    }
+                    Button("Connect") {
+                        session.applySettingsAndConnect()
+                        dismiss()
+                    }
+                    .disabled(session.manualAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .navigationTitle("Settings")
@@ -130,6 +174,9 @@ struct SettingsSheet: View {
                 }
             }
             .onDisappear { session.preferences.save() }
+            .sheet(isPresented: $session.showsDeckEditor) {
+                DeckEditorSheet().environmentObject(session)
+            }
         }
     }
 

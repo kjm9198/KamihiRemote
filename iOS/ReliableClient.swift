@@ -120,7 +120,7 @@ final class ReliableClient {
             buffer.removeSubrange(buffer.startIndex..<range.upperBound)
             guard let line = String(data: lineData, encoding: .utf8) else { continue }
             switch RemotePacket.parse(line) {
-            case .success(_, let command, _, _, _):
+            case .success(_, let command, _, _, _, _):
                 if case .heartbeatAck(let id, _) = command, pendingHeartbeat?.0 == id {
                     let ms = Int(Date().timeIntervalSince(pendingHeartbeat?.1 ?? Date()) * 1000)
                     onRTT?(max(ms, 0))

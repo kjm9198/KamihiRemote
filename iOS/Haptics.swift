@@ -1,3 +1,5 @@
+import Foundation
+#if canImport(UIKit)
 import UIKit
 
 enum Haptics {
@@ -29,3 +31,16 @@ enum Haptics {
         generator.prepare()
     }
 }
+#else
+enum Haptics {
+    static var level: HapticLevel = .normal
+    static func prepare() {}
+    static func click() {}
+    static func mouseDown() {}
+    static func rightClick() {}
+    static func dragEnd() {}
+    static func gesture() {}
+    static func connect() {}
+    static func slideChange() {}
+}
+#endif

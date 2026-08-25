@@ -32,10 +32,19 @@ enum InputEngine {
 
     @discardableResult
     static func click() -> Bool {
+        return click(count: 1)
+    }
+
+    @discardableResult
+    static func doubleClick() -> Bool {
+        return click(count: 1) && click(count: 2)
+    }
+
+    private static func click(count: Int64) -> Bool {
         guard canInjectEvents else { return false }
         let point = CGEvent(source: nil)?.location ?? .zero
-        let down = postMouse(type: .leftMouseDown, at: point, button: .left)
-        let up = postMouse(type: .leftMouseUp, at: point, button: .left)
+        let down = postMouse(type: .leftMouseDown, at: point, button: .left, clickCount: count)
+        let up = postMouse(type: .leftMouseUp, at: point, button: .left, clickCount: count)
         mouseIsDown = false
         return down && up
     }
@@ -67,7 +76,7 @@ enum InputEngine {
     }
 
     @discardableResult
-    static func scroll(dx: Double, dy: Double) -> Bool {
+    static func scroll(dx: Double, dy: Double, phase: ScrollPhase = .changed) -> Bool {
         guard canInjectEvents else { return false }
         guard let event = CGEvent(
             scrollWheelEvent2Source: source,
@@ -80,14 +89,37 @@ enum InputEngine {
         event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
         event.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: -dy)
         event.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: -dx)
+        switch phase {
+        case .began:
+            event.setIntegerValueField(.scrollWheelEventScrollPhase, value: Int64(CGScrollPhase.began.rawValue))
+        case .changed:
+            event.setIntegerValueField(.scrollWheelEventScrollPhase, value: Int64(CGScrollPhase.changed.rawValue))
+        case .ended:
+            event.setIntegerValueField(.scrollWheelEventScrollPhase, value: Int64(CGScrollPhase.ended.rawValue))
+        case .momentumBegan:
+            event.setIntegerValueField(.scrollWheelEventMomentumPhase, value: Int64(CGMomentumScrollPhase.begin.rawValue))
+        case .momentumChanged:
+            event.setIntegerValueField(.scrollWheelEventMomentumPhase, value: 2)
+        case .momentumEnded:
+            event.setIntegerValueField(.scrollWheelEventMomentumPhase, value: Int64(CGMomentumScrollPhase.end.rawValue))
+        }
         event.post(tap: .cghidEventTap)
         return true
     }
 
     @discardableResult
     static func pinch(_ delta: Double) -> Bool {
-        let amount = delta * 80
-        return scroll(dx: 0, dy: amount) && keyChord(command: true, key: nil, downUp: false)
+        zoom(delta >= 0 ? .in : .out)
+    }
+
+    @discardableResult
+    static func zoom(_ action: ZoomAction) -> Bool {
+        switch action {
+        case .in:
+            return shortcut("cmd+=")
+        case .out:
+            return shortcut("cmd+-")
+        }
     }
 
     @discardableResult
@@ -164,14 +196,27 @@ enum InputEngine {
         case .previous:
             return hotkey(key: CGKeyCode(kVK_LeftArrow), flags: [])
         case .start:
-            return profile == .powerpoint
-                ? hotkey(key: CGKeyCode(kVK_F5), flags: [])
-                : hotkey(key: CGKeyCode(kVK_ANSI_P), flags: [.maskCommand, .maskShift])
+            switch profile {
+            case .powerpoint:
+                return hotkey(key: CGKeyCode(kVK_F5), flags: [])
+            case .generic:
+                return hotkey(key: CGKeyCode(kVK_Return), flags: .maskCommand)
+            case .keynote:
+                return hotkey(key: CGKeyCode(kVK_ANSI_P), flags: [.maskCommand, .maskShift])
+            }
         case .end:
             return hotkey(key: CGKeyCode(kVK_Escape), flags: [])
         case .black:
-            return hotkey(key: CGKeyCode(kVK_ANSI_B), flags: [])
+            switch profile {
+            case .powerpoint:
+                return hotkey(key: CGKeyCode(kVK_ANSI_B), flags: [])
+            case .generic:
+                return hotkey(key: CGKeyCode(kVK_ANSI_B), flags: [])
+            case .keynote:
+                return hotkey(key: CGKeyCode(kVK_ANSI_B), flags: [])
+            }
         case .pointer:
+            LaserOverlay.setVisible(true)
             return true
         }
     }
@@ -197,13 +242,10 @@ enum InputEngine {
 
     @discardableResult
     static func openApplication(_ name: String) -> Bool {
-        NSWorkspace.shared.launchApplication(name)
-    }
-
-    @discardableResult
-    static func openURL(_ raw: String) -> Bool {
-        guard let url = URL(string: raw) else { return false }
-        return NSWorkspace.shared.open(url)
+        if name.contains(".") {
+            return AppCatalog.open(bundleIdentifier: name)
+        }
+        return AppCatalog.open(bundleIdentifier: name) || NSWorkspace.shared.launchApplication(name)
     }
 
     static func releaseAll() {
@@ -217,6 +259,8 @@ enum InputEngine {
             _ = postKey(code: key, flags: [], down: false)
         }
         heldKeys.removeAll()
+        KeyboardGamepad.shared.reset()
+        LaserOverlay.setVisible(false)
     }
 
     static func testNudge(dx: Double = 100) -> (created: Bool, posted: Bool, trusted: Bool, from: CGPoint, to: CGPoint) {
@@ -235,16 +279,26 @@ enum InputEngine {
         return (true, true, trusted, current, target)
     }
 
+    @discardableResult
+    static func openURL(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
+        guard let url = URL(string: value) else { return false }
+        return NSWorkspace.shared.open(url)
+    }
+
     static func apply(_ command: RemoteCommand) -> Bool {
         switch command {
         case .move(let dx, let dy):
             return move(dx: dx, dy: dy)
         case .click:
             return click()
+        case .doubleClick:
+            return doubleClick()
         case .rightClick:
             return rightClick()
-        case .scroll(let dx, let dy):
-            return scroll(dx: dx, dy: dy)
+        case .scroll(let dx, let dy, let phase):
+            return scroll(dx: dx, dy: dy, phase: phase)
         case .mouseDown:
             return mouseDown()
         case .mouseUp:
@@ -262,10 +316,27 @@ enum InputEngine {
             return perform(action)
         case .media(let action):
             return media(action)
-        case .presentation(let action):
-            return presentation(action)
+        case .presentation(let action, let profile):
+            return presentation(action, profile: profile)
         case .pinch(let delta):
             return pinch(delta)
+        case .zoom(let action):
+            return zoom(action)
+        case .openApp(let bundleID):
+            return openApplication(bundleID)
+        case .openURL(let url):
+            return openURL(url)
+        case .shortcut(let spec):
+            return shortcut(spec)
+        case .laser(let x, let y):
+            LaserOverlay.move(normalizedX: x, normalizedY: y)
+            return true
+        case .laserVisible(let visible):
+            LaserOverlay.setVisible(visible)
+            return true
+        case .controller(let state):
+            KeyboardGamepad.shared.apply(state)
+            return true
         default:
             return false
         }
@@ -321,10 +392,18 @@ enum InputEngine {
     private static func keyCode(for name: String) -> CGKeyCode? {
         switch name {
         case "a": return CGKeyCode(kVK_ANSI_A)
+        case "b": return CGKeyCode(kVK_ANSI_B)
         case "c": return CGKeyCode(kVK_ANSI_C)
+        case "d": return CGKeyCode(kVK_ANSI_D)
+        case "e": return CGKeyCode(kVK_ANSI_E)
         case "f": return CGKeyCode(kVK_ANSI_F)
+        case "s": return CGKeyCode(kVK_ANSI_S)
         case "v": return CGKeyCode(kVK_ANSI_V)
+        case "w": return CGKeyCode(kVK_ANSI_W)
         case "z": return CGKeyCode(kVK_ANSI_Z)
+        case "=", "plus", "equal": return CGKeyCode(kVK_ANSI_Equal)
+        case "-", "minus": return CGKeyCode(kVK_ANSI_Minus)
+        case "4": return CGKeyCode(kVK_ANSI_4)
         case "space": return CGKeyCode(kVK_Space)
         case "tab": return CGKeyCode(kVK_Tab)
         case "esc", "escape": return CGKeyCode(kVK_Escape)
@@ -338,13 +417,14 @@ enum InputEngine {
         }
     }
 
-    private static func postMouse(type: CGEventType, at point: CGPoint, button: CGMouseButton) -> Bool {
+    private static func postMouse(type: CGEventType, at point: CGPoint, button: CGMouseButton, clickCount: Int64 = 1) -> Bool {
         guard let event = CGEvent(
             mouseEventSource: source,
             mouseType: type,
             mouseCursorPosition: point,
             mouseButton: button
         ) else { return false }
+        event.setIntegerValueField(.mouseEventClickState, value: clickCount)
         event.post(tap: .cghidEventTap)
         return true
     }
