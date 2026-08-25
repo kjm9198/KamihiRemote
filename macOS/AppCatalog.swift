@@ -21,11 +21,6 @@ enum AppCatalog {
     @discardableResult
     static func open(bundleIdentifier: String) -> Bool {
         let workspace = NSWorkspace.shared
-
-        if let running = workspace.runningApplications.first(where: { $0.bundleIdentifier == bundleIdentifier }) {
-            return running.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
-        }
-
         let url = workspace.urlForApplication(withBundleIdentifier: bundleIdentifier)
             ?? discoveredApplications().first(where: { $0.entry.bundleIdentifier == bundleIdentifier })?.url
 
@@ -34,6 +29,9 @@ enum AppCatalog {
             return false
         }
 
+        // Use the current AppKit launch API for both already-running and closed apps.
+        // `activates = true` matches the user's explicit Deck intent to bring that app
+        // forward without relying on deprecated force-activation flags.
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         workspace.openApplication(at: url, configuration: configuration) { _, error in
