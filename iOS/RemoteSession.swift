@@ -34,6 +34,10 @@ final class RemoteSession: ObservableObject, CommandSending {
     @Published var hostApps: [HostAppEntry] = []
     @Published var pendingAppName = ""
     @Published var gestureBanner: String? = nil
+    @Published var deckActionFeedback: DeckActionFeedback?
+    @Published var keyboardDesktopText = ""
+    @Published var keyboardDesktopTextEditable = false
+    @Published var keyboardSnapshotRevision = 0
     #if DEBUG
     @Published var uiTestShowDeckGallery = false
     #endif
@@ -50,6 +54,8 @@ final class RemoteSession: ObservableObject, CommandSending {
     private var lastController: ControllerState = .neutral
     private var collectingApps: [HostAppEntry] = []
     private let keys = DeviceKeyPair.loadOrCreate(account: "iphone-identity")
+    private var pendingDeckActionKey: String?
+    private var pendingDeckActionTitle = ""
 
     init() {
         engine = TouchInputEngine()
@@ -151,6 +157,80 @@ final class RemoteSession: ObservableObject, CommandSending {
         }
     }
 
+    func runDeck(_ button: DeckButton) {
+        guard isConnected else {
+            deckActionFeedback = DeckActionFeedback(title: button.title, success: false, message: "Mac is not connected")
+            Haptics.rightClick()
+            return
+        }
+
+        let key = deckActionKey(kind: button.kind.rawValue, payload: button.payload)
+        pendingDeckActionKey = key
+        pendingDeckActionTitle = button.title
+        deckActionFeedback = DeckActionFeedback(title: button.title, success: nil, message: "Sending to Mac…")
+
+        switch button.kind {
+        case .shortcut:
+            send(.shortcut(button.payload))
+        case .openApp:
+            send(.openApp(bundleID: button.payload))
+        case .openURL:
+            send(.openURL(button.payload))
+        case .system:
+            if let action = SystemAction(rawValue: button.payload) {
+                send(.system(action))
+            } else {
+                deckActionFeedback = DeckActionFeedback(title: button.title, success: false, message: "Unknown system action")
+                pendingDeckActionKey = nil
+                return
+            }
+        case .presentation:
+            if let action = PresentationAction(rawValue: button.payload) {
+                send(.presentation(action: action, profile: preferences.presentationProfile))
+            } else {
+                deckActionFeedback = DeckActionFeedback(title: button.title, success: false, message: "Unknown presentation action")
+                pendingDeckActionKey = nil
+                return
+            }
+        case .media:
+            if let action = MediaAction(rawValue: button.payload) {
+                send(.media(action))
+            } else {
+                deckActionFeedback = DeckActionFeedback(title: button.title, success: false, message: "Unknown media action")
+                pendingDeckActionKey = nil
+                return
+            }
+        }
+        Haptics.gesture()
+
+        let expected = key
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { [weak self] in
+            guard let self, self.pendingDeckActionKey == expected else { return }
+            self.pendingDeckActionKey = nil
+            self.deckActionFeedback = DeckActionFeedback(
+                title: button.title,
+                success: false,
+                message: "No Mac acknowledgement. Update/reopen the Mac host and reconnect."
+            )
+        }
+    }
+
+    func requestKeyboardSnapshot() {
+        guard isConnected else {
+            keyboardDesktopText = ""
+            keyboardDesktopTextEditable = false
+            keyboardSnapshotRevision &+= 1
+            return
+        }
+        tcp.send(.shortcut(SideChannelMessage.focusSnapshotShortcut))
+    }
+
+    func requestKeyboardSnapshot(after delay: TimeInterval) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.requestKeyboardSnapshot()
+        }
+    }
+
     private func flashGesture(_ title: String) {
         gestureBanner = title
         bannerClearWork?.cancel()
@@ -236,6 +316,7 @@ final class RemoteSession: ObservableObject, CommandSending {
         statusText = reason
         engine.syncConnection(false)
         pointerMode = .macCursor
+        pendingDeckActionKey = nil
     }
 
     func applySettingsAndConnect() {
@@ -293,8 +374,12 @@ final class RemoteSession: ObservableObject, CommandSending {
                 statusText = "Mac denied pairing"
             }
         case .pong(let name):
-            hostName = name
-            markConnected()
+            if let sideMessage = SideChannelMessage.parse(name) {
+                handleSideChannel(sideMessage)
+            } else {
+                hostName = name
+                markConnected()
+            }
         case .appListBegin:
             collectingApps = []
             pendingAppName = ""
@@ -305,6 +390,30 @@ final class RemoteSession: ObservableObject, CommandSending {
         default:
             break
         }
+    }
+
+    private func handleSideChannel(_ message: SideChannelMessage.Parsed) {
+        switch message {
+        case .actionAck(let kind, let payload, let success):
+            let key = deckActionKey(kind: kind, payload: payload)
+            guard pendingDeckActionKey == key else { return }
+            pendingDeckActionKey = nil
+            let title = pendingDeckActionTitle.isEmpty ? "Deck action" : pendingDeckActionTitle
+            deckActionFeedback = DeckActionFeedback(
+                title: title,
+                success: success,
+                message: success ? "Done on Mac" : "Mac could not perform this action"
+            )
+            if success { Haptics.click() } else { Haptics.rightClick() }
+        case .focusSnapshot(let text, let editable):
+            keyboardDesktopText = text
+            keyboardDesktopTextEditable = editable
+            keyboardSnapshotRevision &+= 1
+        }
+    }
+
+    private func deckActionKey(kind: String, payload: String) -> String {
+        "\(kind)|\(payload)"
     }
 
     private func handleTCP(_ state: NWConnection.State) {
@@ -380,6 +489,12 @@ final class RemoteSession: ObservableObject, CommandSending {
         preferences.save()
         DeckButton.save(deck)
     }
+}
+
+struct DeckActionFeedback: Equatable {
+    var title: String
+    var success: Bool?
+    var message: String
 }
 
 enum ConnectionState: String {
