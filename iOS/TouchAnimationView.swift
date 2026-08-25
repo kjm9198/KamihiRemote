@@ -50,10 +50,9 @@ struct TouchAnimationView: View {
             }
 
             GlassEffectContainer(spacing: 72) {
-                if state.isConnected {
+                // Only show glass bubbles for real fingers — no idle center orb / shuriken.
+                if state.isFingerDown {
                     connectedOrbs(at: time)
-                } else {
-                    searchingConstellation(at: time)
                 }
             }
             .animation(.interactiveSpring(response: 0.15, dampingFraction: 0.75), value: state.fingers)
@@ -101,7 +100,7 @@ struct TouchAnimationView: View {
     @ViewBuilder
     private func connectedOrbs(at time: TimeInterval) -> some View {
         let fingers = Array(state.fingers.prefix(4))
-        if state.isFingerDown, fingers.isEmpty == false {
+        if fingers.isEmpty == false {
             // Two-finger interactive glass metaball bridge
             if fingers.count == 2 {
                 glassBridge(from: fingers[0].point, to: fingers[1].point, isScrolling: state.modeName == "scrolling", isPinching: state.modeName == "pinching")
@@ -117,9 +116,8 @@ struct TouchAnimationView: View {
                 fourFingerGroupAura(fingers: fingers)
             }
 
-            // Individual stable contact orbs
+            // Individual stable contact orbs — one glass bubble per physical finger
             ForEach(fingers) { finger in
-                let index = fingers.firstIndex(of: finger) ?? 0
                 orb(
                     id: "finger-\(finger.id)",
                     size: orbSize(count: fingers.count),
@@ -130,17 +128,6 @@ struct TouchAnimationView: View {
                 .rotationEffect(fingers.count == 1 ? stretchAngle : groupRotation)
                 .position(finger.point)
             }
-        } else {
-            // Idle breathing floating glass orb
-            let float = reduceMotion ? 0.0 : sin(time * 0.7) * 8
-            orb(
-                id: "idle",
-                size: 84 + (state.isPrecision ? -10 : 6),
-                stretch: 0.04,
-                pressed: false
-            )
-            .scaleEffect(clickScale)
-            .position(x: center.x, y: center.y + float)
         }
     }
 
@@ -242,28 +229,6 @@ struct TouchAnimationView: View {
             return state.fingerCount == 1 ? stretchAngle : .zero
         }
         return Angle(radians: atan2(state.gestureProgress.height, state.gestureProgress.width))
-    }
-
-    private func searchingConstellation(at time: TimeInterval) -> some View {
-        let count = 8
-        return ZStack {
-            ForEach(0..<count, id: \.self) { index in
-                let ring = index < 4 ? 40.0 : 64.0
-                let speed = index < 4 ? 0.5 : -0.3
-                let angle = (Double(index % 4) / 4.0) * .pi * 2 + time * speed
-                Circle()
-                    .fill(.clear)
-                    .frame(width: index < 4 ? 18 : 12, height: index < 4 ? 18 : 12)
-                    .glassEffect(.regular, in: .circle)
-                    .glassEffectID("search-\(index)", in: glassSpace)
-                    .position(
-                        x: center.x + CGFloat(cos(angle)) * ring,
-                        y: center.y + CGFloat(sin(angle)) * ring
-                    )
-            }
-            orb(id: "search-core", size: 34, stretch: 0.03, pressed: false)
-                .position(center)
-        }
     }
 
     private func orb(id: String, size: CGFloat, stretch: CGFloat, pressed: Bool) -> some View {

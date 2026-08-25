@@ -148,10 +148,13 @@ final class UDPServer: ObservableObject {
                 let authorized: Bool
                 if isEncrypted {
                     authorized = (sessionID == activeSessionID || activeSessionID == nil)
+                } else if PairingSecret.matches(token, pairingCode) {
+                    // Always accept the temporary pairing code for realtime input.
+                    authorized = true
                 } else if let activeSessionID, token == activeSessionID || sessionID == activeSessionID {
                     authorized = true
                 } else {
-                    authorized = PairingSecret.matches(token, pairingCode)
+                    authorized = false
                 }
                 guard authorized else {
                     let reason: String

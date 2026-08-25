@@ -136,18 +136,19 @@ final class UDPClient: ObservableObject {
     private func write(_ command: RemoteCommand) {
         guard let connection else { return }
         let data: Data
-        if let sessionID, let sessionKey {
+        // Prefer the proven pairing-code path for realtime input so MOVE/SCROLL keep
+        // working even when session-key negotiation is incomplete or mismatched.
+        // K3 remains available once both sides share a verified session key AND no
+        // pairing code is present (future trusted-only links).
+        if PairingSecret.isValid(pairingCode) {
+            data = RemotePacket.encodeV1(token: pairingCode, command: command)
+        } else if let sessionID, let sessionKey,
+                  let encrypted = try? RemotePacket.encodeK3(sessionID: sessionID, sequence: sequence + 1, command: command, key: sessionKey) {
             sequence += 1
-            if let encrypted = try? RemotePacket.encodeK3(sessionID: sessionID, sequence: sequence, command: command, key: sessionKey) {
-                data = encrypted
-            } else {
-                data = RemotePacket.encodeV2(sessionID: sessionID, sequence: sequence, command: command)
-            }
+            data = encrypted
         } else if let sessionID {
             sequence += 1
             data = RemotePacket.encodeV2(sessionID: sessionID, sequence: sequence, command: command)
-        } else if PairingSecret.isValid(pairingCode) {
-            data = RemotePacket.encodeV1(token: pairingCode, command: command)
         } else {
             return
         }

@@ -225,18 +225,27 @@ struct ModeShell<Controls: View>: View {
             let showPointer = showsPointerOverride ?? session.preferences.alwaysShowPointerPad
             Group {
                 if showPointer == false {
-                    controls()
+                    VStack(spacing: 8) {
+                        pointerToggleBar
+                        controls()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 } else if landscape {
                     HStack(spacing: 10) {
-                        TrackpadCanvas()
-                            .frame(width: max(180, geo.size.width * pointerRatio))
+                        VStack(spacing: 8) {
+                            pointerToggleBar
+                            TrackpadCanvas()
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+                        .frame(width: max(180, geo.size.width * pointerRatio))
                         controls()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 } else {
-                    VStack(spacing: 10) {
+                    VStack(spacing: 8) {
                         controls()
                             .frame(maxWidth: .infinity)
+                        pointerToggleBar
                         TrackpadCanvas()
                             .frame(minHeight: 120, maxHeight: min(compactPointerHeight, max(130, geo.size.height * 0.36)))
                     }
@@ -244,6 +253,29 @@ struct ModeShell<Controls: View>: View {
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
+    }
+
+    private var pointerToggleBar: some View {
+        HStack {
+            Button {
+                session.preferences.alwaysShowPointerPad.toggle()
+                session.preferences.save()
+            } label: {
+                Label(
+                    session.preferences.alwaysShowPointerPad ? "Hide Pointer" : "Show Pointer",
+                    systemImage: session.preferences.alwaysShowPointerPad ? "hand.raised.slash" : "hand.draw"
+                )
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.white)
+            .glassEffect(.regular.interactive(), in: .capsule)
+            .accessibilityLabel(session.preferences.alwaysShowPointerPad ? "Hide pointer pad" : "Show pointer pad")
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 4)
     }
 }
 
@@ -267,6 +299,9 @@ struct TrackpadCanvas: View {
                     Spacer()
                     HStack {
                         precisionButton
+                        if session.selectedTab != .trackpad {
+                            pointerPadToggle
+                        }
                         if session.selectedTab == .slides {
                             laserButton
                         }
@@ -294,6 +329,22 @@ struct TrackpadCanvas: View {
         .glassEffect(.regular.interactive(), in: .capsule)
         .accessibilityLabel("Mac cursor")
         .accessibilityValue(session.precisionActive ? "Precision on" : "Off")
+    }
+
+    private var pointerPadToggle: some View {
+        Button {
+            session.preferences.alwaysShowPointerPad.toggle()
+            session.preferences.save()
+        } label: {
+            Label("Hide Pad", systemImage: "hand.raised.slash")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .accessibilityLabel("Hide pointer pad")
     }
 
     private var laserButton: some View {
