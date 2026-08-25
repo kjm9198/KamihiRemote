@@ -261,10 +261,17 @@ enum InputEngine {
 
     @discardableResult
     static func openApplication(_ name: String) -> Bool {
-        if name.contains(".") {
-            return AppCatalog.open(bundleIdentifier: name)
+        let id = bundleIdentifierNormalized(name)
+        if let running = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == id }) {
+            return running.activate()
         }
-        return AppCatalog.open(bundleIdentifier: name) || NSWorkspace.shared.launchApplication(name)
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) else {
+            return false
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+        return true
     }
 
     static func releaseAll() {
@@ -356,8 +363,124 @@ enum InputEngine {
         case .controller(let state):
             KeyboardGamepad.shared.apply(state)
             return true
+        case .action(let _, let inner):
+            return apply(inner)
+        case .requestFocusedText, .focusedText, .actionAck:
+            return true
         default:
             return false
+        }
+    }
+
+    static func applyReporting(_ command: RemoteCommand) async -> (Bool, String) {
+        switch command {
+        case .system(let action):
+            return await performReporting(action)
+        case .openApp(let bundleID):
+            return await AppCatalog.open(bundleIdentifier: bundleIdentifierNormalized(bundleID))
+        case .openURL(let url):
+            let ok = openURL(url)
+            return (ok, ok ? "Opened" : "Could not open URL")
+        case .shortcut(let spec):
+            let ok = shortcut(spec)
+            return (ok, ok ? "Done" : "Shortcut failed")
+        case .media(let action):
+            let ok = media(action)
+            return (ok, ok ? "Done" : "Media command failed")
+        case .presentation(let action, let profile):
+            let ok = presentation(action, profile: profile)
+            return (ok, ok ? action.rawValue : "Presentation command failed")
+        case .typeText(let text):
+            let ok = typeText(text)
+            return (ok, ok ? "Typed" : "Could not type")
+        case .zoom(let action):
+            let ok = zoom(action)
+            return (ok, ok ? "Zoomed" : "Zoom failed")
+        case .requestFocusedText:
+            return (true, "Requested")
+        default:
+            let ok = apply(command)
+            return (ok, ok ? "Done" : "Mac could not run that command")
+        }
+    }
+
+    static func performReporting(_ action: SystemAction) async -> (Bool, String) {
+        guard canInjectEvents || action == .missionControl else {
+            return (false, "Enable Accessibility for Kamihi Remote Host")
+        }
+        switch action {
+        case .none:
+            return (true, "Done")
+        case .previousDesktop:
+            return await performDesktop(key: CGKeyCode(kVK_LeftArrow), title: "Desktop ←")
+        case .nextDesktop:
+            return await performDesktop(key: CGKeyCode(kVK_RightArrow), title: "Desktop →")
+        case .missionControl:
+            return await performMissionControl()
+        case .appExpose:
+            if hotkey(key: CGKeyCode(kVK_DownArrow), flags: .maskControl) {
+                return (true, "App Exposé")
+            }
+            if hotkey(key: CGKeyCode(kVK_F10), flags: []) {
+                return (true, "App Exposé")
+            }
+            let ok = hotkey(key: CGKeyCode(kVK_F3), flags: [])
+            return (ok, ok ? "App Exposé" : "App Exposé failed")
+        case .showDesktop:
+            if hotkey(key: CGKeyCode(kVK_F11), flags: []) {
+                return (true, "Show Desktop")
+            }
+            let ok = hotkey(key: CGKeyCode(kVK_ANSI_D), flags: [.maskCommand, .maskControl])
+            return (ok, ok ? "Show Desktop" : "Show Desktop failed")
+        case .launchpad:
+            let ok = hotkey(key: CGKeyCode(kVK_F4), flags: [])
+            return (ok, ok ? "Launchpad" : "Launchpad failed")
+        case .playPause:
+            let ok = media(.playPause)
+            return (ok, ok ? "Play/Pause" : "Media failed")
+        case .customShortcut:
+            return (true, "Done")
+        }
+    }
+
+    private static func performDesktop(key: CGKeyCode, title: String) async -> (Bool, String) {
+        guard canInjectEvents else {
+            return (false, "Enable Accessibility for Kamihi Remote Host")
+        }
+        let posted = hotkey(key: key, flags: .maskControl)
+            || hotkey(key: key, flags: [.maskControl, .maskShift])
+        guard posted else {
+            return (false, "\(title)\nCould not post Control+Arrow")
+        }
+        if await SpaceChangeVerifier.wait() {
+            return (true, "Switched")
+        }
+        return (false, "Mac did not switch Desktop. Enable Mission Control shortcuts for Control+Left/Right in System Settings → Keyboard → Keyboard Shortcuts.")
+    }
+
+    private static func performMissionControl() async -> (Bool, String) {
+        if openMissionControlApp() {
+            try? await Task.sleep(nanoseconds: 280_000_000)
+            let running = NSWorkspace.shared.runningApplications.contains {
+                $0.bundleIdentifier == "com.apple.exposelauncher" || ($0.localizedName ?? "").contains("Mission Control")
+            }
+            if running {
+                return (true, "Mission Control")
+            }
+        }
+        guard canInjectEvents else {
+            return (false, "Enable Accessibility for Kamihi Remote Host")
+        }
+        let ok = hotkey(key: CGKeyCode(kVK_UpArrow), flags: .maskControl)
+        return (ok, ok ? "Mission Control" : "Mission Control failed")
+    }
+
+    private static func bundleIdentifierNormalized(_ name: String) -> String {
+        switch name.lowercased() {
+        case "safari": return "com.apple.Safari"
+        case "finder": return "com.apple.finder"
+        case "music": return "com.apple.Music"
+        default: return name
         }
     }
 

@@ -22,25 +22,38 @@ enum AppCatalog {
                 let name = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
                     ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
                     ?? url.deletingPathExtension().lastPathComponent
-                apps.append(HostAppEntry(displayName: name, bundleIdentifier: id))
-                if apps.count > 400 { return apps.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending } }
+                apps.append(HostAppEntry(displayName: name, bundleIdentifier: id, catalogPath: url.path))
+                if apps.count > 400 {
+                    return apps.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+                }
             }
         }
         return apps.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
     }
 
-    @discardableResult
-    static func open(bundleIdentifier: String) -> Bool {
+    static func open(bundleIdentifier: String, catalogPath: String? = nil) async -> (Bool, String) {
         let workspace = NSWorkspace.shared
         if let running = workspace.runningApplications.first(where: { $0.bundleIdentifier == bundleIdentifier }) {
-            return running.activate()
+            let activated = running.activate()
+            return (activated, activated ? "Opened" : "Could not bring \(bundleIdentifier) forward")
         }
-        guard let url = workspace.urlForApplication(withBundleIdentifier: bundleIdentifier) else {
-            return workspace.launchApplication(bundleIdentifier)
+        let url = workspace.urlForApplication(withBundleIdentifier: bundleIdentifier)
+            ?? catalogPath.map { URL(fileURLWithPath: $0) }
+        guard let url else {
+            return (false, "App not found")
         }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
-        workspace.openApplication(at: url, configuration: configuration)
-        return true
+        return await withCheckedContinuation { continuation in
+            workspace.openApplication(at: url, configuration: configuration) { app, error in
+                if let error {
+                    continuation.resume(returning: (false, error.localizedDescription))
+                } else if app != nil {
+                    continuation.resume(returning: (true, "Opened"))
+                } else {
+                    continuation.resume(returning: (false, "Launch did not complete"))
+                }
+            }
+        }
     }
 }

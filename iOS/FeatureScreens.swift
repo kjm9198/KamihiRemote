@@ -181,6 +181,13 @@ struct DeckScreen: View {
                     .tracking(KamihiUI.labelTracking)
                     .foregroundStyle(.white.opacity(0.55))
                 Spacer()
+                if let banner = session.actionBanner {
+                    Text(banner)
+                        .font(KamihiUI.captionFont)
+                        .foregroundStyle(.white.opacity(0.8))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.trailing)
+                }
                 Button {
                     showsAdd = true
                 } label: {
@@ -298,25 +305,26 @@ struct DeckScreen: View {
     private func run(_ button: DeckButton) {
         switch button.kind {
         case .shortcut:
-            session.send(.shortcut(button.payload))
+            session.sendAcknowledged(.shortcut(button.payload), title: button.title)
         case .openApp:
-            session.send(.openApp(bundleID: button.payload))
+            session.sendAcknowledged(.openApp(bundleID: button.payload), title: button.title)
         case .openURL:
-            session.send(.openURL(button.payload))
+            session.sendAcknowledged(.openURL(button.payload), title: button.title)
         case .system:
             if let action = SystemAction(rawValue: button.payload) {
-                session.send(.system(action))
+                session.sendAcknowledged(.system(action), title: button.title)
+            } else {
+                session.flashAction("\(button.title)\nUnknown action", success: false)
             }
         case .presentation:
             if let action = PresentationAction(rawValue: button.payload) {
-                session.send(.presentation(action: action, profile: session.preferences.presentationProfile))
+                session.sendAcknowledged(.presentation(action: action, profile: session.preferences.presentationProfile), title: button.title)
             }
         case .media:
             if let action = MediaAction(rawValue: button.payload) {
-                session.send(.media(action))
+                session.sendAcknowledged(.media(action), title: button.title)
             }
         }
-        Haptics.gesture()
     }
 }
 

@@ -7,22 +7,36 @@ struct ControllerScreen: View {
     var body: some View {
         GeometryReader { geo in
             let compact = geo.size.height > geo.size.width * 1.05
-            ZStack(alignment: .topLeading) {
+            ZStack(alignment: .top) {
                 ControllerPadView(session: session, compact: compact)
                     .frame(width: geo.size.width, height: geo.size.height)
                 if compact == false {
-                    Button {
-                        session.selectedTab = .trackpad
+                    Menu {
+                        Button("Trackpad") { session.leaveController(to: .trackpad) }
+                        Button("Presentation") { session.leaveController(to: .slides) }
+                        Button("Deck") { session.leaveController(to: .deck) }
+                        Divider()
+                        Button("Keyboard") {
+                            session.sendController(.neutral)
+                            session.showsKeyboard = true
+                        }
+                        Button("Media") {
+                            session.sendController(.neutral)
+                            session.showsMedia = true
+                        }
+                        Button("Settings") {
+                            session.sendController(.neutral)
+                            session.showsSettings = true
+                        }
                     } label: {
-                        Image(systemName: "xmark")
+                        Image(systemName: "line.3.horizontal")
                             .font(.system(size: 15, weight: .bold))
                             .frame(width: KamihiUI.controlHeight, height: KamihiUI.controlHeight)
+                            .foregroundStyle(.white)
+                            .glassEffect(.regular.interactive(), in: .circle)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.white)
-                    .glassEffect(.regular.interactive(), in: .circle)
-                    .padding(12)
-                    .accessibilityLabel("Leave controller")
+                    .padding(.top, 12)
+                    .accessibilityLabel("Controller menu")
                 }
             }
         }

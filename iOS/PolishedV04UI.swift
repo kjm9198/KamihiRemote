@@ -269,19 +269,30 @@ struct PolishedTrackpadSurface: View {
     var showDiagnostics: Bool
 
     var body: some View {
+        TrackpadBody(session: session, engine: session.engine, showDiagnostics: showDiagnostics)
+    }
+}
+
+private struct TrackpadBody: View {
+    @ObservedObject var session: RemoteSession
+    @ObservedObject var engine: TouchInputEngine
+    var showDiagnostics: Bool
+
+    var body: some View {
         GeometryReader { geo in
             ZStack {
-                TrackpadView(engine: session.engine)
+                TrackpadView(engine: engine)
                     .frame(width: geo.size.width, height: geo.size.height)
                     .contentShape(Rectangle())
                     .accessibilityLabel("Mac trackpad")
 
-                PolishedTouchAnimationView(state: fitted(session.engine.animation, size: geo.size))
+                DotFieldTouchView(state: fitted(engine.animation, size: geo.size))
                     .allowsHitTesting(false)
 
-                if let banner = session.gestureBanner {
+                if let banner = session.gestureBanner ?? session.actionBanner {
                     Text(banner)
                         .font(KamihiUI.bodyFont)
+                        .multilineTextAlignment(.center)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
                         .glassEffect(.regular, in: .capsule)
@@ -301,11 +312,20 @@ struct PolishedTrackpadSurface: View {
     }
 
     private var compactDebugHUD: some View {
-        let debug = session.engine.debug
-        let stats = session.engine.stats
+        let debug = engine.debug
+        let stats = engine.stats
+        let tel = session.telemetry
+        let deck = session.deckTrace
         return VStack(alignment: .leading, spacing: 2) {
-            Text("Touches \(stats.activeFingers) · \(debug.mode)")
-            Text("dx \(Int(debug.cumulativeX)) · dy \(Int(debug.cumulativeY))")
+            Text("TCP \(tel.tcpReady ? "✓" : "✗")  UDP \(tel.udpConfigured ? "✓" : "✗")  RTT \(tel.rttMilliseconds)ms")
+            Text("HB \(Int(tel.lastHeartbeatAge * 1000))ms  sess \(tel.sessionShort)")
+            Text("Touches \(stats.activeFingers) · \(debug.mode) · \(stats.movePerSecond)/s")
+            Text("Last \(tel.lastCommand)")
+            if deck.title.isEmpty == false {
+                Text("DECK \(deck.title)")
+                Text("sent \(deck.sent ? "✓" : "✗") recv \(deck.received ? "✓" : "✗") exec \(deck.executed ? "✓" : "✗") \(deck.latencyMilliseconds.map { "\($0)ms" } ?? "")")
+                Text(deck.message)
+            }
         }
         .font(.system(size: 10, weight: .semibold, design: .monospaced))
         .foregroundStyle(.white.opacity(0.78))
@@ -538,18 +558,32 @@ struct PolishedControllerScreen: View {
                     .clipped()
 
                 if immersive {
-                    Button {
-                        session.selectedTab = .trackpad
+                    Menu {
+                        Button("Trackpad") { session.leaveController(to: .trackpad) }
+                        Button("Presentation") { session.leaveController(to: .slides) }
+                        Button("Deck") { session.leaveController(to: .deck) }
+                        Divider()
+                        Button("Keyboard") {
+                            session.sendController(.neutral)
+                            session.showsKeyboard = true
+                        }
+                        Button("Media") {
+                            session.sendController(.neutral)
+                            session.showsMedia = true
+                        }
+                        Button("Settings") {
+                            session.sendController(.neutral)
+                            session.showsSettings = true
+                        }
                     } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 15, weight: .bold))
+                        Image(systemName: "line.3.horizontal")
+                            .font(.system(size: 17, weight: .bold))
                             .frame(width: 44, height: 44)
+                            .foregroundStyle(.white)
+                            .glassEffect(.regular.interactive(), in: .circle)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.white)
-                    .glassEffect(.regular.interactive(), in: .circle)
-                    .padding(.top, 4)
-                    .accessibilityLabel("Leave controller")
+                    .padding(.top, max(geo.safeAreaInsets.top, 4))
+                    .accessibilityLabel("Controller menu")
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)

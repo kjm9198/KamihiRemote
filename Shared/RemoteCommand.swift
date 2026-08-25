@@ -68,9 +68,10 @@ struct HostAppEntry: Equatable, Identifiable, Codable, Sendable {
     var id: String { bundleIdentifier }
     var displayName: String
     var bundleIdentifier: String
+    var catalogPath: String? = nil
 }
 
-enum RemoteCommand: Equatable, Sendable {
+indirect enum RemoteCommand: Equatable, Sendable {
     case ping
     case pong(hostName: String)
     case move(dx: Double, dy: Double)
@@ -108,6 +109,10 @@ enum RemoteCommand: Equatable, Sendable {
     case laserVisible(Bool)
     case controller(ControllerState)
     case revokeDevice(deviceID: String)
+    case action(id: String, inner: RemoteCommand)
+    case actionAck(id: String, success: Bool, message: String)
+    case requestFocusedText
+    case focusedText(status: FocusedTextStatus, value: String)
 
     var isRealtime: Bool {
         switch self {
@@ -211,6 +216,26 @@ enum RemoteCommand: Equatable, Sendable {
             ].joined(separator: " ")
         case .revokeDevice(let deviceID):
             return "REVOKE \(token(deviceID))"
+        case .action(let id, let inner):
+            return "ACTION \(token(id)) \(inner.wire)"
+        case .actionAck(let id, let success, let message):
+            return "ACTION_ACK \(token(id)) \(success ? "OK" : "FAIL") \(quoted(message))"
+        case .requestFocusedText:
+            return "REQUEST_FOCUSED_TEXT"
+        case .focusedText(let status, let value):
+            return "FOCUSED_TEXT \(status.rawValue) \(quoted(value))"
+        }
+    }
+
+    /// Deck, keyboard, presentation, and system gestures need an execution ACK over TCP.
+    var shouldAcknowledge: Bool {
+        switch self {
+        case .system, .openApp, .openURL, .shortcut, .media, .presentation, .typeText, .requestFocusedText:
+            return true
+        case .action, .zoom:
+            return false
+        default:
+            return false
         }
     }
 

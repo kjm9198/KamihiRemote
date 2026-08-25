@@ -34,6 +34,10 @@ final class RemoteSession: ObservableObject, CommandSending {
     @Published var hostApps: [HostAppEntry] = []
     @Published var pendingAppName = ""
     @Published var gestureBanner: String? = nil
+    @Published var actionBanner: String? = nil
+    @Published var deckTrace = DeckActionTrace()
+    @Published var focusedTextStatus: FocusedTextStatus = .unavailable
+    @Published var focusedTextValue = ""
     #if DEBUG
     @Published var uiTestShowDeckGallery = false
     #endif
@@ -45,11 +49,21 @@ final class RemoteSession: ObservableObject, CommandSending {
     private var reconnectWork: DispatchWorkItem?
     private var cancellables = Set<AnyCancellable>()
     private var bannerClearWork: DispatchWorkItem?
+    private var actionBannerWork: DispatchWorkItem?
     private var handshakeSent = false
     private var resolvedAddress: String?
     private var lastController: ControllerState = .neutral
     private var collectingApps: [HostAppEntry] = []
     private let keys = DeviceKeyPair.loadOrCreate(account: "iphone-identity")
+    private var pendingActions: [String: PendingAction] = [:]
+    private var telemetryTimer: Timer?
+    private var handlingTransportDeath = false
+
+    private struct PendingAction {
+        var title: String
+        var started: Date
+        var timeout: DispatchWorkItem
+    }
 
     init() {
         engine = TouchInputEngine()
@@ -60,14 +74,23 @@ final class RemoteSession: ObservableObject, CommandSending {
         browser.objectWillChange.receive(on: RunLoop.main).sink { [weak self] _ in
             self?.objectWillChange.send()
         }.store(in: &cancellables)
-        udp.objectWillChange.receive(on: RunLoop.main).sink { [weak self] _ in
-            self?.objectWillChange.send()
-        }.store(in: &cancellables)
+        // Do NOT forward UDP packet publishes into the shell — that rebuilt Deck/Settings at 120 Hz.
         tcp.onCommand = { [weak self] command in
             Task { @MainActor in self?.handleIncoming(command) }
         }
         tcp.onState = { [weak self] state in
             Task { @MainActor in self?.handleTCP(state) }
+        }
+        tcp.onDead = { [weak self] reason in
+            Task { @MainActor in self?.handleTCPDeath(reason) }
+        }
+        tcp.onSendFailure = { [weak self] command, reason in
+            Task { @MainActor in
+                self?.flashAction("\(command.name)\n\(reason)", success: false)
+                self?.deckTrace.message = reason
+                self?.deckTrace.success = false
+                self?.deckTrace.updatedAt = Date()
+            }
         }
         tcp.onRTT = { [weak self] ms in
             Task { @MainActor in
@@ -76,6 +99,7 @@ final class RemoteSession: ObservableObject, CommandSending {
                 self.telemetry.quality = ms > 80 ? .unstable : (ms > 25 ? .good : .excellent)
                 self.transport.noteLAN(rtt: ms, peerToPeer: true)
                 self.telemetry.transport = self.transport.active.title
+                self.telemetry.tcpReady = self.tcp.isReady
             }
         }
         tcp.onPathResolved = { [weak self] address in
@@ -101,10 +125,10 @@ final class RemoteSession: ObservableObject, CommandSending {
         applyUITestLaunchOverrides()
         #endif
         transport.noteWiredUnsupported()
+        startTelemetryClock()
     }
 
     #if DEBUG
-    /// Simulator smoke-test hooks: `-KamihiUITestTab controller|present|deck` and `-KamihiUITestKeyboard`.
     private func applyUITestLaunchOverrides() {
         let args = ProcessInfo.processInfo.arguments
         if let index = args.firstIndex(of: "-KamihiUITestTab"), index + 1 < args.count {
@@ -146,8 +170,57 @@ final class RemoteSession: ObservableObject, CommandSending {
         }
         if command.isRealtime {
             udp.send(command)
-        } else {
-            tcp.send(command)
+            return
+        }
+        if command.shouldAcknowledge {
+            sendAcknowledged(command, title: label(for: command))
+            return
+        }
+        tcp.send(command)
+        telemetry.reliablePackets += 1
+        telemetry.lastCommand = command.name
+    }
+
+    func sendAcknowledged(_ command: RemoteCommand, title: String) {
+        guard tcp.isReady || connectionState == .connected || connectionState == .connecting else {
+            flashAction("\(title)\nNot connected", success: false)
+            deckTrace = DeckActionTrace(title: title, sent: false, received: false, executed: false, success: false, message: "Not connected", latencyMilliseconds: nil, updatedAt: Date())
+            return
+        }
+        let id = UUID().uuidString
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, let pending = self.pendingActions.removeValue(forKey: id) else { return }
+            self.flashAction("\(pending.title)\nNo response from Mac", success: false)
+            self.deckTrace = DeckActionTrace(
+                title: pending.title,
+                sent: true,
+                received: false,
+                executed: false,
+                success: false,
+                message: "No ACK",
+                latencyMilliseconds: Int(Date().timeIntervalSince(pending.started) * 1000),
+                updatedAt: Date()
+            )
+        }
+        pendingActions[id] = PendingAction(title: title, started: Date(), timeout: timeout)
+        DispatchQueue.main.asyncAfter(deadline: .now() + RemoteConstants.actionAckTimeout, execute: timeout)
+        deckTrace = DeckActionTrace(title: title, sent: true, received: false, executed: false, success: nil, message: "Waiting…", latencyMilliseconds: nil, updatedAt: Date())
+        tcp.send(.action(id: id, inner: command))
+        telemetry.reliablePackets += 1
+        telemetry.lastCommand = title
+    }
+
+    private func label(for command: RemoteCommand) -> String {
+        switch command {
+        case .system(let action): return action.title
+        case .openApp(let id): return id.split(separator: ".").last.map(String.init) ?? id
+        case .shortcut(let spec): return spec
+        case .openURL: return "Open URL"
+        case .media: return "Media"
+        case .presentation(let action, _): return action.rawValue.capitalized
+        case .typeText: return "Type"
+        case .zoom: return "Zoom"
+        default: return command.name
         }
     }
 
@@ -159,11 +232,25 @@ final class RemoteSession: ObservableObject, CommandSending {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: work)
     }
 
+    func flashAction(_ text: String, success: Bool) {
+        actionBanner = text
+        if success { Haptics.gesture() } else { Haptics.rightClick() }
+        actionBannerWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.actionBanner = nil }
+        actionBannerWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8, execute: work)
+    }
+
     func sendController(_ state: ControllerState) {
         lastController = state
         if isConnected {
             udp.send(.controller(state))
         }
+    }
+
+    func leaveController(to tab: RemoteTab) {
+        sendController(.neutral)
+        selectedTab = tab
     }
 
     func connectIfPossible() {
@@ -188,6 +275,7 @@ final class RemoteSession: ObservableObject, CommandSending {
 
     func connect(to host: HostIdentity) {
         reconnectWork?.cancel()
+        handlingTransportDeath = false
         activeHost = host
         handshakeSent = false
         resolvedAddress = NetworkEndpoint.looksLikeNumericHost(host.lastAddress) ? host.lastAddress : nil
@@ -236,11 +324,18 @@ final class RemoteSession: ObservableObject, CommandSending {
         statusText = reason
         engine.syncConnection(false)
         pointerMode = .macCursor
+        telemetry.tcpReady = false
+        telemetry.udpConfigured = false
+        telemetry.quality = .offline
     }
 
     func applySettingsAndConnect() {
         persist()
         connectIfPossible()
+    }
+
+    func requestFocusedText() {
+        sendAcknowledged(.requestFocusedText, title: "Focused text")
     }
 
     private func handleIncoming(_ command: RemoteCommand) {
@@ -249,6 +344,7 @@ final class RemoteSession: ObservableObject, CommandSending {
             sessionID = session
             hostName = name
             udp.updateSession(session, sessionKey: sessionKey)
+            telemetry.sessionShort = String(session.prefix(8))
             if var host = activeHost {
                 host.hostID = hostID
                 host.displayName = name
@@ -271,6 +367,7 @@ final class RemoteSession: ObservableObject, CommandSending {
             if ok {
                 sessionID = session
                 udp.updateSession(session, sessionKey: sessionKey)
+                telemetry.sessionShort = String(session.prefix(8))
                 markConnected()
             } else if isConnected == false {
                 statusText = "Waiting for Mac approval…"
@@ -286,6 +383,7 @@ final class RemoteSession: ObservableObject, CommandSending {
                         self.sessionKey = derivedKey
                         self.sessionID = sess
                         udp.updateSession(sess, sessionKey: derivedKey)
+                        telemetry.sessionShort = String(sess.prefix(8))
                     }
                 }
                 markConnected()
@@ -302,6 +400,28 @@ final class RemoteSession: ObservableObject, CommandSending {
             collectingApps.append(HostAppEntry(displayName: name, bundleIdentifier: bundleID))
         case .appListEnd:
             hostApps = collectingApps.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        case .actionAck(let id, let success, let message):
+            guard let pending = pendingActions.removeValue(forKey: id) else { return }
+            pending.timeout.cancel()
+            let ms = Int(Date().timeIntervalSince(pending.started) * 1000)
+            deckTrace = DeckActionTrace(
+                title: pending.title,
+                sent: true,
+                received: true,
+                executed: success,
+                success: success,
+                message: message,
+                latencyMilliseconds: ms,
+                updatedAt: Date()
+            )
+            if success {
+                flashAction("\(pending.title)\n\(message.isEmpty ? "Done" : message)", success: true)
+            } else {
+                flashAction("\(pending.title)\n\(message.isEmpty ? "Failed" : message)", success: false)
+            }
+        case .focusedText(let status, let value):
+            focusedTextStatus = status
+            focusedTextValue = value
         default:
             break
         }
@@ -310,17 +430,32 @@ final class RemoteSession: ObservableObject, CommandSending {
     private func handleTCP(_ state: NWConnection.State) {
         switch state {
         case .ready:
+            handlingTransportDeath = false
+            telemetry.tcpReady = true
             sendHandshake()
         case .waiting(let error):
             statusText = "Waiting for Mac… \(error.localizedDescription)"
+            telemetry.tcpReady = false
             if connectionState == .connected { beginReconnect() }
         case .failed:
+            telemetry.tcpReady = false
             sendController(.neutral)
             if connectionState != .idle { beginReconnect() }
         case .cancelled:
-            break
+            telemetry.tcpReady = false
         default:
             break
+        }
+    }
+
+    private func handleTCPDeath(_ reason: String) {
+        guard handlingTransportDeath == false else { return }
+        handlingTransportDeath = true
+        telemetry.tcpReady = false
+        sendController(.neutral)
+        if connectionState != .idle {
+            statusText = "TCP lost — \(reason)"
+            beginReconnect()
         }
     }
 
@@ -342,6 +477,7 @@ final class RemoteSession: ObservableObject, CommandSending {
         guard NetworkEndpoint.looksLikeNumericHost(host) else { return }
         let port = activeHost?.lastPort == 0 || activeHost?.lastPort == nil ? RemoteConstants.defaultUDPPort : activeHost!.lastPort
         udp.configure(host: host, port: port, pairingCode: pairingCode, sessionID: sessionID, sessionKey: sessionKey)
+        telemetry.udpConfigured = true
         if var hostIdentity = activeHost {
             hostIdentity.lastAddress = host
             activeHost = hostIdentity
@@ -350,12 +486,14 @@ final class RemoteSession: ObservableObject, CommandSending {
 
     private func markConnected() {
         reconnectAttempt = 0
+        handlingTransportDeath = false
         connectionState = .connected
         statusText = "connected"
         engine.syncConnection(true)
         Haptics.connect()
         telemetry.quality = .excellent
         telemetry.transport = transport.active.title
+        telemetry.tcpReady = tcp.isReady
         browser.stopIfNeeded()
     }
 
@@ -365,11 +503,33 @@ final class RemoteSession: ObservableObject, CommandSending {
         connectionState = .reconnecting
         statusText = "Reconnecting…"
         telemetry.reconnects += 1
+        telemetry.quality = .unstable
         let delay = RemoteConstants.reconnectSchedule[min(reconnectAttempt, RemoteConstants.reconnectSchedule.count - 1)]
         reconnectAttempt += 1
-        let work = DispatchWorkItem { [weak self] in self?.connectIfPossible() }
+        let work = DispatchWorkItem { [weak self] in
+            self?.handlingTransportDeath = false
+            self?.connectIfPossible()
+        }
         reconnectWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func startTelemetryClock() {
+        let timer = Timer(timeInterval: 1.0 / RemoteConstants.telemetryHz, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.telemetry.realtimePacketsPerSecond = self.udp.realtimePacketsPerSecond
+                self.telemetry.tcpReady = self.tcp.isReady
+                self.telemetry.udpConfigured = self.udp.isConfigured
+                self.telemetry.gestureMode = self.engine.debug.mode
+                self.telemetry.fingerCount = self.engine.stats.activeFingers
+                if self.tcp.lastHeartbeatAck.timeIntervalSinceReferenceDate > 0 {
+                    self.telemetry.lastHeartbeatAge = Date().timeIntervalSince(self.tcp.lastHeartbeatAck)
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        telemetryTimer = timer
     }
 
     private func persist() {

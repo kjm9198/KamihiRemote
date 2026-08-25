@@ -90,6 +90,12 @@ enum RemotePacket {
         expectSuccess("163158 PRESENTATION start powerpoint", token: "163158", .presentation(action: .start, profile: .powerpoint))
         expectSuccess("163158 OPEN_APP com.apple.Safari", token: "163158", .openApp(bundleID: "com.apple.Safari"))
         expectSuccess("163158 SHORTCUT cmd+c", token: "163158", .shortcut("cmd+c"))
+        expectSuccess("163158 SYSTEM nextDesktop", token: "163158", .system(.nextDesktop))
+        expectSuccess("163158 ACTION 9c7 SYSTEM nextDesktop", token: "163158", .action(id: "9c7", inner: .system(.nextDesktop)))
+        expectSuccess("163158 ACTION_ACK 9c7 OK Switched", token: "163158", .actionAck(id: "9c7", success: true, message: "Switched"))
+        expectSuccess("163158 ACTION_ACK 9c7 FAIL \"Desktop did not change\"", token: "163158", .actionAck(id: "9c7", success: false, message: "Desktop did not change"))
+        expectSuccess("163158 REQUEST_FOCUSED_TEXT", token: "163158", .requestFocusedText)
+        expectSuccess("163158 FOCUSED_TEXT value Hello", token: "163158", .focusedText(status: .value, value: "Hello"))
         expectSuccess("MOVE 163158 1.289 0.645", token: "163158", .move(dx: 1.289, dy: 0.645), legacy: true)
 
         switch parse("K2 sess-1 103 1710000000.000 MOVE 1.289 0.645") {
@@ -321,6 +327,25 @@ enum RemotePacket {
         case "REVOKE":
             guard let deviceID = args.first else { return .failure("REVOKE missing device") }
             return .success(token: token, command: .revokeDevice(deviceID: deviceID), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "ACTION":
+            guard args.count >= 2 else { return .failure("ACTION missing fields") }
+            let nested = decode(token: token, command: args[1], args: Array(args.dropFirst(2)), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+            switch nested {
+            case .success(_, let inner, _, _, _, _):
+                return .success(token: token, command: .action(id: args[0], inner: inner), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+            case .failure(let reason):
+                return .failure(reason)
+            }
+        case "ACTION_ACK":
+            guard args.count >= 2 else { return .failure("ACTION_ACK missing fields") }
+            let ok = args[1].uppercased() == "OK"
+            let message = unquote(args.dropFirst(2).joined(separator: " "))
+            return .success(token: token, command: .actionAck(id: args[0], success: ok, message: message), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "REQUEST_FOCUSED_TEXT":
+            return .success(token: token, command: .requestFocusedText, legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "FOCUSED_TEXT":
+            guard let raw = args.first, let status = FocusedTextStatus(rawValue: raw) else { return .failure("FOCUSED_TEXT invalid") }
+            return .success(token: token, command: .focusedText(status: status, value: unquote(args.dropFirst().joined(separator: " "))), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         default:
             return .failure("unknown command \"\(command)\"")
         }
@@ -415,7 +440,8 @@ enum RemotePacket {
             "RELEASE_ALL", "HEARTBEAT", "HEARTBEAT_ACK", "HELLO", "HELLO_ACK", "PAIR", "PAIR_ACK",
             "PAIR_REQUEST", "PAIR_DECISION", "KEY_DOWN", "KEY_UP", "TYPE", "SYSTEM", "MEDIA", "PRESENTATION",
             "PINCH", "ZOOM", "OPEN_APP", "OPEN_URL", "SHORTCUT", "REQUEST_APP_LIST", "APP_LIST_BEGIN",
-            "APP_ENTRY", "APP_LIST_END", "LASER", "LASER_VISIBLE", "CONTROLLER", "REVOKE"
+            "APP_ENTRY", "APP_LIST_END", "LASER", "LASER_VISIBLE", "CONTROLLER", "REVOKE",
+            "ACTION", "ACTION_ACK", "REQUEST_FOCUSED_TEXT", "FOCUSED_TEXT"
         ].contains(value.uppercased())
     }
 }
