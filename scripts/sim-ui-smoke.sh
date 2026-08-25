@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Kamihi Remote — iOS Simulator launch smoke + optional screenshot evidence.
+# Kamihi Remote - iOS Simulator launch smoke + optional screenshot evidence.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -29,14 +29,14 @@ run_bounded() {
 }
 
 if [[ "$SKIP_BUILD" != "1" ]]; then
-  echo "Building KamihiRemote (Debug)…"
+  echo "Building KamihiRemote (Debug)..."
   xcodebuild -project "$ROOT/KamihiRemote.xcodeproj" -scheme KamihiRemote \
     -destination "platform=iOS Simulator,name=$SIM" \
     -derivedDataPath "$DERIVED" -configuration Debug \
     CODE_SIGNING_ALLOWED=NO build >/dev/null
 fi
 
-# GitHub's macOS runner does not guarantee ripgrep (`rg`) is installed.
+# GitHub's macOS runner does not guarantee ripgrep (rg) is installed.
 DEVICE_LINE="$(xcrun simctl list devices available | grep -F "$SIM (" | head -1 || true)"
 UDID="$(printf '%s\n' "$DEVICE_LINE" | grep -Eo '[0-9A-Fa-f-]{36}' | head -1 || true)"
 if [[ -z "$UDID" ]]; then
@@ -73,7 +73,7 @@ launch() {
   local label="$1"
   shift
   run_bounded 10 xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
-  echo "Launching $label…"
+  echo "Launching ${label}..."
   run_bounded 20 xcrun simctl launch "$UDID" "$BUNDLE" "$@" >/dev/null
   sleep 2
 }
@@ -81,13 +81,13 @@ launch() {
 shot() {
   local name="$1"
   if run_bounded 15 xcrun simctl io "$UDID" screenshot "$OUT/$name"; then
-    echo "  → $OUT/$name"
+    echo "  -> $OUT/$name"
   else
     echo "warning: screenshot unavailable for $name; launch verification still passed" >&2
   fi
 }
 
-echo "Running AppShell launch smoke…"
+echo "Running AppShell launch smoke..."
 launch "Present" --args -KamihiUITestTab present
 shot iphone-present.png
 launch "Deck" --args -KamihiUITestTab deck
