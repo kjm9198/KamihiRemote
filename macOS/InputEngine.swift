@@ -140,12 +140,15 @@ enum InputEngine {
         guard canInjectEvents else { return false }
         var ok = true
         for scalar in text.unicodeScalars {
-            guard let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true) else { continue }
+            guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+                  let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else { continue }
             var chars = Array(String(scalar).utf16)
-            event.keyboardSetUnicodeString(stringLength: chars.count, unicodeString: &chars)
-            event.post(tap: .cghidEventTap)
-            event.type = .keyUp
-            event.post(tap: .cghidEventTap)
+            down.keyboardSetUnicodeString(stringLength: chars.count, unicodeString: &chars)
+            up.keyboardSetUnicodeString(stringLength: chars.count, unicodeString: &chars)
+            down.post(tap: .cghidEventTap)
+            usleep(6000)
+            up.post(tap: .cghidEventTap)
+            usleep(6000)
             ok = true
         }
         return ok
@@ -458,24 +461,9 @@ enum InputEngine {
         guard canInjectEvents else {
             return (false, "Enable Accessibility for Kamihi Remote Host")
         }
-        // Post Control+Arrow firmly (down/up with flags on both).
-        let primary = hotkey(key: key, flags: .maskControl)
-        if primary == false {
-            let fallback = hotkey(key: key, flags: [.maskControl, .maskShift])
-            if fallback == false {
-                return (false, "\(title)\nCould not post Control+Arrow")
-            }
-        }
-        if await SpaceChangeVerifier.wait(timeout: 0.85) {
-            return (true, "Switched")
-        }
-        // Some Macs delay or suppress the notification even when Spaces change.
-        // Re-post once, then accept the keystroke as delivered so Deck isn't a silent fail.
-        _ = hotkey(key: key, flags: .maskControl)
-        if await SpaceChangeVerifier.wait(timeout: 0.45) {
-            return (true, "Switched")
-        }
-        return (true, "Control+Arrow sent — if Desktop didn’t move, enable Mission Control shortcuts for Control+Left/Right")
+        let left = (key == CGKeyCode(kVK_LeftArrow))
+        let ok = switchDesktop(left: left)
+        return (ok, ok ? "Switched" : "Desktop switch failed")
     }
 
     private static func performMissionControl() async -> (Bool, String) {

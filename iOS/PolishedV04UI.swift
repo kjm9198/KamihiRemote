@@ -438,11 +438,6 @@ struct PolishedKeyboardScreen: View {
     @State private var text = ""
     @State private var baseline = ""
     @State private var applyingRemote = false
-    @State private var userIsEditing = false
-    @State private var command = false
-    @State private var option = false
-    @State private var control = false
-    @State private var shift = false
 
     var body: some View {
         GeometryReader { geo in
@@ -454,46 +449,54 @@ struct PolishedKeyboardScreen: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                // Bottom half: typing dock without cluttered shortcuts
-                VStack(spacing: 8) {
-                    HStack(spacing: 8) {
-                        TextField("Type to Mac…", text: $text)
-                            .textFieldStyle(.plain)
-                            .focused($focused)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .submitLabel(.return)
-                            .onSubmit { press(code: 36) }
-                            .onChange(of: text) { _, newValue in
-                                handleEdit(newValue)
-                            }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .glassEffect(.regular, in: .rect(cornerRadius: KamihiUI.radiusMedium))
-                            .foregroundStyle(.white)
-                            .accessibilityLabel("Text to the Mac")
+                // Bottom half: clean typing dock without cluttered quick buttons
+                HStack(spacing: 10) {
+                    Image(systemName: "keyboard")
+                        .foregroundStyle(.white.opacity(0.6))
+                        .font(.system(size: 18, weight: .medium))
 
-                        if focused {
-                            Button("Done") { focused = false }
-                                .font(KamihiUI.captionFont)
-                                .foregroundStyle(.white.opacity(0.85))
-                                .frame(minWidth: 44, minHeight: 36)
+                    TextField("Type to Mac…", text: $text)
+                        .textFieldStyle(.plain)
+                        .focused($focused)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .submitLabel(.return)
+                        .onSubmit {
+                            session.send(.keyDown(code: 36, flags: 0))
+                            session.send(.keyUp(code: 36, flags: 0))
+                            text = ""
+                            baseline = ""
+                        }
+                        .onChange(of: text) { _, newValue in
+                            handleEdit(newValue)
+                        }
+                        .foregroundStyle(.white)
+                        .accessibilityLabel("Text to the Mac")
+
+                    if !text.isEmpty {
+                        Button {
+                            text = ""
+                            baseline = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.white.opacity(0.5))
                         }
                     }
 
-                    // Modifiers + essential keys
-                    HStack(spacing: 6) {
-                        modifier("⌘", $command)
-                        modifier("⌥", $option)
-                        modifier("⌃", $control)
-                        modifier("⇧", $shift)
-                        key("space", code: 49)
-                        key("⌫", code: 51)
-                        key("esc", code: 53)
-                        key("tab", code: 48)
-                        key("return", code: 36)
+                    if focused {
+                        Button("Done") {
+                            focused = false
+                        }
+                        .font(KamihiUI.captionFont.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.15), in: Capsule())
                     }
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .glassEffect(.regular, in: .rect(cornerRadius: KamihiUI.radiusMedium))
                 .padding(.horizontal, 4)
                 .padding(.bottom, 4)
             }
@@ -502,56 +505,8 @@ struct PolishedKeyboardScreen: View {
         }
     }
 
-    private func modifier(_ title: String, _ value: Binding<Bool>) -> some View {
-        Button(title) { value.wrappedValue.toggle() }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, minHeight: 38)
-            .foregroundStyle(value.wrappedValue ? .black : .white)
-            .background(value.wrappedValue ? Color.white : Color.clear, in: Capsule())
-            .glassEffect(.regular.interactive(), in: .capsule)
-            .accessibilityLabel(title)
-            .accessibilityAddTraits(value.wrappedValue ? .isSelected : [])
-    }
-
-    private func key(_ title: String, code: UInt16) -> some View {
-        Button(title) {
-            press(code: code)
-        }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity, minHeight: 38)
-        .foregroundStyle(.white)
-        .glassEffect(.regular.interactive(), in: .capsule)
-        .accessibilityLabel(title)
-    }
-
-    private func press(code: UInt16) {
-        userIsEditing = true
-        let f = flags()
-        session.send(.keyDown(code: code, flags: f))
-        session.send(.keyUp(code: code, flags: f))
-        Haptics.click()
-        applyingRemote = true
-        if code == 51, text.isEmpty == false {
-            text.removeLast()
-        } else if code == 49 {
-            text.append(" ")
-        }
-        baseline = text
-        applyingRemote = false
-    }
-
-    private func flags() -> UInt64 {
-        var value: UInt64 = 0
-        if command { value |= 1 << 20 }
-        if shift { value |= 1 << 17 }
-        if option { value |= 1 << 19 }
-        if control { value |= 1 << 18 }
-        return value
-    }
-
     private func handleEdit(_ newValue: String) {
         guard applyingRemote == false else { return }
-        userIsEditing = true
         if newValue == baseline { return }
 
         if newValue.hasPrefix(baseline) {
@@ -560,6 +515,9 @@ struct PolishedKeyboardScreen: View {
                 if character == " " {
                     session.send(.keyDown(code: 49, flags: 0))
                     session.send(.keyUp(code: 49, flags: 0))
+                } else if character == "\n" {
+                    session.send(.keyDown(code: 36, flags: 0))
+                    session.send(.keyUp(code: 36, flags: 0))
                 } else {
                     session.send(.typeText(String(character)))
                 }
@@ -578,6 +536,7 @@ struct PolishedKeyboardScreen: View {
             return
         }
 
+        // Complete replacement
         for _ in 0..<baseline.count {
             session.send(.keyDown(code: 51, flags: 0))
             session.send(.keyUp(code: 51, flags: 0))
@@ -586,6 +545,9 @@ struct PolishedKeyboardScreen: View {
             if character == " " {
                 session.send(.keyDown(code: 49, flags: 0))
                 session.send(.keyUp(code: 49, flags: 0))
+            } else if character == "\n" {
+                session.send(.keyDown(code: 36, flags: 0))
+                session.send(.keyUp(code: 36, flags: 0))
             } else {
                 session.send(.typeText(String(character)))
             }
