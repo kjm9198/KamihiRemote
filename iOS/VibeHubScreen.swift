@@ -10,6 +10,7 @@ struct VibeHubScreen: View {
 
     @State private var projects: [VoiceProject] = VoiceProjectStore.load()
     @State private var showsProjectManager = false
+    @State private var showsProjectProfile = false
     @State private var promptText = ""
     @State private var isListening = false
     @State private var isSending = false
@@ -17,7 +18,7 @@ struct VibeHubScreen: View {
     @State private var recognizer = PromptSpeechRecognizer()
     @State private var recentPrompts: [VibePromptHistoryEntry] = VibePromptHistoryStore.load()
 
-    @State private var isDevServerRunning = true
+    @State private var isDevServerRunning = false
 
     private var destination: VoiceAgentDestination {
         VoiceAgentDestination(rawValue: destinationRaw) ?? .antigravity
@@ -25,6 +26,10 @@ struct VibeHubScreen: View {
 
     private var selectedProject: VoiceProject? {
         projects.first(where: { $0.id == selectedProjectID }) ?? projects.first
+    }
+
+    private var projectProfile: VibeProjectProfile {
+        VibeProjectProfileStore.load(projectID: selectedProject?.id)
     }
 
     var body: some View {
@@ -75,6 +80,11 @@ struct VibeHubScreen: View {
         }
         .sheet(isPresented: $showsProjectManager) {
             VoiceProjectManagerSheet(projects: $projects, selectedProjectID: $selectedProjectID)
+        }
+        .sheet(isPresented: $showsProjectProfile) {
+            if let selectedProject {
+                VibeProjectProfileSheet(project: selectedProject)
+            }
         }
         .onAppear {
             projects = VoiceProjectStore.load()
@@ -136,6 +146,7 @@ struct VibeHubScreen: View {
                 ForEach(projects) { project in
                     Button {
                         selectedProjectID = project.id
+                        isDevServerRunning = false
                         VoiceAgentRouter.switchWorkspace(to: project, destination: destination, session: session)
                         Haptics.touchTap()
                     } label: {
@@ -155,6 +166,15 @@ struct VibeHubScreen: View {
                     Haptics.touchTap()
                 } label: {
                     Label("Manage Projects…", systemImage: "folder.badge.gearshape")
+                }
+
+                if selectedProject != nil {
+                    Button {
+                        showsProjectProfile = true
+                        Haptics.touchTap()
+                    } label: {
+                        Label("Configure Vibe Actions…", systemImage: "slider.horizontal.3")
+                    }
                 }
             } label: {
                 HStack(spacing: 6) {
@@ -176,7 +196,7 @@ struct VibeHubScreen: View {
             Spacer()
 
             Button {
-                session.sendAcknowledged(.openURL("http://localhost:3000"), title: "Preview")
+                VibeProjectCommandRunner.openPreview(project: selectedProject, profile: projectProfile, session: session)
                 Haptics.touchTap()
             } label: {
                 Label("Preview", systemImage: "globe")
@@ -189,12 +209,12 @@ struct VibeHubScreen: View {
             .foregroundStyle(.white.opacity(0.9))
 
             Button {
-                isDevServerRunning.toggle()
                 if isDevServerRunning {
-                    session.send(.typeText("npm run dev\n"))
+                    VibeProjectCommandRunner.stopFrontTerminalCommand(session: session)
                 } else {
-                    session.send(.shortcut("ctrl+c"))
+                    VibeProjectCommandRunner.runDev(project: selectedProject, profile: projectProfile, session: session)
                 }
+                isDevServerRunning.toggle()
                 Haptics.touchTap()
             } label: {
                 Image(systemName: isDevServerRunning ? "stop.fill" : "play.fill")
@@ -204,6 +224,20 @@ struct VibeHubScreen: View {
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: .circle)
             .foregroundStyle(isDevServerRunning ? .orange : .green)
+            .accessibilityLabel(isDevServerRunning ? "Stop dev command" : "Run dev command")
+
+            Button {
+                VibeProjectCommandRunner.runTests(project: selectedProject, profile: projectProfile, session: session)
+                Haptics.touchTap()
+            } label: {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .padding(6)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .circle)
+            .foregroundStyle(.cyan)
+            .accessibilityLabel("Run project tests")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
