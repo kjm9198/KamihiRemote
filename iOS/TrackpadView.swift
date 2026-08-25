@@ -34,6 +34,7 @@ final class TrackpadUIView: UIView {
         super.layoutSubviews()
         isUserInteractionEnabled = true
         isMultipleTouchEnabled = true
+        engine?.noteCanvasSize(bounds.size)
     }
 
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
@@ -82,7 +83,9 @@ final class TrackpadUIView: UIView {
     }
 
     private func sample(_ touch: UITouch) -> FingerSample {
-        FingerSample(id: identity(for: touch), point: touch.location(in: self), phase: touch.phase)
+        // preciseLocation tracks the fingertip more closely than the coarse contact point.
+        let point = touch.preciseLocation(in: self)
+        return FingerSample(id: identity(for: touch), point: point, phase: touch.phase)
     }
 
     @discardableResult

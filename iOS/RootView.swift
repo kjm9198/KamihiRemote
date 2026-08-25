@@ -283,46 +283,47 @@ struct TrackpadCanvas: View {
     @EnvironmentObject private var session: RemoteSession
 
     var body: some View {
-        GeometryReader { proxy in
-            let size = proxy.size
-            ZStack {
-                TrackpadView(engine: session.engine)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .accessibilityLabel("Mac trackpad")
-                TouchAnimationView(state: fitted(session.engine.animation, size: size))
-                    .allowsHitTesting(false)
-                if let banner = session.gestureBanner {
-                    Text(banner)
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .glassEffect(.regular.interactive(), in: .capsule)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                        .padding(.top, 16)
+        ZStack {
+            TrackpadView(engine: session.engine)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .accessibilityLabel("Mac trackpad")
+                // Animation overlay shares the exact UIKit trackpad frame — no separate GeometryReader size drift.
+                .overlay {
+                    TouchAnimationView(state: fitted(session.engine.animation, size: session.engine.canvasSize))
                         .allowsHitTesting(false)
-                        .transition(.opacity)
                 }
-                if session.preferences.showDeveloperDiagnostics {
-                    debugHUD.allowsHitTesting(false)
-                }
-                VStack {
-                    Spacer()
-                    HStack(spacing: 8) {
-                        precisionButton
-                        gestureProbe("MC", "Mission Control") { session.send(.system(.missionControl)) }
-                        gestureProbe("Exposé", "App Exposé") { session.send(.system(.appExpose)) }
-                        if session.selectedTab != .trackpad {
-                            pointerPadToggle
-                        }
-                        if session.selectedTab == .slides {
-                            laserButton
-                        }
-                        Spacer(minLength: 0)
+
+            if let banner = session.gestureBanner {
+                Text(banner)
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .glassEffect(.regular.interactive(), in: .capsule)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 16)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+            if session.preferences.showDeveloperDiagnostics {
+                debugHUD.allowsHitTesting(false)
+            }
+            VStack {
+                Spacer()
+                HStack(spacing: 8) {
+                    precisionButton
+                    gestureProbe("MC", "Mission Control") { session.send(.system(.missionControl)) }
+                    gestureProbe("Exposé", "App Exposé") { session.send(.system(.appExpose)) }
+                    if session.selectedTab != .trackpad {
+                        pointerPadToggle
                     }
-                    .padding(12)
+                    if session.selectedTab == .slides {
+                        laserButton
+                    }
+                    Spacer(minLength: 0)
                 }
+                .padding(12)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -426,21 +427,9 @@ struct TrackpadCanvas: View {
 
     private func fitted(_ state: TouchAnimationState, size: CGSize) -> TouchAnimationState {
         var copy = state
-        let src = state.trackpadSize
-        // Remap UIKit touch points into the SwiftUI overlay size so bubbles land on fingers.
-        if src.width > 1, src.height > 1, size.width > 1, size.height > 1,
-           abs(src.width - size.width) > 0.5 || abs(src.height - size.height) > 0.5 {
-            let sx = size.width / src.width
-            let sy = size.height / src.height
-            copy.fingers = state.fingers.map { finger in
-                var next = finger
-                next.point = CGPoint(x: finger.point.x * sx, y: finger.point.y * sy)
-                return next
-            }
-            copy.gestureProgress = CGSize(width: state.gestureProgress.width * sx, height: state.gestureProgress.height * sy)
-            copy.velocity = CGSize(width: state.velocity.width * sx, height: state.velocity.height * sy)
-        }
-        copy.trackpadSize = size
+        let canvas = size.width > 1 && size.height > 1 ? size : state.trackpadSize
+        // Points are already in UIKit trackpad coordinates. Keep them 1:1 with the overlay.
+        copy.trackpadSize = canvas.width > 1 ? canvas : CGSize(width: 390, height: 640)
         copy.isConnected = session.isConnected
         copy.isPrecision = session.precisionActive
         return copy

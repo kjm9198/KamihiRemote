@@ -5,6 +5,7 @@ final class TouchInputEngine: NSObject, ObservableObject {
     @Published private(set) var animation = TouchAnimationState.idle
     @Published private(set) var stats = TouchPipelineStats()
     @Published private(set) var debug = GestureDebug()
+    @Published private(set) var canvasSize = CGSize(width: 390, height: 640)
     @Published var precisionActive = false {
         didSet { gesture.precisionActive = precisionActive }
     }
@@ -53,6 +54,9 @@ final class TouchInputEngine: NSObject, ObservableObject {
 
     func handle(changed: [FingerSample], active: [FingerSample], timestamp: TimeInterval, phase: UITouch.Phase, in size: CGSize) {
         lastSize = size
+        if size.width > 1, size.height > 1, canvasSize != size {
+            canvasSize = size
+        }
         if phase == .began {
             stats.touchActive = true
             stats.touchCount += 1
@@ -71,6 +75,17 @@ final class TouchInputEngine: NSObject, ObservableObject {
             stats.y = point.y
         }
         stats.activeFingers = active.count
+    }
+
+    func noteCanvasSize(_ size: CGSize) {
+        guard size.width > 1, size.height > 1 else { return }
+        lastSize = size
+        if canvasSize != size {
+            canvasSize = size
+            var next = latestAnimation
+            next.trackpadSize = size
+            latestAnimation = next
+        }
     }
 
     func handleCancelled(in size: CGSize) {
