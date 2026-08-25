@@ -20,7 +20,6 @@ enum GestureEngineTests {
             try check("frameRateIndependence", frameRateIndependence)
             try check("horizontalThreeFingerSwipe", horizontalThreeFingerSwipe)
             try check("pinchDisabled", pinchDisabled)
-            try check("pinchEnabled", pinchEnabled)
             try check("twoFingerSticky", twoFingerSticky)
             try check("fingerCountTransitions", fingerCountTransitions)
             try check("asyncThreeFingerRelease", asyncThreeFingerRelease)
@@ -195,19 +194,7 @@ enum GestureEngineTests {
         let b = [FingerSample(id: 1, point: CGPoint(x: 80, y: 200)), FingerSample(id: 2, point: CGPoint(x: 260, y: 200))]
         let moved = g.ingest(samples: b, timestamp: 7.05, phase: .moved, in: size)
         let zoomed = moved.commands.contains { if case .zoom = $0 { return true } else { return false } }
-        try require(zoomed == false, "pinch must not zoom when disabled")
-    }
-
-    private static func pinchEnabled() throws {
-        let g = engine()
-        g.preferences.pinchEnabled = true
-        g.preferences.pinchThreshold = 0.08
-        let a = [FingerSample(id: 1, point: CGPoint(x: 140, y: 200)), FingerSample(id: 2, point: CGPoint(x: 180, y: 200))]
-        _ = g.ingest(samples: a, timestamp: 7.2, phase: .began, in: size)
-        let b = [FingerSample(id: 1, point: CGPoint(x: 80, y: 200)), FingerSample(id: 2, point: CGPoint(x: 260, y: 200))]
-        let moved = g.ingest(samples: b, timestamp: 7.28, phase: .moved, in: size)
-        let zoomed = moved.commands.contains { if case .zoom = $0 { return true } else { return false } }
-        try require(zoomed, "pinch must zoom when enabled")
+        try require(zoomed == false, "pinch must not zoom")
     }
 
     private static func horizontalThreeFingerSwipe() throws {

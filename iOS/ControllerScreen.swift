@@ -13,7 +13,7 @@ struct ControllerScreen: View {
                 if compact == false {
                     Menu {
                         Button("Trackpad") { session.leaveController(to: .trackpad) }
-                        Button("Presentation") { session.leaveController(to: .slides) }
+                        Button("Keyboard") { session.leaveController(to: .keyboard) }
                         Button("Deck") { session.leaveController(to: .deck) }
                         Divider()
                         Button("Keyboard") {

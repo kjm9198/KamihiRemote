@@ -560,10 +560,10 @@ final class GestureEngine {
         guard let start = startCentroid else { return [] }
         let dx = center.x - start.x
         let dy = center.y - start.y
-        if hypot(dx, dy) > 14 {
+        lastCentroid = center
+        if hypot(dx, dy) > 10 {
             let wasLocked = mode == .threeFingerSwipe
             mode = .threeFingerSwipe
-            lastCentroid = center
             lockAxis(dx: dx, dy: dy)
             let action = threeFingerAction()
             committedAction = action
@@ -580,10 +580,10 @@ final class GestureEngine {
         guard let start = startCentroid else { return [] }
         let dx = center.x - start.x
         let dy = center.y - start.y
-        if hypot(dx, dy) > 14 {
+        lastCentroid = center
+        if hypot(dx, dy) > 10 {
             let wasLocked = mode == .fourFingerSwipe
             mode = .fourFingerSwipe
-            lastCentroid = center
             lockAxis(dx: dx, dy: dy)
             let action = fourFingerAction()
             committedAction = action
@@ -598,8 +598,8 @@ final class GestureEngine {
 
     private func lockAxis(dx: CGFloat, dy: CGFloat) {
         if swipeAxis == nil {
-            // Slight horizontal bias — desktop left/right swipes should lock easily.
-            swipeAxis = abs(dx) >= abs(dy) * 0.75 ? .horizontal : .vertical
+            // Horizontal bias for switching desktops
+            swipeAxis = abs(dx) >= abs(dy) * 0.7 ? .horizontal : .vertical
         }
     }
 

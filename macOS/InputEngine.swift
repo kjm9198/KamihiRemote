@@ -165,11 +165,9 @@ enum InputEngine {
             if hotkey(key: CGKeyCode(kVK_F10), flags: []) { return true }
             return hotkey(key: CGKeyCode(kVK_F3), flags: [])
         case .previousDesktop:
-            if hotkey(key: CGKeyCode(kVK_LeftArrow), flags: .maskControl) { return true }
-            return hotkey(key: CGKeyCode(kVK_LeftArrow), flags: [.maskControl, .maskShift])
+            return switchDesktop(left: true)
         case .nextDesktop:
-            if hotkey(key: CGKeyCode(kVK_RightArrow), flags: .maskControl) { return true }
-            return hotkey(key: CGKeyCode(kVK_RightArrow), flags: [.maskControl, .maskShift])
+            return switchDesktop(left: false)
         case .showDesktop:
             if hotkey(key: CGKeyCode(kVK_F11), flags: []) { return true }
             return hotkey(key: CGKeyCode(kVK_ANSI_D), flags: [.maskCommand, .maskControl])
@@ -505,6 +503,47 @@ enum InputEngine {
         case "cursor": return "com.todesktop.230313mzl4w4u92"
         default: return name
         }
+    }
+
+    @discardableResult
+    private static func switchDesktop(left: Bool) -> Bool {
+        guard canInjectEvents else { return false }
+        DispatchQueue.global(qos: .userInteractive).async {
+            let src = CGEventSource(stateID: .combinedSessionState)
+            let keyCode: CGKeyCode = left ? CGKeyCode(kVK_LeftArrow) : CGKeyCode(kVK_RightArrow)
+            let ctrlKey: CGKeyCode = CGKeyCode(kVK_Control)
+
+            if let ctrlDown = CGEvent(keyboardEventSource: src, virtualKey: ctrlKey, keyDown: true) {
+                ctrlDown.flags = .maskControl
+                ctrlDown.post(tap: .cghidEventTap)
+            }
+            usleep(18000)
+
+            if let arrowDown = CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: true) {
+                arrowDown.flags = .maskControl
+                arrowDown.post(tap: .cghidEventTap)
+            }
+            usleep(25000)
+
+            if let arrowUp = CGEvent(keyboardEventSource: src, virtualKey: keyCode, keyDown: false) {
+                arrowUp.flags = .maskControl
+                arrowUp.post(tap: .cghidEventTap)
+            }
+            usleep(18000)
+
+            if let ctrlUp = CGEvent(keyboardEventSource: src, virtualKey: ctrlKey, keyDown: false) {
+                ctrlUp.flags = []
+                ctrlUp.post(tap: .cghidEventTap)
+            }
+
+            // AppleScript fallback
+            let script = "tell application \"System Events\" to key code \(left ? 123 : 124) using control down"
+            if let appleScript = NSAppleScript(source: script) {
+                var err: NSDictionary?
+                appleScript.executeAndReturnError(&err)
+            }
+        }
+        return true
     }
 
     private static func hotkey(key: CGKeyCode, flags: CGEventFlags) -> Bool {

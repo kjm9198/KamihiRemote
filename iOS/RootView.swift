@@ -136,8 +136,8 @@ struct RootView: View {
         switch session.selectedTab {
         case .trackpad:
             TrackpadCanvas(chrome: .full)
-        case .slides:
-            PresentationScreen()
+        case .keyboard:
+            PolishedKeyboardScreen()
         case .deck:
             DeckScreen()
         case .controller:
@@ -251,7 +251,7 @@ struct RootView: View {
     private func symbol(for tab: RemoteTab) -> String {
         switch tab {
         case .trackpad: return "hand.draw"
-        case .slides: return "rectangle.on.rectangle"
+        case .keyboard: return "keyboard"
         case .deck: return "square.grid.3x3"
         case .controller: return "gamecontroller"
         }

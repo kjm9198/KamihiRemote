@@ -70,17 +70,13 @@ final class ScrollGestureEngine {
             momentumActive = false
         }
         let center = centroid(points)
-        let currentSpan = span(points)
         let dt = max(timestamp - lastTime, 0.0008)
         let dx = Double(center.x - lastCentroid.x)
         let dy = Double(center.y - lastCentroid.y)
         let translation = hypot(center.x - startCentroid.x, center.y - startCentroid.y)
-        let spanChange = abs(currentSpan - startSpan)
 
         if intent == .unknown {
-            if preferences.pinchEnabled, spanChange > 14, spanChange > translation * 1.25 {
-                intent = .pinch
-            } else if translation > 4 {
+            if translation > 2 {
                 intent = .scroll
             }
         }
@@ -91,11 +87,7 @@ final class ScrollGestureEngine {
         switch intent {
         case .unknown:
             return []
-        case .pinch:
-            let ratio = Double((currentSpan - startSpan) / max(startSpan, 1))
-            pinchAccum += ratio
-            return drainPinch()
-        case .scroll:
+        case .scroll, .pinch:
             return scrollMoved(dx: dx, dy: dy, dt: dt, timestamp: timestamp)
         }
     }
@@ -105,11 +97,7 @@ final class ScrollGestureEngine {
             resetSoft()
             return []
         }
-        if intent == .pinch {
-            resetSoft()
-            return []
-        }
-        guard intent == .scroll else {
+        guard intent == .scroll || intent == .pinch else {
             resetSoft()
             return []
         }

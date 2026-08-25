@@ -134,7 +134,7 @@ final class RemoteSession: ObservableObject, CommandSending {
         if let index = args.firstIndex(of: "-KamihiUITestTab"), index + 1 < args.count {
             switch args[index + 1].lowercased() {
             case "controller": selectedTab = .controller
-            case "present", "slides": selectedTab = .slides
+            case "keyboard": selectedTab = .keyboard
             case "deck": selectedTab = .deck
             default: break
             }
@@ -547,12 +547,12 @@ enum ConnectionState: String {
 }
 
 enum RemoteTab: String, CaseIterable, Identifiable {
-    case trackpad, slides, deck, controller
+    case trackpad, keyboard, deck, controller
     var id: String { rawValue }
     var title: String {
         switch self {
         case .trackpad: return "Trackpad"
-        case .slides: return "Present"
+        case .keyboard: return "Keyboard"
         case .deck: return "Deck"
         case .controller: return "Controller"
         }

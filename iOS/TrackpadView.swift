@@ -32,6 +32,10 @@ final class TrackpadUIView: UIView {
     private var nextIdentity = 1
     private var reapLink: CADisplayLink?
 
+    override var editingInteractionConfiguration: UIEditingInteractionConfiguration {
+        .none
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         isUserInteractionEnabled = true

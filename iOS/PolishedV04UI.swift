@@ -141,8 +141,8 @@ struct KamihiPolishedRootView: View {
         switch session.selectedTab {
         case .trackpad:
             PolishedTrackpadSurface(showDiagnostics: true)
-        case .slides:
-            PolishedPresentationScreen()
+        case .keyboard:
+            PolishedKeyboardScreen()
         case .deck:
             DeckScreen()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -238,7 +238,7 @@ struct KamihiPolishedRootView: View {
     private func symbol(for tab: RemoteTab) -> String {
         switch tab {
         case .trackpad: return "hand.draw"
-        case .slides: return "rectangle.on.rectangle"
+        case .keyboard: return "keyboard"
         case .deck: return "square.grid.3x3"
         case .controller: return "gamecontroller"
         }
@@ -432,114 +432,165 @@ struct PolishedTouchAnimationView: View {
     }
 }
 
-struct PolishedPresentationScreen: View {
+struct PolishedKeyboardScreen: View {
     @EnvironmentObject private var session: RemoteSession
-
-    private var isLaser: Bool { session.pointerMode == .presentationLaser }
+    @FocusState private var focused: Bool
+    @State private var text = ""
+    @State private var baseline = ""
+    @State private var applyingRemote = false
+    @State private var userIsEditing = false
+    @State private var command = false
+    @State private var option = false
+    @State private var control = false
+    @State private var shift = false
 
     var body: some View {
         GeometryReader { geo in
-            let landscape = geo.size.width > geo.size.height * 1.05
-            VStack(spacing: 10) {
-                if landscape == false {
-                    HStack {
-                        Text("PRESENT")
-                            .font(KamihiUI.titleFont)
-                            .tracking(KamihiUI.labelTracking)
-                            .foregroundStyle(.white.opacity(0.55))
-                        Spacer()
-                        pointerModeControl
-                    }
-                }
-
-                HStack(spacing: 10) {
-                    bigButton("Previous", "chevron.left") { send(.previous) }
-                    bigButton("Next", "chevron.right") { send(.next) }
-                }
-                .frame(height: landscape ? min(108, geo.size.height * 0.30) : 92)
-
-                ZStack(alignment: .topTrailing) {
+            VStack(spacing: 8) {
+                // Top half: full interactive Mac trackpad
+                ZStack {
                     PolishedTrackpadSurface(showDiagnostics: false)
                         .clipShape(RoundedRectangle(cornerRadius: KamihiUI.radiusLarge, style: .continuous))
-
-                    if landscape {
-                        pointerModeControl
-                            .padding(8)
-                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                HStack(spacing: 10) {
-                    smallButton("Start", "play.fill") { send(.start) }
-                    smallButton("Black", "rectangle.fill") { send(.black) }
-                    smallButton("End", "xmark") { send(.end) }
-                }
-                .frame(height: 46)
+                // Bottom half: typing dock without cluttered shortcuts
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        TextField("Type to Mac…", text: $text)
+                            .textFieldStyle(.plain)
+                            .focused($focused)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .submitLabel(.return)
+                            .onSubmit { press(code: 36) }
+                            .onChange(of: text) { _, newValue in
+                                handleEdit(newValue)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .glassEffect(.regular, in: .rect(cornerRadius: KamihiUI.radiusMedium))
+                            .foregroundStyle(.white)
+                            .accessibilityLabel("Text to the Mac")
 
-                if landscape == false {
-                    Picker("Profile", selection: $session.preferences.presentationProfile) {
-                        ForEach(PresentationProfile.allCases) { profile in
-                            Text(profile.title).tag(profile)
+                        if focused {
+                            Button("Done") { focused = false }
+                                .font(KamihiUI.captionFont)
+                                .foregroundStyle(.white.opacity(0.85))
+                                .frame(minWidth: 44, minHeight: 36)
                         }
                     }
-                    .pickerStyle(.segmented)
-                    .onChange(of: session.preferences.presentationProfile) { _, _ in
-                        session.preferences.save()
+
+                    // Modifiers + essential keys
+                    HStack(spacing: 6) {
+                        modifier("⌘", $command)
+                        modifier("⌥", $option)
+                        modifier("⌃", $control)
+                        modifier("⇧", $shift)
+                        key("space", code: 49)
+                        key("⌫", code: 51)
+                        key("esc", code: 53)
+                        key("tab", code: 48)
+                        key("return", code: 36)
                     }
                 }
+                .padding(.horizontal, 4)
+                .padding(.bottom, 4)
             }
-            .padding(10)
+            .padding(8)
             .frame(width: geo.size.width, height: geo.size.height)
         }
     }
 
-    private var pointerModeControl: some View {
-        Picker("Pointer", selection: Binding(
-            get: { isLaser ? 1 : 0 },
-            set: { value in
-                session.pointerMode = value == 1 ? .presentationLaser : .macCursor
-                session.send(.laserVisible(value == 1))
-            }
-        )) {
-            Text("Cursor").tag(0)
-            Text("Laser").tag(1)
-        }
-        .pickerStyle(.segmented)
-        .frame(width: 164)
-        .accessibilityLabel("Pointer mode")
+    private func modifier(_ title: String, _ value: Binding<Bool>) -> some View {
+        Button(title) { value.wrappedValue.toggle() }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, minHeight: 38)
+            .foregroundStyle(value.wrappedValue ? .black : .white)
+            .background(value.wrappedValue ? Color.white : Color.clear, in: Capsule())
+            .glassEffect(.regular.interactive(), in: .capsule)
+            .accessibilityLabel(title)
+            .accessibilityAddTraits(value.wrappedValue ? .isSelected : [])
     }
 
-    private func send(_ action: PresentationAction) {
-        session.send(.presentation(action: action, profile: session.preferences.presentationProfile))
-        Haptics.slideChange()
-    }
-
-    private func bigButton(_ title: String, _ symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 5) {
-                Image(systemName: symbol)
-                    .font(.system(size: 24, weight: .semibold))
-                Text(title)
-                    .font(.system(size: 16, weight: .medium, design: .rounded))
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    private func key(_ title: String, code: UInt16) -> some View {
+        Button(title) {
+            press(code: code)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.white)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: KamihiUI.radiusLarge))
-        .accessibilityLabel(title)
-    }
-
-    private func smallButton(_ title: String, _ symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: symbol)
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, minHeight: 38)
         .foregroundStyle(.white)
         .glassEffect(.regular.interactive(), in: .capsule)
         .accessibilityLabel(title)
+    }
+
+    private func press(code: UInt16) {
+        userIsEditing = true
+        let f = flags()
+        session.send(.keyDown(code: code, flags: f))
+        session.send(.keyUp(code: code, flags: f))
+        Haptics.click()
+        applyingRemote = true
+        if code == 51, text.isEmpty == false {
+            text.removeLast()
+        } else if code == 49 {
+            text.append(" ")
+        }
+        baseline = text
+        applyingRemote = false
+    }
+
+    private func flags() -> UInt64 {
+        var value: UInt64 = 0
+        if command { value |= 1 << 20 }
+        if shift { value |= 1 << 17 }
+        if option { value |= 1 << 19 }
+        if control { value |= 1 << 18 }
+        return value
+    }
+
+    private func handleEdit(_ newValue: String) {
+        guard applyingRemote == false else { return }
+        userIsEditing = true
+        if newValue == baseline { return }
+
+        if newValue.hasPrefix(baseline) {
+            let suffix = String(newValue.dropFirst(baseline.count))
+            for character in suffix {
+                if character == " " {
+                    session.send(.keyDown(code: 49, flags: 0))
+                    session.send(.keyUp(code: 49, flags: 0))
+                } else {
+                    session.send(.typeText(String(character)))
+                }
+            }
+            baseline = newValue
+            return
+        }
+
+        if baseline.hasPrefix(newValue), baseline.count > newValue.count {
+            let deletes = baseline.count - newValue.count
+            for _ in 0..<deletes {
+                session.send(.keyDown(code: 51, flags: 0))
+                session.send(.keyUp(code: 51, flags: 0))
+            }
+            baseline = newValue
+            return
+        }
+
+        for _ in 0..<baseline.count {
+            session.send(.keyDown(code: 51, flags: 0))
+            session.send(.keyUp(code: 51, flags: 0))
+        }
+        for character in newValue {
+            if character == " " {
+                session.send(.keyDown(code: 49, flags: 0))
+                session.send(.keyUp(code: 49, flags: 0))
+            } else {
+                session.send(.typeText(String(character)))
+            }
+        }
+        baseline = newValue
     }
 }
 
@@ -560,7 +611,7 @@ struct PolishedControllerScreen: View {
                 if immersive {
                     Menu {
                         Button("Trackpad") { session.leaveController(to: .trackpad) }
-                        Button("Presentation") { session.leaveController(to: .slides) }
+                        Button("Keyboard") { session.leaveController(to: .keyboard) }
                         Button("Deck") { session.leaveController(to: .deck) }
                         Divider()
                         Button("Keyboard") {
