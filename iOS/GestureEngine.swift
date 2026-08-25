@@ -163,6 +163,9 @@ final class GestureEngine {
 
     private func moved(changed: [FingerSample], active: [FingerSample], timestamp: TimeInterval, size: CGSize) -> GestureOutput {
         replaceActive(active)
+        if fingers.isEmpty {
+            return ended(changed: changed, active: [], timestamp: timestamp, size: size)
+        }
         maxClusterCount = max(maxClusterCount, fingers.count)
         let dt = max(timestamp - lastTimestamp, 0.0008)
         let points = currentPoints()
@@ -260,7 +263,12 @@ final class GestureEngine {
         lastTimestamp = timestamp
         return GestureOutput(
             commands: commands,
-            animation: makeAnimation(fingers: currentAnimationFingers(), size: size, down: true, dragging: mouseIsDown || mode == .dragging),
+            animation: makeAnimation(
+                fingers: currentAnimationFingers(),
+                size: size,
+                down: fingers.isEmpty == false,
+                dragging: mouseIsDown || mode == .dragging
+            ),
             debug: makeDebug()
         )
     }

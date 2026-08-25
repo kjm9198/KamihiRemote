@@ -28,13 +28,38 @@ struct TrackpadView: UIViewRepresentable {
 final class TrackpadUIView: UIView {
     weak var engine: TouchInputEngine?
     private var identities: [ObjectIdentifier: Int] = [:]
+    private var tracked: [ObjectIdentifier: UITouch] = [:]
     private var nextIdentity = 1
+    private var reapLink: CADisplayLink?
 
     override func layoutSubviews() {
         super.layoutSubviews()
         isUserInteractionEnabled = true
         isMultipleTouchEnabled = true
         engine?.noteCanvasSize(bounds.size)
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil {
+            reapLink?.invalidate()
+            reapLink = nil
+            forceEndAll()
+        } else if reapLink == nil {
+            let link = CADisplayLink(target: self, selector: #selector(reapFrame))
+            link.add(to: .main, forMode: .common)
+            reapLink = link
+        }
+    }
+
+    deinit {
+        reapLink?.invalidate()
+    }
+
+    @objc private func reapFrame() {
+        guard tracked.isEmpty == false else { return }
+        reapFinishedTouches(except: [])
+        if liveTouches().isEmpty { forceEndAll() }
     }
 
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
@@ -46,36 +71,72 @@ final class TrackpadUIView: UIView {
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        for touch in touches { identity(for: touch) }
-        forward(changed: touches, event: event, phase: .began)
+        for touch in touches {
+            identity(for: touch)
+            tracked[ObjectIdentifier(touch)] = touch
+        }
+        reapFinishedTouches(except: touches)
+        forward(changed: touches, phase: .began)
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        forward(changed: touches, event: event, phase: .moved)
+        for touch in touches { tracked[ObjectIdentifier(touch)] = touch }
+        reapFinishedTouches(except: [])
+        forward(changed: touches, phase: .moved)
+        if liveTouches().isEmpty { forceEndAll() }
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        forward(changed: touches, event: event, phase: .ended)
-        for touch in touches { identities[ObjectIdentifier(touch)] = nil }
+        forward(changed: touches, phase: .ended)
+        forget(touches)
+        if liveTouches().isEmpty { forceEndAll() }
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        forward(changed: touches, event: event, phase: .cancelled)
-        for touch in touches { identities[ObjectIdentifier(touch)] = nil }
+        forward(changed: touches, phase: .cancelled)
+        forget(touches)
+        if liveTouches().isEmpty { forceEndAll() }
     }
 
-    private func forward(changed: Set<UITouch>, event: UIEvent?, phase: UITouch.Phase) {
-        // Only touches that belong to this trackpad view — never other chrome buttons.
-        let all = event?.touches(for: self) ?? changed
+    /// iOS sometimes never delivers `touchesEnded`. Poll tracked UITouch phases and close them.
+    private func reapFinishedTouches(except keep: Set<UITouch>) {
+        let finished = tracked.values.filter { touch in
+            keep.contains(touch) == false && (touch.phase == .ended || touch.phase == .cancelled)
+        }
+        guard finished.isEmpty == false else { return }
+        let set = Set(finished)
+        forward(changed: set, phase: .ended)
+        forget(set)
+    }
+
+    private func liveTouches() -> [UITouch] {
+        tracked.values.filter { touch in
+            touch.phase != .ended && touch.phase != .cancelled
+        }
+    }
+
+    private func forget(_ touches: Set<UITouch>) {
+        for touch in touches {
+            let key = ObjectIdentifier(touch)
+            tracked[key] = nil
+            identities[key] = nil
+        }
+    }
+
+    private func forceEndAll() {
+        guard tracked.isEmpty == false || identities.isEmpty == false else { return }
+        engine?.handleCancelled(in: bounds.size)
+        tracked.removeAll(keepingCapacity: true)
+        identities.removeAll(keepingCapacity: true)
+    }
+
+    private func forward(changed: Set<UITouch>, phase: UITouch.Phase) {
         let activeTouches: [UITouch]
         if phase == .ended || phase == .cancelled {
-            activeTouches = all.filter { touch in
-                !changed.contains(touch) && (touch.phase == .began || touch.phase == .moved || touch.phase == .stationary)
-            }
+            activeTouches = liveTouches().filter { changed.contains($0) == false }
         } else {
-            activeTouches = Array(all.filter { $0.phase != .ended && $0.phase != .cancelled })
+            activeTouches = liveTouches()
         }
-
         let changedSamples = changed.map(sample)
         let activeSamples = activeTouches.map(sample)
         let timestamp = changed.first?.timestamp ?? ProcessInfo.processInfo.systemUptime

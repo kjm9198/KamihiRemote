@@ -62,8 +62,8 @@ final class TouchInputEngine: NSObject, ObservableObject {
             stats.touchCount += 1
         }
         let output = gesture.handle(changed: changed, active: active, timestamp: timestamp, phase: phase, in: size)
-        emit(output)
-        if phase == .ended || phase == .cancelled {
+        emit(output, immediate: true)
+        if phase == .ended || phase == .cancelled || active.isEmpty {
             if active.isEmpty || gesture.mode == .idle {
                 stats.touchActive = false
                 stats.dx = 0
@@ -100,8 +100,11 @@ final class TouchInputEngine: NSObject, ObservableObject {
         handleCancelled(in: size)
     }
 
-    private func emit(_ output: GestureOutput) {
+    private func emit(_ output: GestureOutput, immediate: Bool = false) {
         latestAnimation = output.animation
+        if immediate || animation != latestAnimation {
+            animation = latestAnimation
+        }
         debug = output.debug
         for command in output.commands {
             senderBox.sender?.send(command)

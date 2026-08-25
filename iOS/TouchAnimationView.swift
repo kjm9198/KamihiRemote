@@ -24,7 +24,10 @@ struct TouchAnimationView: View {
             ripples.append(Ripple(kind: .double, origin: orbOrigin))
         }
         .onChange(of: state.points) { _, points in
-            guard state.isFingerDown, reduceMotion == false else { return }
+            guard state.isFingerDown, reduceMotion == false else {
+                if state.isFingerDown == false { trail.removeAll(keepingCapacity: true) }
+                return
+            }
             for point in points.prefix(4) {
                 trail.append(TrailDot(point: point, energy: hypot(state.velocity.width, state.velocity.height)))
             }
