@@ -225,7 +225,8 @@ struct KamihiPolishedRootView: View {
                     .minimumScaleFactor(0.7)
             }
             .frame(maxWidth: .infinity)
-            .frame(width: compact ? 64 : nil, minHeight: compact ? 47 : KamihiUI.controlHeight)
+            .frame(width: compact ? 64 : nil)
+            .frame(minHeight: compact ? 47 : KamihiUI.controlHeight)
             .opacity(selected ? 1 : 0.46)
         }
         .buttonStyle(.plain)
