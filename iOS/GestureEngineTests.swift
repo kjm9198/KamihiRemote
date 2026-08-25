@@ -215,12 +215,12 @@ enum GestureEngineTests {
         let swiped = start.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x + 40, y: $0.point.y)) }
         let locked = g.ingest(samples: swiped, timestamp: 10.06, phase: .moved, in: size)
         try require(g.mode == .threeFingerSwipe, "horizontal three finger swipe locks")
-        try require(locked.commands.contains(.system(.nextDesktop)), "swipe right fires next desktop")
+        try require(locked.commands.contains(.system(.previousDesktop)), "swipe right fires previous desktop")
         let left = start.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x - 40, y: $0.point.y)) }
         let g2 = engine()
         _ = g2.ingest(samples: start, timestamp: 11, phase: .began, in: size)
         let lockedLeft = g2.ingest(samples: left, timestamp: 11.06, phase: .moved, in: size)
-        try require(lockedLeft.commands.contains(.system(.previousDesktop)), "swipe left fires previous desktop")
+        try require(lockedLeft.commands.contains(.system(.nextDesktop)), "swipe left fires next desktop")
     }
 
     private static func twoFingerSticky() throws {

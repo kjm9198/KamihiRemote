@@ -459,11 +459,19 @@ enum InputEngine {
 
     private static func performDesktop(key: CGKeyCode, title: String) async -> (Bool, String) {
         guard canInjectEvents else {
-            return (false, "Enable Accessibility for Kamihi Remote Host")
+            return (false, "Accessibility permission required on Mac")
         }
         let left = (key == CGKeyCode(kVK_LeftArrow))
-        let ok = switchDesktop(left: left)
-        return (ok, ok ? "Switched" : "Desktop switch failed")
+        let switched = switchDesktop(left: left)
+        guard switched else {
+            return (false, "\(title) injection failed")
+        }
+        let changed = await SpaceChangeVerifier.wait(timeout: 0.7)
+        if changed {
+            return (true, "\(title) ✓")
+        } else {
+            return (true, "\(title) (Sent)")
+        }
     }
 
     private static func performMissionControl() async -> (Bool, String) {
@@ -473,14 +481,14 @@ enum InputEngine {
                 $0.bundleIdentifier == "com.apple.exposelauncher" || ($0.localizedName ?? "").contains("Mission Control")
             }
             if running {
-                return (true, "Mission Control")
+                return (true, "Mission Control ✓")
             }
         }
         guard canInjectEvents else {
-            return (false, "Enable Accessibility for Kamihi Remote Host")
+            return (false, "Accessibility permission required on Mac")
         }
         let ok = hotkey(key: CGKeyCode(kVK_UpArrow), flags: .maskControl)
-        return (ok, ok ? "Mission Control" : "Mission Control failed")
+        return (ok, ok ? "Mission Control ✓" : "Mission Control failed")
     }
 
     private static func bundleIdentifierNormalized(_ name: String) -> String {
@@ -498,29 +506,23 @@ enum InputEngine {
     private static func switchDesktop(left: Bool) -> Bool {
         guard canInjectEvents else { return false }
         let keyCode: CGKeyCode = left ? CGKeyCode(kVK_LeftArrow) : CGKeyCode(kVK_RightArrow)
-        let ctrlKey: CGKeyCode = CGKeyCode(kVK_Control)
 
-        if let ctrlDown = CGEvent(keyboardEventSource: nil, virtualKey: ctrlKey, keyDown: true) {
-            ctrlDown.flags = .maskControl
-            ctrlDown.post(tap: .cghidEventTap)
+        if let down = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) {
+            down.flags = .maskControl
+            down.post(tap: .cghidEventTap)
         }
-        usleep(15000)
+        usleep(35000)
 
-        if let arrowDown = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) {
-            arrowDown.flags = .maskControl
-            arrowDown.post(tap: .cghidEventTap)
+        if let up = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) {
+            up.flags = .maskControl
+            up.post(tap: .cghidEventTap)
         }
-        usleep(25000)
 
-        if let arrowUp = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) {
-            arrowUp.flags = .maskControl
-            arrowUp.post(tap: .cghidEventTap)
-        }
-        usleep(15000)
-
-        if let ctrlUp = CGEvent(keyboardEventSource: nil, virtualKey: ctrlKey, keyDown: false) {
-            ctrlUp.flags = []
-            ctrlUp.post(tap: .cghidEventTap)
+        // AppleScript fallback for macOS Spaces switching
+        DispatchQueue.global(qos: .userInteractive).async {
+            let script = NSAppleScript(source: "tell application \"System Events\" to key code \(left ? 123 : 124) using control down")
+            var err: NSDictionary?
+            script?.executeAndReturnError(&err)
         }
         return true
     }

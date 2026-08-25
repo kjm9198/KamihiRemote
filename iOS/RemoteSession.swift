@@ -495,6 +495,10 @@ final class RemoteSession: ObservableObject, CommandSending {
         }
     }
 
+    func syncControllerConfig() {
+        send(.syncControllerMapping(preferences.controllerMapping))
+    }
+
     private func markConnected() {
         reconnectAttempt = 0
         handlingTransportDeath = false
@@ -506,6 +510,7 @@ final class RemoteSession: ObservableObject, CommandSending {
         telemetry.transport = transport.active.title
         telemetry.tcpReady = tcp.isReady
         browser.stopIfNeeded()
+        syncControllerConfig()
     }
 
     private func beginReconnect() {

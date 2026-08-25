@@ -96,6 +96,9 @@ enum RemotePacket {
         expectSuccess("163158 ACTION_ACK 9c7 FAIL \"Desktop did not change\"", token: "163158", .actionAck(id: "9c7", success: false, message: "Desktop did not change"))
         expectSuccess("163158 REQUEST_FOCUSED_TEXT", token: "163158", .requestFocusedText)
         expectSuccess("163158 FOCUSED_TEXT value Hello", token: "163158", .focusedText(status: .value, value: "Hello"))
+        let testMapping = ControllerMapping.mac
+        let mappingJson = (try? JSONEncoder().encode(testMapping)) ?? Data()
+        expectSuccess("163158 CONTROLLER_CONFIG \(mappingJson.base64EncodedString())", token: "163158", .syncControllerMapping(testMapping))
         expectSuccess("MOVE 163158 1.289 0.645", token: "163158", .move(dx: 1.289, dy: 0.645), legacy: true)
 
         switch parse("K2 sess-1 103 1710000000.000 MOVE 1.289 0.645") {
@@ -346,6 +349,13 @@ enum RemotePacket {
         case "FOCUSED_TEXT":
             guard let raw = args.first, let status = FocusedTextStatus(rawValue: raw) else { return .failure("FOCUSED_TEXT invalid") }
             return .success(token: token, command: .focusedText(status: status, value: unquote(args.dropFirst().joined(separator: " "))), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "CONTROLLER_CONFIG":
+            guard let b64 = args.first,
+                  let data = Data(base64Encoded: b64),
+                  let mapping = try? JSONDecoder().decode(ControllerMapping.self, from: data) else {
+                return .failure("CONTROLLER_CONFIG invalid")
+            }
+            return .success(token: token, command: .syncControllerMapping(mapping), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         default:
             return .failure("unknown command \"\(command)\"")
         }
@@ -441,7 +451,7 @@ enum RemotePacket {
             "PAIR_REQUEST", "PAIR_DECISION", "KEY_DOWN", "KEY_UP", "TYPE", "SYSTEM", "MEDIA", "PRESENTATION",
             "PINCH", "ZOOM", "OPEN_APP", "OPEN_URL", "SHORTCUT", "REQUEST_APP_LIST", "APP_LIST_BEGIN",
             "APP_ENTRY", "APP_LIST_END", "LASER", "LASER_VISIBLE", "CONTROLLER", "REVOKE",
-            "ACTION", "ACTION_ACK", "REQUEST_FOCUSED_TEXT", "FOCUSED_TEXT"
+            "ACTION", "ACTION_ACK", "REQUEST_FOCUSED_TEXT", "FOCUSED_TEXT", "CONTROLLER_CONFIG"
         ].contains(value.uppercased())
     }
 }

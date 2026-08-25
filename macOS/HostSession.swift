@@ -221,6 +221,9 @@ final class HostSession: ObservableObject {
             InputEngine.releaseAll()
         case .revokeDevice(let deviceID):
             revokeDevice(deviceID)
+        case .syncControllerMapping(let mapping):
+            KeyboardGamepad.shared.mapping = mapping
+            NSLog("Kamihi updated controller mapping profile: %@", mapping.profile.rawValue)
         case .requestFocusedText:
             sendFocusedText(to: connection)
         case .action(let id, let inner):

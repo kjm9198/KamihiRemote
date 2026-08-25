@@ -1,14 +1,14 @@
 import Foundation
 
 struct GestureBindings: Codable, Equatable {
-    /// Finger swipe LEFT → Control+Left (Previous Desktop)
-    var threeFingerLeft: SystemAction = .previousDesktop
-    /// Finger swipe RIGHT → Control+Right (Next Desktop)
-    var threeFingerRight: SystemAction = .nextDesktop
+    /// Finger swipe LEFT → Next Desktop (Control+Right)
+    var threeFingerLeft: SystemAction = .nextDesktop
+    /// Finger swipe RIGHT → Previous Desktop (Control+Left)
+    var threeFingerRight: SystemAction = .previousDesktop
     var threeFingerUp: SystemAction = .missionControl
     var threeFingerDown: SystemAction = .appExpose
-    var fourFingerLeft: SystemAction = .previousDesktop
-    var fourFingerRight: SystemAction = .nextDesktop
+    var fourFingerLeft: SystemAction = .nextDesktop
+    var fourFingerRight: SystemAction = .previousDesktop
     var fourFingerUp: SystemAction = .missionControl
     var fourFingerDown: SystemAction = .showDesktop
 }
@@ -47,6 +47,8 @@ struct AppPreferences: Codable, Equatable {
     var automaticTransport = true
     var controllerLayout: ControllerLayout = .standard
     var gameMapping: GameMapping = .fps
+    var controllerProfile: ControllerProfile = .mac
+    var controllerMapping: ControllerMapping = .mac
     var stickDeadZone = 0.12
     var stickSensitivity = 1.0
     var controllerHaptics = true
@@ -75,27 +77,27 @@ struct AppPreferences: Codable, Equatable {
         }
     }
 
-    static let storageKey = "appPreferences.v5"
+    static let storageKey = "appPreferences.v6"
 
     static func load() -> AppPreferences {
         if let data = UserDefaults.standard.data(forKey: storageKey),
            let decoded = decodeFlexible(data) {
             var prefs = decoded
-            prefs.bindings.threeFingerLeft = .previousDesktop
-            prefs.bindings.threeFingerRight = .nextDesktop
+            prefs.bindings.threeFingerLeft = .nextDesktop
+            prefs.bindings.threeFingerRight = .previousDesktop
             prefs.twoFingerSecondaryClick = true
             return prefs
         }
 
-        for legacyKey in ["appPreferences.v4", "appPreferences.v3", "appPreferences.v2"] {
+        for legacyKey in ["appPreferences.v5", "appPreferences.v4", "appPreferences.v3", "appPreferences.v2"] {
             if let data = UserDefaults.standard.data(forKey: legacyKey),
                var migrated = decodeFlexible(data) {
                 migrated.tapToClick = true
                 migrated.twoFingerSecondaryClick = true
                 migrated.smoothingEnabled = false
                 migrated.pinchEnabled = true
-                migrated.bindings.threeFingerLeft = .previousDesktop
-                migrated.bindings.threeFingerRight = .nextDesktop
+                migrated.bindings.threeFingerLeft = .nextDesktop
+                migrated.bindings.threeFingerRight = .previousDesktop
                 migrated.showDeveloperDiagnostics = false
                 migrated.save()
                 return migrated

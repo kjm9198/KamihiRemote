@@ -98,14 +98,27 @@ struct SettingsSheet: View {
                 }
 
                 Section("Controller") {
+                    Picker("Profile", selection: Binding(
+                        get: { session.preferences.controllerMapping.profile },
+                        set: { newProfile in
+                            session.preferences.controllerProfile = newProfile
+                            session.preferences.controllerMapping = ControllerMapping.defaultFor(profile: newProfile)
+                            session.syncControllerConfig()
+                            session.preferences.save()
+                        }
+                    )) {
+                        ForEach(ControllerProfile.allCases) { profile in
+                            Text(profile.title).tag(profile)
+                        }
+                    }
+
+                    NavigationLink("Customize Controller Buttons & Sticks") {
+                        ControllerCustomizerView().environmentObject(session)
+                    }
+
                     Picker("Layout", selection: $session.preferences.controllerLayout) {
                         ForEach(ControllerLayout.allCases) { layout in
                             Text(layout.title).tag(layout)
-                        }
-                    }
-                    Picker("Game mapping", selection: $session.preferences.gameMapping) {
-                        ForEach(GameMapping.allCases) { mapping in
-                            Text(mapping.title).tag(mapping)
                         }
                     }
                     Slider(value: $session.preferences.stickDeadZone, in: 0.04...0.3, step: 0.01) { Text("Dead zone") }
@@ -183,5 +196,226 @@ struct SettingsSheet: View {
                 Text(action.title).tag(action)
             }
         }
+    }
+}
+
+struct ControllerCustomizerView: View {
+    @EnvironmentObject private var session: RemoteSession
+    @State private var editingButton: IdentifiableButtonName?
+
+    var body: some View {
+        Form {
+            Section("Active Profile") {
+                Picker("Profile", selection: Binding(
+                    get: { session.preferences.controllerMapping.profile },
+                    set: { newProfile in
+                        session.preferences.controllerProfile = newProfile
+                        session.preferences.controllerMapping = ControllerMapping.defaultFor(profile: newProfile)
+                        session.syncControllerConfig()
+                        session.preferences.save()
+                    }
+                )) {
+                    ForEach(ControllerProfile.allCases) { profile in
+                        Text(profile.title).tag(profile)
+                    }
+                }
+            }
+
+            Section("Face Buttons") {
+                buttonRow("A Button", action: session.preferences.controllerMapping.a) {
+                    editingButton = IdentifiableButtonName(name: "A Button", keyPath: \.a)
+                }
+                buttonRow("B Button", action: session.preferences.controllerMapping.b) {
+                    editingButton = IdentifiableButtonName(name: "B Button", keyPath: \.b)
+                }
+                buttonRow("X Button", action: session.preferences.controllerMapping.x) {
+                    editingButton = IdentifiableButtonName(name: "X Button", keyPath: \.x)
+                }
+                buttonRow("Y Button", action: session.preferences.controllerMapping.y) {
+                    editingButton = IdentifiableButtonName(name: "Y Button", keyPath: \.y)
+                }
+            }
+
+            Section("D-Pad") {
+                buttonRow("D-Pad Up", action: session.preferences.controllerMapping.dpadUp) {
+                    editingButton = IdentifiableButtonName(name: "D-Pad Up", keyPath: \.dpadUp)
+                }
+                buttonRow("D-Pad Down", action: session.preferences.controllerMapping.dpadDown) {
+                    editingButton = IdentifiableButtonName(name: "D-Pad Down", keyPath: \.dpadDown)
+                }
+                buttonRow("D-Pad Left", action: session.preferences.controllerMapping.dpadLeft) {
+                    editingButton = IdentifiableButtonName(name: "D-Pad Left", keyPath: \.dpadLeft)
+                }
+                buttonRow("D-Pad Right", action: session.preferences.controllerMapping.dpadRight) {
+                    editingButton = IdentifiableButtonName(name: "D-Pad Right", keyPath: \.dpadRight)
+                }
+            }
+
+            Section("Bumpers & Triggers") {
+                buttonRow("L1 (Left Bumper)", action: session.preferences.controllerMapping.l1) {
+                    editingButton = IdentifiableButtonName(name: "L1 (Left Bumper)", keyPath: \.l1)
+                }
+                buttonRow("R1 (Right Bumper)", action: session.preferences.controllerMapping.r1) {
+                    editingButton = IdentifiableButtonName(name: "R1 (Right Bumper)", keyPath: \.r1)
+                }
+                buttonRow("L2 (Left Trigger)", action: session.preferences.controllerMapping.l2) {
+                    editingButton = IdentifiableButtonName(name: "L2 (Left Trigger)", keyPath: \.l2)
+                }
+                buttonRow("R2 (Right Trigger)", action: session.preferences.controllerMapping.r2) {
+                    editingButton = IdentifiableButtonName(name: "R2 (Right Trigger)", keyPath: \.r2)
+                }
+            }
+
+            Section("Navigation & Sticks") {
+                buttonRow("Start", action: session.preferences.controllerMapping.start) {
+                    editingButton = IdentifiableButtonName(name: "Start", keyPath: \.start)
+                }
+                buttonRow("Menu", action: session.preferences.controllerMapping.menu) {
+                    editingButton = IdentifiableButtonName(name: "Menu", keyPath: \.menu)
+                }
+                buttonRow("View", action: session.preferences.controllerMapping.view) {
+                    editingButton = IdentifiableButtonName(name: "View", keyPath: \.view)
+                }
+                Picker("Left Stick", selection: Binding(
+                    get: { session.preferences.controllerMapping.leftStick },
+                    set: { newStick in
+                        session.preferences.controllerMapping.leftStick = newStick
+                        session.preferences.controllerMapping.profile = .custom
+                        session.syncControllerConfig()
+                        session.preferences.save()
+                    }
+                )) {
+                    ForEach(StickAction.allCases) { stick in
+                        Text(stick.title).tag(stick)
+                    }
+                }
+                Picker("Right Stick", selection: Binding(
+                    get: { session.preferences.controllerMapping.rightStick },
+                    set: { newStick in
+                        session.preferences.controllerMapping.rightStick = newStick
+                        session.preferences.controllerMapping.profile = .custom
+                        session.syncControllerConfig()
+                        session.preferences.save()
+                    }
+                )) {
+                    ForEach(StickAction.allCases) { stick in
+                        Text(stick.title).tag(stick)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Customize Controller")
+        .sheet(item: $editingButton) { item in
+            ActionPickerSheet(title: item.name) { newAction in
+                session.preferences.controllerMapping[keyPath: item.keyPath] = newAction
+                session.preferences.controllerMapping.profile = .custom
+                session.syncControllerConfig()
+                session.preferences.save()
+            }
+        }
+    }
+
+    private func buttonRow(_ title: String, action: ControllerAction, onTap: @escaping () -> Void) -> some View {
+        Button(action: onTap) {
+            HStack {
+                Text(title)
+                    .foregroundStyle(.primary)
+                Spacer()
+                Text(action.title)
+                    .foregroundStyle(.secondary)
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+}
+
+struct IdentifiableButtonName: Identifiable {
+    var id: String { name }
+    let name: String
+    let keyPath: WritableKeyPath<ControllerMapping, ControllerAction>
+}
+
+struct ActionPickerSheet: View {
+    let title: String
+    let onSelect: (ControllerAction) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section("Common Keys") {
+                    actionButton("Space (Jump / Space)", .key(code: 49, title: "Space"))
+                    actionButton("Return (Enter)", .key(code: 36, title: "Return"))
+                    actionButton("Escape", .key(code: 53, title: "Escape"))
+                    actionButton("Tab", .key(code: 48, title: "Tab"))
+                    actionButton("Shift", .key(code: 56, title: "Shift"))
+                    actionButton("Delete / Backspace", .key(code: 51, title: "Delete (⌫)"))
+                    actionButton("Up Arrow", .key(code: 126, title: "Up Arrow"))
+                    actionButton("Down Arrow", .key(code: 125, title: "Down Arrow"))
+                    actionButton("Left Arrow", .key(code: 123, title: "Left Arrow"))
+                    actionButton("Right Arrow", .key(code: 124, title: "Right Arrow"))
+                }
+
+                Section("Shortcuts") {
+                    actionButton("Copy (⌘C)", .shortcut(spec: "cmd+c", title: "Copy (⌘C)"))
+                    actionButton("Paste (⌘V)", .shortcut(spec: "cmd+v", title: "Paste (⌘V)"))
+                    actionButton("Undo (⌘Z)", .shortcut(spec: "cmd+z", title: "Undo (⌘Z)"))
+                    actionButton("Redo (⌘⇧Z)", .shortcut(spec: "cmd+shift+z", title: "Redo (⌘⇧Z)"))
+                    actionButton("Save (⌘S)", .shortcut(spec: "cmd+s", title: "Save (⌘S)"))
+                    actionButton("Select All (⌘A)", .shortcut(spec: "cmd+a", title: "Select All (⌘A)"))
+                    actionButton("App Switcher (⌘Tab)", .shortcut(spec: "cmd+tab", title: "App Switcher (⌘Tab)"))
+                    actionButton("Find (⌘F)", .shortcut(spec: "cmd+f", title: "Find (⌘F)"))
+                }
+
+                Section("Mouse & Trackpad") {
+                    actionButton("Left Click", .click)
+                    actionButton("Right Click", .rightClick)
+                }
+
+                Section("macOS Spaces & System") {
+                    actionButton("Mission Control", .system(.missionControl))
+                    actionButton("App Exposé", .system(.appExpose))
+                    actionButton("Show Desktop", .system(.showDesktop))
+                    actionButton("Previous Desktop (←)", .system(.previousDesktop))
+                    actionButton("Next Desktop (→)", .system(.nextDesktop))
+                }
+
+                Section("Media Controls") {
+                    actionButton("Play / Pause", .media(.playPause))
+                    actionButton("Volume Up", .media(.volumeUp))
+                    actionButton("Volume Down", .media(.volumeDown))
+                    actionButton("Next Track", .media(.next))
+                    actionButton("Previous Track", .media(.previous))
+                }
+
+                Section("Presentation") {
+                    actionButton("Next Slide", .presentation(.next))
+                    actionButton("Previous Slide", .presentation(.previous))
+                    actionButton("Start Slideshow", .presentation(.start))
+                    actionButton("Exit Slideshow", .presentation(.end))
+                }
+
+                Section("Other") {
+                    actionButton("None (Disabled)", .none)
+                }
+            }
+            .navigationTitle("Assign \(title)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func actionButton(_ label: String, _ action: ControllerAction) -> some View {
+        Button(label) {
+            onSelect(action)
+            dismiss()
+        }
+        .foregroundStyle(.primary)
     }
 }

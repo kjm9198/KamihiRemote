@@ -32,7 +32,7 @@ struct ControllerState: Equatable, Sendable {
     }
 }
 
-enum ControllerButton: Int, CaseIterable, Sendable {
+enum ControllerButton: Int, CaseIterable, Codable, Sendable {
     case a, b, x, y, l1, r1, menu, view, start, l3, r3
 
     var title: String {
@@ -48,6 +48,192 @@ enum ControllerButton: Int, CaseIterable, Sendable {
         case .start: return "Start"
         case .l3: return "L3"
         case .r3: return "R3"
+        }
+    }
+}
+
+enum ControllerProfile: String, CaseIterable, Identifiable, Codable, Sendable {
+    case mac, gaming, presentation, editing, custom
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .mac: return "Mac Navigation"
+        case .gaming: return "Gaming (WASD)"
+        case .presentation: return "Presentation"
+        case .editing: return "Editing & Shortcuts"
+        case .custom: return "Custom"
+        }
+    }
+}
+
+enum ControllerAction: Codable, Equatable, Sendable, Hashable {
+    case none
+    case key(code: UInt16, title: String)
+    case shortcut(spec: String, title: String)
+    case click
+    case rightClick
+    case system(SystemAction)
+    case media(MediaAction)
+    case presentation(PresentationAction)
+    case openApp(bundleID: String, name: String)
+    case openURL(url: String, name: String)
+
+    var title: String {
+        switch self {
+        case .none: return "None"
+        case .key(_, let title): return title
+        case .shortcut(_, let title): return title
+        case .click: return "Left Click"
+        case .rightClick: return "Right Click"
+        case .system(let sys): return sys.title
+        case .media(let med): return "Media: \(med)"
+        case .presentation(let pres): return "Presentation: \(pres)"
+        case .openApp(_, let name): return "App: \(name)"
+        case .openURL(_, let name): return "URL: \(name)"
+        }
+    }
+}
+
+enum StickAction: String, CaseIterable, Identifiable, Codable, Sendable {
+    case wasd, arrows, mouse, scroll, none
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .wasd: return "WASD Keys"
+        case .arrows: return "Arrow Keys"
+        case .mouse: return "Mouse Look / Pointer"
+        case .scroll: return "Scroll Wheel"
+        case .none: return "Disabled"
+        }
+    }
+}
+
+struct ControllerMapping: Codable, Equatable, Sendable {
+    var profile: ControllerProfile = .mac
+    var a: ControllerAction = .key(code: 49, title: "Space")
+    var b: ControllerAction = .key(code: 53, title: "Escape")
+    var x: ControllerAction = .shortcut(spec: "cmd+c", title: "Copy (⌘C)")
+    var y: ControllerAction = .shortcut(spec: "cmd+v", title: "Paste (⌘V)")
+    var dpadUp: ControllerAction = .key(code: 126, title: "Up Arrow")
+    var dpadDown: ControllerAction = .key(code: 125, title: "Down Arrow")
+    var dpadLeft: ControllerAction = .system(.previousDesktop)
+    var dpadRight: ControllerAction = .system(.nextDesktop)
+    var l1: ControllerAction = .system(.missionControl)
+    var r1: ControllerAction = .system(.appExpose)
+    var l2: ControllerAction = .media(.volumeDown)
+    var r2: ControllerAction = .media(.volumeUp)
+    var start: ControllerAction = .key(code: 36, title: "Return")
+    var menu: ControllerAction = .shortcut(spec: "cmd+tab", title: "App Switcher (⌘Tab)")
+    var view: ControllerAction = .system(.showDesktop)
+    var l3: ControllerAction = .none
+    var r3: ControllerAction = .none
+    var leftStick: StickAction = .scroll
+    var rightStick: StickAction = .mouse
+
+    static let mac = ControllerMapping(
+        profile: .mac,
+        a: .key(code: 49, title: "Space"),
+        b: .key(code: 53, title: "Escape"),
+        x: .shortcut(spec: "cmd+c", title: "Copy (⌘C)"),
+        y: .shortcut(spec: "cmd+v", title: "Paste (⌘V)"),
+        dpadUp: .key(code: 126, title: "Up Arrow"),
+        dpadDown: .key(code: 125, title: "Down Arrow"),
+        dpadLeft: .system(.previousDesktop),
+        dpadRight: .system(.nextDesktop),
+        l1: .system(.missionControl),
+        r1: .system(.appExpose),
+        l2: .media(.volumeDown),
+        r2: .media(.volumeUp),
+        start: .key(code: 36, title: "Return"),
+        menu: .shortcut(spec: "cmd+tab", title: "App Switcher (⌘Tab)"),
+        view: .system(.showDesktop),
+        l3: .none,
+        r3: .none,
+        leftStick: .scroll,
+        rightStick: .mouse
+    )
+
+    static let gaming = ControllerMapping(
+        profile: .gaming,
+        a: .key(code: 49, title: "Jump (Space)"),
+        b: .key(code: 56, title: "Sprint (Shift)"),
+        x: .key(code: 14, title: "Interact (E)"),
+        y: .key(code: 3, title: "Flashlight / Use (F)"),
+        dpadUp: .key(code: 126, title: "Up Arrow"),
+        dpadDown: .key(code: 125, title: "Down Arrow"),
+        dpadLeft: .key(code: 123, title: "Left Arrow"),
+        dpadRight: .key(code: 124, title: "Right Arrow"),
+        l1: .key(code: 12, title: "Grenade / Ability (Q)"),
+        r1: .key(code: 15, title: "Reload (R)"),
+        l2: .rightClick,
+        r2: .click,
+        start: .key(code: 53, title: "Pause (Escape)"),
+        menu: .key(code: 48, title: "Scoreboard (Tab)"),
+        view: .key(code: 46, title: "Map (M)"),
+        l3: .key(code: 59, title: "Crouch (Control)"),
+        r3: .key(code: 49, title: "Melee (Space)"),
+        leftStick: .wasd,
+        rightStick: .mouse
+    )
+
+    static let presentation = ControllerMapping(
+        profile: .presentation,
+        a: .presentation(.next),
+        b: .presentation(.previous),
+        x: .presentation(.black),
+        y: .presentation(.start),
+        dpadUp: .media(.volumeUp),
+        dpadDown: .media(.volumeDown),
+        dpadLeft: .presentation(.previous),
+        dpadRight: .presentation(.next),
+        l1: .media(.volumeDown),
+        r1: .media(.volumeUp),
+        l2: .presentation(.previous),
+        r2: .presentation(.next),
+        start: .presentation(.start),
+        menu: .presentation(.end),
+        view: .system(.missionControl),
+        l3: .none,
+        r3: .none,
+        leftStick: .scroll,
+        rightStick: .mouse
+    )
+
+    static let editing = ControllerMapping(
+        profile: .editing,
+        a: .key(code: 36, title: "Return"),
+        b: .key(code: 53, title: "Escape"),
+        x: .shortcut(spec: "cmd+c", title: "Copy (⌘C)"),
+        y: .shortcut(spec: "cmd+v", title: "Paste (⌘V)"),
+        dpadUp: .key(code: 126, title: "Up Arrow"),
+        dpadDown: .key(code: 125, title: "Down Arrow"),
+        dpadLeft: .key(code: 123, title: "Left Arrow"),
+        dpadRight: .key(code: 124, title: "Right Arrow"),
+        l1: .shortcut(spec: "cmd+z", title: "Undo (⌘Z)"),
+        r1: .shortcut(spec: "cmd+shift+z", title: "Redo (⌘⇧Z)"),
+        l2: .key(code: 51, title: "Delete (⌫)"),
+        r2: .key(code: 49, title: "Space"),
+        start: .shortcut(spec: "cmd+s", title: "Save (⌘S)"),
+        menu: .shortcut(spec: "cmd+a", title: "Select All (⌘A)"),
+        view: .shortcut(spec: "cmd+f", title: "Find (⌘F)"),
+        l3: .none,
+        r3: .none,
+        leftStick: .scroll,
+        rightStick: .mouse
+    )
+
+    static func defaultFor(profile: ControllerProfile) -> ControllerMapping {
+        switch profile {
+        case .mac: return .mac
+        case .gaming: return .gaming
+        case .presentation: return .presentation
+        case .editing: return .editing
+        case .custom:
+            var custom = ControllerMapping.mac
+            custom.profile = .custom
+            return custom
         }
     }
 }
@@ -113,6 +299,7 @@ indirect enum RemoteCommand: Equatable, Sendable {
     case actionAck(id: String, success: Bool, message: String)
     case requestFocusedText
     case focusedText(status: FocusedTextStatus, value: String)
+    case syncControllerMapping(ControllerMapping)
 
     var isRealtime: Bool {
         switch self {
@@ -224,6 +411,9 @@ indirect enum RemoteCommand: Equatable, Sendable {
             return "REQUEST_FOCUSED_TEXT"
         case .focusedText(let status, let value):
             return "FOCUSED_TEXT \(status.rawValue) \(quoted(value))"
+        case .syncControllerMapping(let mapping):
+            let json = (try? JSONEncoder().encode(mapping)) ?? Data()
+            return "CONTROLLER_CONFIG \(json.base64EncodedString())"
         }
     }
 
