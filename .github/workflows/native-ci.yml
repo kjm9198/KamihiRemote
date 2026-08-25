@@ -1,0 +1,82 @@
+name: Native CI
+
+on:
+  pull_request:
+    paths:
+      - 'iOS/**'
+      - 'macOS/**'
+      - 'Shared/**'
+      - 'KamihiRemote.xcodeproj/**'
+      - 'scripts/**'
+      - '.github/workflows/native-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'iOS/**'
+      - 'macOS/**'
+      - 'Shared/**'
+      - 'KamihiRemote.xcodeproj/**'
+      - 'scripts/**'
+      - '.github/workflows/native-ci.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: native-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-build:
+    name: Build + protocol self-checks
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcodebuild -project KamihiRemote.xcodeproj -list
+
+      - name: Protocol and crypto self-checks
+        run: |
+          swiftc Shared/*.swift scripts/ParserSmokeMain.swift -o /tmp/kamihi-parser-smoke
+          /tmp/kamihi-parser-smoke
+
+      - name: Build macOS host
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project KamihiRemote.xcodeproj \
+            -scheme KamihiRemoteHost \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            build | xcbeautify
+
+      - name: Build iOS app for Simulator
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project KamihiRemote.xcodeproj \
+            -scheme KamihiRemote \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build | xcbeautify
+
+      - name: Simulator UI smoke screenshots
+        env:
+          SIM: iPhone 17
+          OUT: /tmp/kamihi-ui-shots
+        run: scripts/sim-ui-smoke.sh
+
+      - name: Upload UI smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kamihi-ui-smoke
+          path: /tmp/kamihi-ui-shots
+          if-no-files-found: warn
