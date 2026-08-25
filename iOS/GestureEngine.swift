@@ -186,7 +186,7 @@ final class GestureEngine {
             // 2-finger scroll if iOS briefly drops a touch before the swipe locks.
             let stickyTwo = maxClusterCount >= 2
                 && fingers.count == 1
-                && (mode == .twoFingerCandidate || mode == .scrolling || mode == .pinching)
+                && (mode == .scrolling || mode == .pinching)
             let stickyThree = maxClusterCount >= 3
                 && fingers.count > 0
                 && fingers.count < 3
@@ -310,7 +310,9 @@ final class GestureEngine {
                 debug: makeDebug()
             )
         }
-        if remaining > 0 && (mode == .scrolling || mode == .pinching || mode == .twoFingerCandidate) && maxClusterCount >= 2 {
+        // Keep committed scroll/pinch locked until all fingers lift. Uncommitted
+        // two-finger candidates may demote so 2→1 can resume pointer control.
+        if remaining > 0 && (mode == .scrolling || mode == .pinching) && maxClusterCount >= 2 {
             lastCentroid = centroid(currentPoints())
             lastFingerIDs = Set(fingers.keys)
             snapshotPreviousFingers()
