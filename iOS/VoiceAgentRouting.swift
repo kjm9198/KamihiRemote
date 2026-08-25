@@ -87,6 +87,94 @@ enum VoiceProjectStore {
     }
 }
 
+private struct SmartVibeIntent {
+    let label: String
+    let instruction: String
+}
+
+private enum SmartVibeInterpreter {
+    static func resolve(_ raw: String) -> SmartVibeIntent? {
+        let normalized = raw
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { $0.isEmpty == false }
+            .joined(separator: " ")
+
+        let fixes: Set<String> = [
+            "fix it", "fix this", "fix error", "fix the error", "repair it", "solve it"
+        ]
+        if fixes.contains(normalized) {
+            return SmartVibeIntent(
+                label: "Fix it",
+                instruction: "Inspect the current error or broken behavior in the existing project state. Find the root cause, implement the fix rather than only explaining it, run the relevant tests/lint/build, fix regressions you introduce, and keep going until the verification is green. Preserve unrelated work."
+            )
+        }
+
+        let continues: Set<String> = [
+            "continue", "continue it", "keep going", "go on", "next", "do the next step"
+        ]
+        if continues.contains(normalized) {
+            return SmartVibeIntent(
+                label: "Continue",
+                instruction: "Continue from the current project state without restarting the task. Inspect what is already implemented and what remains unfinished, choose the next highest-value logical step, implement it, and run the relevant verification. Preserve unrelated work and do not repeat completed work."
+            )
+        }
+
+        let tests: Set<String> = [
+            "test it", "run tests", "test and fix", "check it", "verify it", "make tests pass"
+        ]
+        if tests.contains(normalized) {
+            return SmartVibeIntent(
+                label: "Test + fix",
+                instruction: "Run the relevant tests, lint, type-check and build for the current work. Diagnose every failure caused by the current changes, implement the fixes, and rerun verification until it is green. Report any remaining failure that is genuinely external or pre-existing."
+            )
+        }
+
+        let polish: Set<String> = [
+            "polish it", "polish ui", "polish the ui", "make it better", "improve ui", "improve the ui"
+        ]
+        if polish.contains(normalized) {
+            return SmartVibeIntent(
+                label: "Polish UI",
+                instruction: "Review the current product UI and interaction flow. Improve hierarchy, spacing, responsiveness, animations, touch feedback, accessibility and perceived smoothness while preserving functionality. Fix the most noticeable usability issues and verify the affected build."
+            )
+        }
+
+        let reviews: Set<String> = [
+            "review it", "review this", "review the code", "check the code", "audit it", "find problems"
+        ]
+        if reviews.contains(normalized) {
+            return SmartVibeIntent(
+                label: "Review + fix",
+                instruction: "Review the current diff and surrounding implementation for correctness, regressions, security issues, performance problems, accessibility gaps and brittle behavior. Fix concrete high-impact issues you find, then run the relevant verification. Do not manufacture issues or rewrite unrelated code."
+            )
+        }
+
+        let ships: Set<String> = [
+            "ship it", "push it", "commit and push", "finish and push", "verify and push"
+        ]
+        if ships.contains(normalized) {
+            return SmartVibeIntent(
+                label: "Verify + ship",
+                instruction: "Review the current changes, run the relevant tests/lint/build, fix any failures introduced by this work, then commit and push the verified changes with a clear commit message. Do not overwrite unrelated work and do not deploy to production unless deployment was explicitly requested."
+            )
+        }
+
+        let improves: Set<String> = [
+            "improve it", "what next", "next feature", "make it easier", "make it perfect"
+        ]
+        if improves.contains(normalized) {
+            return SmartVibeIntent(
+                label: "Next improvement",
+                instruction: "Inspect the current product and recent work, identify the highest-impact unfinished improvement that will make the product more useful or reliable, implement a meaningful safe slice of it, and verify it. Prefer reducing repeated user effort and friction over cosmetic churn."
+            )
+        }
+
+        return nil
+    }
+}
+
 @MainActor
 enum VoiceAgentRouter {
     static func switchWorkspace(to project: VoiceProject, destination: VoiceAgentDestination = .antigravity, session: RemoteSession) {
@@ -106,11 +194,26 @@ enum VoiceAgentRouter {
         let cleanPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard cleanPrompt.isEmpty == false else { return }
 
-        let effectivePrompt: String
+        let smartIntent = SmartVibeInterpreter.resolve(cleanPrompt)
+        if let smartIntent {
+            status("Smart Vibe: \(smartIntent.label)")
+            await pause(180)
+        }
+
+        let instruction = smartIntent?.instruction ?? cleanPrompt
+        var contextLines: [String] = []
         if let project {
-            effectivePrompt = "Project: \(project.name)\n\(cleanPrompt)"
+            contextLines.append("Project: \(project.name)")
+        }
+        if session.activeAppName.isEmpty == false {
+            contextLines.append("Active Mac app: \(session.activeAppName)")
+        }
+
+        let effectivePrompt: String
+        if contextLines.isEmpty {
+            effectivePrompt = instruction
         } else {
-            effectivePrompt = cleanPrompt
+            effectivePrompt = contextLines.joined(separator: "\n") + "\n\n" + instruction
         }
 
         switch destination {
