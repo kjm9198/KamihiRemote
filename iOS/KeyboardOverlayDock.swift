@@ -185,21 +185,15 @@ struct KeyboardOverlayDock: View {
         userIsEditing = true
         if newValue == baseline { return }
 
-        // Prefer real space key events so Mac text fields accept spaces reliably.
+        // Fast path for normal typing at the end of the mirrored field.
         if newValue.hasPrefix(baseline) {
             let suffix = String(newValue.dropFirst(baseline.count))
-            for character in suffix {
-                if character == " " {
-                    session.send(.keyDown(code: 49, flags: 0))
-                    session.send(.keyUp(code: 49, flags: 0))
-                } else {
-                    session.send(.typeText(String(character)))
-                }
-            }
+            typeCharacters(suffix)
             baseline = newValue
             return
         }
 
+        // Fast path for backspace-at-end edits.
         if baseline.hasPrefix(newValue), baseline.count > newValue.count {
             let deletes = baseline.count - newValue.count
             for _ in 0..<deletes {
@@ -210,20 +204,34 @@ struct KeyboardOverlayDock: View {
             return
         }
 
-        // Diverged edit: delete old, type new (preserve spaces via key events).
-        for _ in 0..<baseline.count {
-            session.send(.keyDown(code: 51, flags: 0))
-            session.send(.keyUp(code: 51, flags: 0))
-        }
-        for character in newValue {
+        // A TextField edit can happen in the middle of the mirrored Mac text while the
+        // Mac caret is somewhere else. Backspacing `baseline.count` characters from the
+        // Mac caret can therefore delete unrelated text. For any divergent edit, make
+        // the Mac field authoritative by selecting its full value and replacing it with
+        // the iPhone value. This keeps insertions, replacements and mid-field deletions
+        // deterministic without exposing secure/password field contents.
+        replaceEntireFocusedField(with: newValue)
+        baseline = newValue
+    }
+
+    private func replaceEntireFocusedField(with value: String) {
+        let commandFlag: UInt64 = 1 << 20
+        // macOS virtual key code 0 is "A". ⌘A selects the focused field contents.
+        session.send(.keyDown(code: 0, flags: commandFlag))
+        session.send(.keyUp(code: 0, flags: commandFlag))
+        typeCharacters(value)
+    }
+
+    private func typeCharacters(_ value: String) {
+        for character in value {
             if character == " " {
+                // Real space key events are accepted more consistently across Mac text fields.
                 session.send(.keyDown(code: 49, flags: 0))
                 session.send(.keyUp(code: 49, flags: 0))
             } else {
                 session.send(.typeText(String(character)))
             }
         }
-        baseline = newValue
     }
 }
 
