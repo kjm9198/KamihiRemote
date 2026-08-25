@@ -13,7 +13,7 @@ xcodebuild -project "$ROOT/KamihiRemote.xcodeproj" -scheme KamihiRemote \
   -destination "platform=iOS Simulator,name=$SIM" \
   -derivedDataPath "$DERIVED" -configuration Debug build >/dev/null
 
-UDID="$(xcrun simctl list devices available | rg "$SIM \(" | head -1 | rg -o '[0-9A-F-]{36}')"
+UDID="$(xcrun simctl list devices available | grep "$SIM (" | head -1 | grep -o -E '[0-9A-F-]{36}')"
 APP="$DERIVED/Build/Products/Debug-iphonesimulator/KamihiRemote.app"
 mkdir -p "$OUT"
 

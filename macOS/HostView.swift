@@ -55,7 +55,7 @@ struct HostView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("Kamihi Remote Host")
                         .font(.largeTitle.weight(.semibold))
-                    Text("v0.4.2")
+                    Text("v0.5.0")
                         .font(.system(size: 13, weight: .bold, design: .monospaced))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)

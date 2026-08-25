@@ -35,6 +35,15 @@ enum GestureEngineTests {
             try check("animationFingerCounts", animationFingerCounts)
             try check("liftClearsAnimation", liftClearsAnimation)
             try check("emptyMoveEndsGesture", emptyMoveEndsGesture)
+            try check("pinchToZoomInAndOut", pinchToZoomInAndOut)
+            try check("fourFingerTap", fourFingerTap)
+            try check("naturalScrollingToggle", naturalScrollingToggle)
+            try check("precisionModeGainScaling", precisionModeGainScaling)
+            try check("deltaClampingExtremeMovement", deltaClampingExtremeMovement)
+            try check("zeroDtTimestampJitter", zeroDtTimestampJitter)
+            try check("controllerStateEncodingDecoding", controllerStateEncodingDecoding)
+            try check("controllerDeadZoneContinuity", controllerDeadZoneContinuity)
+            try check("controllerMappingProfiles", controllerMappingProfiles)
             NSLog("Kamihi gesture self-checks passed")
             return true
         } catch {
@@ -516,5 +525,159 @@ enum GestureEngineTests {
         let out = g.handle(changed: [], active: [], timestamp: 13.02, phase: .moved, in: size)
         try require(out.animation.isFingerDown == false, "empty active set ends the contact")
         try require(g.mode == .idle, "idle after empty move")
+    }
+
+    private static func pinchToZoomInAndOut() throws {
+        let scroll = ScrollGestureEngine()
+        scroll.preferences.pinchEnabled = true
+        scroll.preferences.pinchThreshold = 0.10
+
+        let start = [CGPoint(x: 100, y: 200), CGPoint(x: 200, y: 200)]
+        _ = scroll.begin(points: start, timestamp: 31.0)
+
+        // Spread fingers outward to span = 250pt (Zoom In)
+        let spread = [CGPoint(x: 50, y: 200), CGPoint(x: 300, y: 200)]
+        let zoomInCmds = scroll.move(points: spread, timestamp: 31.05)
+        try require(zoomInCmds.contains(.zoom(.in)), "spreading fingers must emit zoom in")
+
+        // Pinch fingers inward to span = 60pt (Zoom Out)
+        let scrollPinch = ScrollGestureEngine()
+        scrollPinch.preferences.pinchEnabled = true
+        scrollPinch.preferences.pinchThreshold = 0.10
+        _ = scrollPinch.begin(points: start, timestamp: 31.10)
+        let pinch = [CGPoint(x: 120, y: 200), CGPoint(x: 180, y: 200)]
+        let zoomOutCmds = scrollPinch.move(points: pinch, timestamp: 31.15)
+        try require(zoomOutCmds.contains(.zoom(.out)), "pinching fingers must emit zoom out")
+    }
+
+    private static func fourFingerTap() throws {
+        let g = engine()
+        let start = (1...4).map { FingerSample(id: $0, point: CGPoint(x: CGFloat(40 * $0), y: 150)) }
+        _ = g.ingest(samples: start, timestamp: 32.0, phase: .began, in: size)
+        let ended = g.ingest(samples: start, timestamp: 32.08, phase: .ended, in: size)
+        try require(ended.commands.contains(.system(.showDesktop)), "4-finger tap must emit showDesktop")
+    }
+
+    private static func naturalScrollingToggle() throws {
+        let scrollNatural = ScrollGestureEngine()
+        scrollNatural.preferences.naturalScrolling = true
+        _ = scrollNatural.begin(points: [CGPoint(x: 100, y: 100), CGPoint(x: 150, y: 100)], timestamp: 33.0)
+        let naturalOut = scrollNatural.move(points: [CGPoint(x: 100, y: 150), CGPoint(x: 150, y: 150)], timestamp: 33.05)
+
+        let scrollInverted = ScrollGestureEngine()
+        scrollInverted.preferences.naturalScrolling = false
+        _ = scrollInverted.begin(points: [CGPoint(x: 100, y: 100), CGPoint(x: 150, y: 100)], timestamp: 33.0)
+        let invertedOut = scrollInverted.move(points: [CGPoint(x: 100, y: 150), CGPoint(x: 150, y: 150)], timestamp: 33.05)
+
+        let natDy = naturalOut.compactMap { if case .scroll(_, let dy, let phase) = $0, phase == .changed { return dy } else { return nil } }.first ?? 0
+        let invDy = invertedOut.compactMap { if case .scroll(_, let dy, let phase) = $0, phase == .changed { return dy } else { return nil } }.first ?? 0
+
+        try require(natDy > 0 && invDy < 0, "natural scrolling inversion check (nat: \(natDy), inv: \(invDy))")
+    }
+
+    private static func precisionModeGainScaling() throws {
+        let gNormal = engine()
+        gNormal.precisionActive = false
+        _ = gNormal.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 100, y: 100))], timestamp: 34.0, phase: .began, in: size)
+        let normalOut = gNormal.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 140, y: 100))], timestamp: 34.05, phase: .moved, in: size)
+
+        let gPrec = engine()
+        gPrec.precisionActive = true
+        _ = gPrec.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 100, y: 100))], timestamp: 34.0, phase: .began, in: size)
+        let precOut = gPrec.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 140, y: 100))], timestamp: 34.05, phase: .moved, in: size)
+
+        let normalDx = normalOut.commands.compactMap { if case .move(let dx, _) = $0 { return dx } else { return nil } }.first ?? 0
+        let precDx = precOut.commands.compactMap { if case .move(let dx, _) = $0 { return dx } else { return nil } }.first ?? 0
+
+        try require(precDx < normalDx * 0.5, "precision mode dx (\(precDx)) must be scaled down relative to normal dx (\(normalDx))")
+    }
+
+    private static func deltaClampingExtremeMovement() throws {
+        let g = engine()
+        _ = g.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 10, y: 10))], timestamp: 35.0, phase: .began, in: size)
+        let out = g.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 500, y: 10))], timestamp: 35.02, phase: .moved, in: size)
+
+        let moveDx = out.commands.compactMap { if case .move(let dx, _) = $0 { return dx } else { return nil } }.first ?? 0
+        let maxAllowedStep = 64.0 * max(g.preferences.effectiveSensitivity, 0.6)
+        try require(moveDx <= maxAllowedStep + 0.001, "extreme movement (\(moveDx)) must be clamped to maxStep (\(maxAllowedStep))")
+    }
+
+    private static func zeroDtTimestampJitter() throws {
+        let g = engine()
+        _ = g.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 100, y: 100))], timestamp: 36.0, phase: .began, in: size)
+        let out = g.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 110, y: 100))], timestamp: 36.0, phase: .moved, in: size)
+        for cmd in out.commands {
+            if case .move(let dx, let dy) = cmd {
+                try require(!dx.isNaN && !dy.isNaN && !dx.isInfinite && !dy.isInfinite, "zero dt must not produce NaN/Inf deltas")
+            }
+        }
+    }
+
+    private static func controllerStateEncodingDecoding() throws {
+        var state = ControllerState()
+        state.sequence = 1042
+        state.timestamp = 1710000000.123
+        state.leftX = -0.75
+        state.leftY = 0.85
+        state.rightX = 0.50
+        state.rightY = -0.25
+        state.leftTrigger = 0.90
+        state.rightTrigger = 0.00
+        state.set(.a, down: true)
+        state.set(.r1, down: true)
+        state.dpad = DPadDirection.upRight.rawValue
+
+        let cmd = RemoteCommand.controller(state)
+        let wire = "163158 " + cmd.wire
+
+        let result = RemotePacket.parse(wire)
+        guard case .success(let token, let parsedCmd, _, _, _, _) = result else {
+            throw CheckError(message: "Failed to parse CONTROLLER packet")
+        }
+        try require(token == "163158", "token matches")
+        guard case .controller(let s) = parsedCmd else {
+            throw CheckError(message: "Not a controller command")
+        }
+        try require(s.sequence == 1042, "sequence match")
+        try require(abs(s.leftX - (-0.75)) < 0.001, "leftX match")
+        try require(abs(s.leftY - 0.85) < 0.001, "leftY match")
+        try require(s.isDown(.a) == true, "A down")
+        try require(s.isDown(.r1) == true, "R1 down")
+        try require(s.isDown(.b) == false, "B up")
+        try require(s.dpad == DPadDirection.upRight.rawValue, "DPad upRight")
+    }
+
+    private static func controllerDeadZoneContinuity() throws {
+        let deadZone: CGFloat = 0.12
+        let sensitivity: CGFloat = 1.0
+
+        func calc(mag: CGFloat) -> CGFloat {
+            if mag < deadZone { return 0.0 }
+            let scaled = (mag - deadZone) / (1.0 - deadZone)
+            return min(max(scaled * sensitivity, 0.0), 1.0)
+        }
+
+        try require(calc(mag: 0.0) == 0.0, "zero at center")
+        try require(calc(mag: 0.119) == 0.0, "zero within deadZone")
+        try require(calc(mag: 0.120) == 0.0, "zero at threshold")
+        try require(abs(calc(mag: 0.56) - 0.50) < 0.001, "linear scaling outside deadZone")
+        try require(calc(mag: 1.0) == 1.0, "full deflection at edge")
+    }
+
+    private static func controllerMappingProfiles() throws {
+        let gaming = ControllerMapping.gaming
+        try require(gaming.profile == .gaming, "gaming profile")
+        try require(gaming.leftStick == .wasd, "gaming left stick is WASD")
+        try require(gaming.rightStick == .mouse, "gaming right stick is mouse")
+
+        let mac = ControllerMapping.mac
+        try require(mac.profile == .mac, "mac profile")
+        try require(mac.leftStick == .scroll, "mac left stick is scroll")
+        try require(mac.rightStick == .mouse, "mac right stick is mouse")
+
+        let presentation = ControllerMapping.presentation
+        try require(presentation.profile == .presentation, "presentation profile")
+        try require(presentation.a == .presentation(.next), "presentation A is next")
+        try require(presentation.b == .presentation(.previous), "presentation B is previous")
     }
 }

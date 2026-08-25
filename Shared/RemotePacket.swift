@@ -96,6 +96,9 @@ enum RemotePacket {
         expectSuccess("163158 ACTION_ACK 9c7 FAIL \"Desktop did not change\"", token: "163158", .actionAck(id: "9c7", success: false, message: "Desktop did not change"))
         expectSuccess("163158 REQUEST_FOCUSED_TEXT", token: "163158", .requestFocusedText)
         expectSuccess("163158 FOCUSED_TEXT value Hello", token: "163158", .focusedText(status: .value, value: "Hello"))
+        expectSuccess("163158 ACTIVE_APP com.microsoft.VSCode \"Visual Studio Code\"", token: "163158", .activeApp(bundleID: "com.microsoft.VSCode", name: "Visual Studio Code"))
+        expectSuccess("163158 REQUEST_ACTIVE_APP", token: "163158", .requestActiveApp)
+        expectSuccess("163158 RUN_COMMAND \"git status\"", token: "163158", .runCommand("git status"))
         let testMapping = ControllerMapping.mac
         let mappingJson = (try? JSONEncoder().encode(testMapping)) ?? Data()
         expectSuccess("163158 CONTROLLER_CONFIG \(mappingJson.base64EncodedString())", token: "163158", .syncControllerMapping(testMapping))
@@ -356,6 +359,16 @@ enum RemotePacket {
                 return .failure("CONTROLLER_CONFIG invalid")
             }
             return .success(token: token, command: .syncControllerMapping(mapping), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "ACTIVE_APP":
+            guard args.count >= 2 else { return .failure("ACTIVE_APP missing fields") }
+            let bundle = args[0]
+            let name = unquote(args.dropFirst().joined(separator: " "))
+            return .success(token: token, command: .activeApp(bundleID: bundle, name: name), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "REQUEST_ACTIVE_APP":
+            return .success(token: token, command: .requestActiveApp, legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
+        case "RUN_COMMAND":
+            guard !args.isEmpty else { return .failure("RUN_COMMAND missing command") }
+            return .success(token: token, command: .runCommand(unquote(args.joined(separator: " "))), legacy: legacy, sessionID: sessionID, sequence: sequence, isEncrypted: isEncrypted)
         default:
             return .failure("unknown command \"\(command)\"")
         }
@@ -451,7 +464,8 @@ enum RemotePacket {
             "PAIR_REQUEST", "PAIR_DECISION", "KEY_DOWN", "KEY_UP", "TYPE", "SYSTEM", "MEDIA", "PRESENTATION",
             "PINCH", "ZOOM", "OPEN_APP", "OPEN_URL", "SHORTCUT", "REQUEST_APP_LIST", "APP_LIST_BEGIN",
             "APP_ENTRY", "APP_LIST_END", "LASER", "LASER_VISIBLE", "CONTROLLER", "REVOKE",
-            "ACTION", "ACTION_ACK", "REQUEST_FOCUSED_TEXT", "FOCUSED_TEXT", "CONTROLLER_CONFIG"
+            "ACTION", "ACTION_ACK", "REQUEST_FOCUSED_TEXT", "FOCUSED_TEXT", "CONTROLLER_CONFIG",
+            "ACTIVE_APP", "REQUEST_ACTIVE_APP", "RUN_COMMAND"
         ].contains(value.uppercased())
     }
 }

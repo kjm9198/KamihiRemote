@@ -134,12 +134,14 @@ struct RootView: View {
     @ViewBuilder
     private var screenBody: some View {
         switch session.selectedTab {
+        case .vibe:
+            VibeHubScreen()
         case .trackpad:
-            TrackpadCanvas(chrome: .full)
-        case .keyboard:
-            PolishedKeyboardScreen()
+            PolishedRemoteCombinedScreen()
         case .deck:
             DeckScreen()
+        case .codeKey:
+            CodingKeyboardScreen()
         case .controller:
             ControllerScreen()
         }
@@ -250,9 +252,10 @@ struct RootView: View {
 
     private func symbol(for tab: RemoteTab) -> String {
         switch tab {
+        case .vibe: return "bolt.fill"
         case .trackpad: return "hand.draw"
-        case .keyboard: return "keyboard"
         case .deck: return "square.grid.3x3"
+        case .codeKey: return "keyboard"
         case .controller: return "gamecontroller"
         }
     }

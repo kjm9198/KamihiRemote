@@ -38,6 +38,8 @@ final class RemoteSession: ObservableObject, CommandSending {
     @Published var deckTrace = DeckActionTrace()
     @Published var focusedTextStatus: FocusedTextStatus = .unavailable
     @Published var focusedTextValue = ""
+    @Published var activeAppBundleID: String = ""
+    @Published var activeAppName: String = ""
     #if DEBUG
     @Published var uiTestShowDeckGallery = false
     #endif
@@ -137,7 +139,7 @@ final class RemoteSession: ObservableObject, CommandSending {
         if let index = args.firstIndex(of: "-KamihiUITestTab"), index + 1 < args.count {
             switch args[index + 1].lowercased() {
             case "controller": selectedTab = .controller
-            case "keyboard": selectedTab = .keyboard
+            case "keyboard", "remote", "trackpad": selectedTab = .trackpad
             case "deck": selectedTab = .deck
             default: break
             }
@@ -436,6 +438,9 @@ final class RemoteSession: ObservableObject, CommandSending {
         case .focusedText(let status, let value):
             focusedTextStatus = status
             focusedTextValue = value
+        case .activeApp(let bundleID, let name):
+            activeAppBundleID = bundleID
+            activeAppName = name
         default:
             break
         }
@@ -514,6 +519,7 @@ final class RemoteSession: ObservableObject, CommandSending {
         telemetry.tcpReady = tcp.isReady
         browser.stopIfNeeded()
         syncControllerConfig()
+        send(.requestActiveApp)
     }
 
     private func beginReconnect() {
@@ -566,14 +572,15 @@ enum ConnectionState: String {
 }
 
 enum RemoteTab: String, CaseIterable, Identifiable {
-    case trackpad, keyboard, deck, controller
+    case vibe, trackpad, deck, codeKey, controller
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .vibe: return "Vibe"
         case .trackpad: return "Trackpad"
-        case .keyboard: return "Keyboard"
         case .deck: return "Deck"
-        case .controller: return "Controller"
+        case .codeKey: return "CodeKey"
+        case .controller: return "Gamepad"
         }
     }
 }

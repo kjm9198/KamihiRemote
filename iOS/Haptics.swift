@@ -23,6 +23,7 @@ enum Haptics {
     static func gesture() { play(pressGen, 0.8) }
     static func connect() { play(softGen, 0.5) }
     static func slideChange() { play(clickGen, 0.55) }
+    static func touchTap() { play(softGen, 0.4) }
 
     private static func play(_ generator: UIImpactFeedbackGenerator, _ intensity: CGFloat) {
         guard level != .off else { return }
@@ -42,5 +43,6 @@ enum Haptics {
     static func gesture() {}
     static func connect() {}
     static func slideChange() {}
+    static func touchTap() {}
 }
 #endif

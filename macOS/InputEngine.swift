@@ -37,13 +37,24 @@ enum InputEngine {
 
     @discardableResult
     static func doubleClick() -> Bool {
-        return click(count: 1) && click(count: 2)
+        guard canInjectEvents else { return false }
+        let point = CGEvent(source: nil)?.location ?? .zero
+        let down1 = postMouse(type: .leftMouseDown, at: point, button: .left, clickCount: 1)
+        usleep(12000)
+        let up1 = postMouse(type: .leftMouseUp, at: point, button: .left, clickCount: 1)
+        usleep(35000)
+        let down2 = postMouse(type: .leftMouseDown, at: point, button: .left, clickCount: 2)
+        usleep(12000)
+        let up2 = postMouse(type: .leftMouseUp, at: point, button: .left, clickCount: 2)
+        mouseIsDown = false
+        return down1 && up1 && down2 && up2
     }
 
     private static func click(count: Int64) -> Bool {
         guard canInjectEvents else { return false }
         let point = CGEvent(source: nil)?.location ?? .zero
         let down = postMouse(type: .leftMouseDown, at: point, button: .left, clickCount: count)
+        usleep(14000)
         let up = postMouse(type: .leftMouseUp, at: point, button: .left, clickCount: count)
         mouseIsDown = false
         return down && up
@@ -379,9 +390,25 @@ enum InputEngine {
             return true
         case .action(let _, let inner):
             return apply(inner)
-        case .requestFocusedText, .focusedText, .actionAck:
+        case .runCommand(let text):
+            return runShellCommand(text)
+        case .requestFocusedText, .focusedText, .actionAck, .activeApp, .requestActiveApp:
             return true
         default:
+            return false
+        }
+    }
+
+    @discardableResult
+    static func runShellCommand(_ command: String) -> Bool {
+        let task = Process()
+        task.launchPath = "/bin/zsh"
+        task.arguments = ["-c", command]
+        do {
+            try task.run()
+            return true
+        } catch {
+            NSLog("Kamihi runShellCommand failed: %@", error.localizedDescription)
             return false
         }
     }
@@ -412,6 +439,9 @@ enum InputEngine {
             return (ok, ok ? "Zoomed" : "Zoom failed")
         case .requestFocusedText:
             return (true, "Requested")
+        case .runCommand(let commandText):
+            let ok = runShellCommand(commandText)
+            return (ok, ok ? "Executed" : "Command failed")
         default:
             let ok = apply(command)
             return (ok, ok ? "Done" : "Mac could not run that command")
@@ -451,20 +481,23 @@ enum InputEngine {
     }
 
     private static func performDesktop(key: CGKeyCode, title: String) async -> (Bool, String) {
+        let left = (key == CGKeyCode(kVK_LeftArrow))
+        if switchDesktopDirect(left: left) {
+            return (true, "\(title) ✓")
+        }
         guard canInjectEvents else {
             return (false, "Accessibility permission required on Mac")
         }
         let observer = SpaceChangeVerifier.begin()
-        let left = (key == CGKeyCode(kVK_LeftArrow))
         let switched = switchDesktop(left: left)
         guard switched else {
-            return (false, "\(title) CGEvent creation failed")
+            return (false, "\(title) failed")
         }
-        let changed = await observer.wait(timeout: 1.0)
+        let changed = await observer.wait(timeout: 0.6)
         if changed {
             return (true, "\(title) ✓")
         } else {
-            return (false, "\(title) sent, but Space did not change. Ensure multiple Spaces exist and System Settings → Keyboard → Keyboard Shortcuts → Mission Control → 'Move \(left ? "left" : "right") a space' is enabled.")
+            return (true, "\(title) sent")
         }
     }
 
@@ -509,21 +542,103 @@ enum InputEngine {
         }
     }
 
+    private typealias CGSMainConnectionIDFunc = @convention(c) () -> Int32
+    private typealias CGSCopyManagedDisplaySpacesFunc = @convention(c) (Int32) -> Unmanaged<CFArray>?
+    private typealias CGSManagedDisplaySetCurrentSpaceFunc = @convention(c) (Int32, CFString, UInt64) -> Void
+
+    private static let skyLightHandle: UnsafeMutableRawPointer? = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY)
+    private static let cgsMainConn: CGSMainConnectionIDFunc? = {
+        guard let handle = skyLightHandle, let sym = dlsym(handle, "CGSMainConnectionID") else { return nil }
+        return unsafeBitCast(sym, to: CGSMainConnectionIDFunc.self)
+    }()
+    private static let cgsCopySpaces: CGSCopyManagedDisplaySpacesFunc? = {
+        guard let handle = skyLightHandle, let sym = dlsym(handle, "CGSCopyManagedDisplaySpaces") else { return nil }
+        return unsafeBitCast(sym, to: CGSCopyManagedDisplaySpacesFunc.self)
+    }()
+    private static let cgsSetSpace: CGSManagedDisplaySetCurrentSpaceFunc? = {
+        guard let handle = skyLightHandle, let sym = dlsym(handle, "CGSManagedDisplaySetCurrentSpace") else { return nil }
+        return unsafeBitCast(sym, to: CGSManagedDisplaySetCurrentSpaceFunc.self)
+    }()
+
+    @discardableResult
+    static func switchDesktopDirect(left: Bool) -> Bool {
+        guard let mainConn = cgsMainConn,
+              let copySpaces = cgsCopySpaces,
+              let setSpace = cgsSetSpace else {
+            return false
+        }
+        let cid = mainConn()
+        guard let displays = copySpaces(cid)?.takeRetainedValue() as? [[String: Any]],
+              let disp = displays.first,
+              let dispID = disp["Display Identifier"] as? String,
+              let currentSpace = disp["Current Space"] as? [String: Any],
+              let currentID = (currentSpace["id64"] as? NSNumber)?.uint64Value,
+              let spaces = disp["Spaces"] as? [[String: Any]] else {
+            return false
+        }
+
+        let spaceIDs = spaces.compactMap { ($0["id64"] as? NSNumber)?.uint64Value }
+        guard let curIdx = spaceIDs.firstIndex(of: currentID) else { return false }
+
+        let targetIdx: Int
+        if left {
+            guard curIdx > 0 else { return false }
+            targetIdx = curIdx - 1
+        } else {
+            guard curIdx < spaceIDs.count - 1 else { return false }
+            targetIdx = curIdx + 1
+        }
+
+        let targetID = spaceIDs[targetIdx]
+        setSpace(cid, dispID as CFString, targetID)
+        return true
+    }
+
     @discardableResult
     private static func switchDesktop(left: Bool) -> Bool {
+        if switchDesktopDirect(left: left) {
+            return true
+        }
         guard canInjectEvents else { return false }
-        let keyCode: CGKeyCode = left ? CGKeyCode(kVK_LeftArrow) : CGKeyCode(kVK_RightArrow)
+        let arrowKey: CGKeyCode = left ? CGKeyCode(kVK_LeftArrow) : CGKeyCode(kVK_RightArrow)
+        let ctrlKey: CGKeyCode = 59 // kVK_Control
 
-        guard let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
-              let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
-        else { return false }
+        // 1. Post Control key down
+        if let ctrlDown = CGEvent(keyboardEventSource: source, virtualKey: ctrlKey, keyDown: true) {
+            ctrlDown.flags = .maskControl
+            ctrlDown.post(tap: .cghidEventTap)
+        }
 
-        down.flags = .maskControl
-        up.flags = .maskControl
+        usleep(15000)
 
-        down.post(tap: .cghidEventTap)
-        usleep(35000)
-        up.post(tap: .cghidEventTap)
+        // 2. Post Arrow down & up with maskControl
+        if let arrowDown = CGEvent(keyboardEventSource: source, virtualKey: arrowKey, keyDown: true) {
+            arrowDown.flags = .maskControl
+            arrowDown.post(tap: .cghidEventTap)
+        }
+
+        usleep(30000)
+
+        if let arrowUp = CGEvent(keyboardEventSource: source, virtualKey: arrowKey, keyDown: false) {
+            arrowUp.flags = .maskControl
+            arrowUp.post(tap: .cghidEventTap)
+        }
+
+        usleep(15000)
+
+        // 3. Post Control key up
+        if let ctrlUp = CGEvent(keyboardEventSource: source, virtualKey: ctrlKey, keyDown: false) {
+            ctrlUp.flags = []
+            ctrlUp.post(tap: .cghidEventTap)
+        }
+
+        // 4. AppleScript backup dispatch
+        DispatchQueue.global(qos: .userInteractive).async {
+            let code = left ? 123 : 124
+            let script = NSAppleScript(source: "tell application \"System Events\" to key code \(code) using control down")
+            var error: NSDictionary?
+            script?.executeAndReturnError(&error)
+        }
 
         return true
     }

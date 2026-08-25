@@ -300,6 +300,9 @@ indirect enum RemoteCommand: Equatable, Sendable {
     case requestFocusedText
     case focusedText(status: FocusedTextStatus, value: String)
     case syncControllerMapping(ControllerMapping)
+    case activeApp(bundleID: String, name: String)
+    case requestActiveApp
+    case runCommand(String)
 
     var isRealtime: Bool {
         switch self {
@@ -414,15 +417,21 @@ indirect enum RemoteCommand: Equatable, Sendable {
         case .syncControllerMapping(let mapping):
             let json = (try? JSONEncoder().encode(mapping)) ?? Data()
             return "CONTROLLER_CONFIG \(json.base64EncodedString())"
+        case .activeApp(let bundleID, let name):
+            return "ACTIVE_APP \(token(bundleID)) \(quoted(name))"
+        case .requestActiveApp:
+            return "REQUEST_ACTIVE_APP"
+        case .runCommand(let cmd):
+            return "RUN_COMMAND \(quoted(cmd))"
         }
     }
 
     /// Deck, keyboard, presentation, and system gestures need an execution ACK over TCP.
     var shouldAcknowledge: Bool {
         switch self {
-        case .system, .openApp, .openURL, .shortcut, .media, .presentation, .typeText, .requestFocusedText:
+        case .system, .openApp, .openURL, .shortcut, .media, .presentation, .typeText, .requestFocusedText, .runCommand:
             return true
-        case .action, .zoom:
+        case .action, .zoom, .activeApp, .requestActiveApp:
             return false
         default:
             return false

@@ -305,7 +305,7 @@ final class GestureEngine {
         var commands = takeQueued()
         let remaining = fingers.count
         let duration = timestamp - startTime
-        let isTap = peakMovement < 14 && duration < 0.35
+        let isTap = peakMovement < 24 && duration < 0.45
 
         // If in an active 3 or 4 finger swipe (or saw 3+ contacts), do NOT cancel when individual fingers lift asynchronously.
         // Wait until all fingers have released (remaining == 0).
@@ -338,7 +338,7 @@ final class GestureEngine {
                 mouseIsDown = false
                 Haptics.dragEnd()
             case .threeFingerSwipe, .threeFingerCandidate:
-                if isTap, peakMovement < 10, maxClusterCount == 3 {
+                if isTap, peakMovement < 14, maxClusterCount == 3 {
                     commands.append(.shortcut("cmd+ctrl+d"))
                     Haptics.click()
                 } else if didEmitSwipe == false {
@@ -349,7 +349,7 @@ final class GestureEngine {
                     }
                 }
             case .fourFingerSwipe, .fourFingerCandidate:
-                if isTap, peakMovement < 10, maxClusterCount == 4 {
+                if isTap, peakMovement < 14, maxClusterCount == 4 {
                     commands.append(.system(.showDesktop))
                     Haptics.click()
                 } else if didEmitSwipe == false {
@@ -366,7 +366,7 @@ final class GestureEngine {
                     commands.append(.rightClick)
                     Haptics.rightClick()
                 } else if isTap, maxClusterCount == 1, preferences.tapToClick {
-                    let isDouble = timestamp - lastClickTime < 0.3
+                    let isDouble = timestamp - lastClickTime < 0.35
                     lastClickTime = timestamp
                     clickPulse += 1
                     if isDouble {
@@ -379,12 +379,12 @@ final class GestureEngine {
                 } else {
                     commands.append(contentsOf: scrollEnd)
                 }
-            case .tapCandidate, .pointer, .dragPending:
+            case .tapCandidate, .pointer, .dragPending, .idle:
                 if mouseIsDown {
                     commands.append(.mouseUp)
                     mouseIsDown = false
                 } else if isTap, preferences.tapToClick {
-                    let isDouble = timestamp - lastClickTime < 0.3
+                    let isDouble = timestamp - lastClickTime < 0.35
                     lastClickTime = timestamp
                     clickPulse += 1
                     if isDouble {
@@ -526,7 +526,7 @@ final class GestureEngine {
         guard let start = startCentroid, let current = lastCentroid else { return nil }
         let dx = current.x - start.x
         let dy = current.y - start.y
-        guard hypot(dx, dy) >= 28.0 else { return nil }
+        guard hypot(dx, dy) >= 20.0 else { return nil }
         if abs(dx) >= abs(dy) {
             return dx > 0 ? preferences.bindings.threeFingerRight : preferences.bindings.threeFingerLeft
         }
@@ -537,7 +537,7 @@ final class GestureEngine {
         guard let start = startCentroid, let current = lastCentroid else { return nil }
         let dx = current.x - start.x
         let dy = current.y - start.y
-        guard hypot(dx, dy) >= 28.0 else { return nil }
+        guard hypot(dx, dy) >= 20.0 else { return nil }
         if abs(dx) >= abs(dy) {
             return dx > 0 ? preferences.bindings.fourFingerRight : preferences.bindings.fourFingerLeft
         }
@@ -552,16 +552,16 @@ final class GestureEngine {
         lastCentroid = center
         peakMovement = max(peakMovement, distance)
 
-        // Lock threshold: 34 pt cumulative distance from start
-        if distance >= 34.0 {
+        // Lock threshold: 24 pt cumulative distance from start
+        if distance >= 24.0 {
             if swipeAxis == nil {
                 let absX = abs(totalDx)
                 let absY = abs(totalDy)
-                if absX >= absY * 1.25 {
+                if absX >= absY * 1.15 {
                     swipeAxis = .horizontal
-                } else if absY >= absX * 1.25 {
+                } else if absY >= absX * 1.15 {
                     swipeAxis = .vertical
-                } else if distance >= 45.0 {
+                } else if distance >= 36.0 {
                     swipeAxis = absX >= absY ? .horizontal : .vertical
                 }
             }
@@ -594,15 +594,15 @@ final class GestureEngine {
         lastCentroid = center
         peakMovement = max(peakMovement, distance)
 
-        if distance >= 34.0 {
+        if distance >= 24.0 {
             if swipeAxis == nil {
                 let absX = abs(totalDx)
                 let absY = abs(totalDy)
-                if absX >= absY * 1.25 {
+                if absX >= absY * 1.15 {
                     swipeAxis = .horizontal
-                } else if absY >= absX * 1.25 {
+                } else if absY >= absX * 1.15 {
                     swipeAxis = .vertical
-                } else if distance >= 45.0 {
+                } else if distance >= 36.0 {
                     swipeAxis = absX >= absY ? .horizontal : .vertical
                 }
             }

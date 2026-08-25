@@ -7,38 +7,54 @@ struct ControllerScreen: View {
     var body: some View {
         GeometryReader { geo in
             let compact = geo.size.height > geo.size.width * 1.05
-            ZStack(alignment: .top) {
-                ControllerPadView(session: session, compact: compact)
-                    .frame(width: geo.size.width, height: geo.size.height)
-                if compact == false {
+            VStack(spacing: 4) {
+                // Top control bar: Profile Picker & Quick Navigation
+                HStack(spacing: 8) {
+                    Picker("Profile", selection: Binding(
+                        get: { session.preferences.controllerProfile },
+                        set: { newProfile in
+                            session.preferences.controllerProfile = newProfile
+                            let newMapping = ControllerMapping.defaultFor(profile: newProfile)
+                            session.preferences.controllerMapping = newMapping
+                            session.send(.syncControllerMapping(newMapping))
+                            Haptics.click()
+                        }
+                    )) {
+                        Text("🎮 Gaming (WASD)").tag(ControllerProfile.gaming)
+                        Text("💻 Mac Control").tag(ControllerProfile.mac)
+                        Text("📊 Media").tag(ControllerProfile.presentation)
+                    }
+                    .pickerStyle(.segmented)
+
+                    Spacer(minLength: 4)
+
                     Menu {
-                        Button("Trackpad") { session.leaveController(to: .trackpad) }
-                        Button("Keyboard") { session.leaveController(to: .keyboard) }
+                        Button("Remote") { session.leaveController(to: .trackpad) }
                         Button("Deck") { session.leaveController(to: .deck) }
                         Divider()
                         Button("Keyboard") {
                             session.sendController(.neutral)
                             session.showsKeyboard = true
                         }
-                        Button("Media") {
-                            session.sendController(.neutral)
-                            session.showsMedia = true
-                        }
                         Button("Settings") {
                             session.sendController(.neutral)
                             session.showsSettings = true
                         }
                     } label: {
-                        Image(systemName: "line.3.horizontal")
+                        Image(systemName: "ellipsis")
                             .font(.system(size: 15, weight: .bold))
-                            .frame(width: KamihiUI.controlHeight, height: KamihiUI.controlHeight)
+                            .frame(width: 32, height: 32)
                             .foregroundStyle(.white)
                             .glassEffect(.regular.interactive(), in: .circle)
                     }
-                    .padding(.top, 12)
-                    .accessibilityLabel("Controller menu")
                 }
+                .padding(.horizontal, 12)
+                .padding(.top, 4)
+
+                ControllerPadView(session: session, compact: compact)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .frame(width: geo.size.width, height: geo.size.height)
         }
         .onDisappear {
             session.sendController(.neutral)
@@ -74,7 +90,7 @@ struct ControllerPadView: UIViewRepresentable {
 final class ControllerUIView: UIView {
     weak var session: RemoteSession?
     var compactLayout = false
-    var layout: ControllerLayout = .standard
+    var layout: ControllerLayout = .fps
     var deadZone: CGFloat = 0.12
     var sensitivity: CGFloat = 1
     var hapticsEnabled = true
@@ -118,13 +134,11 @@ final class ControllerUIView: UIView {
     override func draw(_ rect: CGRect) {
         guard let ctx = UIGraphicsGetCurrentContext() else { return }
         ctx.clear(rect)
-        drawStick(in: leftStickFrame, value: CGPoint(x: CGFloat(state.leftX), y: CGFloat(state.leftY)), ctx: ctx)
+        drawStick(in: leftStickFrame, value: CGPoint(x: CGFloat(state.leftX), y: CGFloat(state.leftY)), label: "L-STICK (WASD)", ctx: ctx)
         drawButtonCluster(ctx)
         drawShoulders(ctx)
         drawCenter(ctx)
-        if layout == .fps || layout == .racing, compactLayout == false {
-            drawStick(in: rightStickFrame, value: CGPoint(x: CGFloat(state.rightX), y: CGFloat(state.rightY)), ctx: ctx)
-        }
+        drawStick(in: rightStickFrame, value: CGPoint(x: CGFloat(state.rightX), y: CGFloat(state.rightY)), label: "R-STICK (LOOK)", ctx: ctx)
     }
 
     /// Usable drawing area — respects safe area and keeps controls on-screen.
@@ -178,21 +192,26 @@ final class ControllerUIView: UIView {
     }
 
     private var rightStickFrame: CGRect {
-        let side = min(max(80, rightControlsRegion.width * 0.44), 120)
-        let frame = CGRect(
-            x: rightControlsRegion.minX + 8,
-            y: rightControlsRegion.maxY - side - 6,
-            width: side,
-            height: side
-        )
+        let maxSide = compactLayout ? 96.0 : 130.0
+        let minSide = compactLayout ? 68.0 : 90.0
+        let side = min(max(minSide, rightControlsRegion.width * (compactLayout ? 0.44 : 0.46)), maxSide)
+        let x = compactLayout
+            ? (rightControlsRegion.midX - side / 2)
+            : (rightControlsRegion.minX + 12)
+        let y = rightControlsRegion.maxY - side - (compactLayout ? 4 : 8)
+        let frame = CGRect(x: x, y: y, width: side, height: side)
         return clampFrame(frame)
     }
 
     private var buttonFrames: [(ControllerButton, CGRect)] {
-        let r = min(max(compactLayout ? 34 : 40, rightControlsRegion.width * 0.24), compactLayout ? 44 : 52)
-        let gap = r * 0.82
-        let cx = rightControlsRegion.midX
-        let cy = rightControlsRegion.midY
+        let r = min(max(compactLayout ? 32 : 38, rightControlsRegion.width * (compactLayout ? 0.22 : 0.20)), compactLayout ? 42 : 48)
+        let gap = r * 0.84
+        let cx = compactLayout
+            ? rightControlsRegion.midX
+            : (rightControlsRegion.maxX - r * 1.7)
+        let cy = compactLayout
+            ? (rightControlsRegion.minY + rightControlsRegion.height * 0.30)
+            : (rightControlsRegion.minY + r * 1.55)
         return [
             (.y, clampFrame(CGRect(x: cx - r / 2, y: cy - gap - r / 2, width: r, height: r))),
             (.x, clampFrame(CGRect(x: cx - gap - r / 2, y: cy - r / 2, width: r, height: r))),
@@ -264,7 +283,7 @@ final class ControllerUIView: UIView {
             update(.stick, at: point)
             return
         }
-        if (layout == .fps || layout == .racing), compactLayout == false, rightStickFrame.insetBy(dx: -8, dy: -8).contains(point) {
+        if rightStickFrame.insetBy(dx: -10, dy: -10).contains(point) {
             identities[key] = .rightStick
             rightStickTouch = key
             update(.rightStick, at: point)
@@ -367,16 +386,19 @@ final class ControllerUIView: UIView {
         impact.impactOccurred(intensity: 0.35)
     }
 
-    private func drawStick(in frame: CGRect, value: CGPoint, ctx: CGContext) {
+    private func drawStick(in frame: CGRect, value: CGPoint, label: String, ctx: CGContext) {
         guard frame.width > 4, frame.height > 4 else { return }
-        UIColor.white.withAlphaComponent(0.12).setStroke()
+        UIColor.white.withAlphaComponent(0.14).setStroke()
         ctx.setLineWidth(2)
         ctx.strokeEllipse(in: frame.insetBy(dx: 4, dy: 4))
         let knob = CGSize(width: frame.width * 0.42, height: frame.height * 0.42)
         let x = frame.midX + value.x * (frame.width / 2 - knob.width / 2) - knob.width / 2
         let y = frame.midY + value.y * (frame.height / 2 - knob.height / 2) - knob.height / 2
-        UIColor.white.withAlphaComponent(0.28).setFill()
+        UIColor(red: 0.20, green: 0.55, blue: 0.95, alpha: 0.45).setFill()
         ctx.fillEllipse(in: CGRect(origin: CGPoint(x: x, y: y), size: knob))
+        UIColor.white.withAlphaComponent(0.40).setStroke()
+        ctx.setLineWidth(1.5)
+        ctx.strokeEllipse(in: CGRect(origin: CGPoint(x: x, y: y), size: knob))
     }
 
     private func drawButtonCluster(_ ctx: CGContext) {

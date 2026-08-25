@@ -80,9 +80,13 @@ final class ScrollGestureEngine {
         let dx = Double(center.x - lastCentroid.x)
         let dy = Double(center.y - lastCentroid.y)
         let translation = hypot(center.x - startCentroid.x, center.y - startCentroid.y)
+        let currentSpan = span(points)
+        let spanDelta = currentSpan - startSpan
 
         if intent == .unknown {
-            if translation > 2 {
+            if preferences.pinchEnabled && abs(spanDelta) > 12 && abs(spanDelta) > translation * 1.15 {
+                intent = .pinch
+            } else if translation > 2 {
                 intent = .scroll
             }
         }
@@ -93,8 +97,12 @@ final class ScrollGestureEngine {
         switch intent {
         case .unknown:
             return []
-        case .scroll, .pinch:
+        case .scroll:
             return scrollMoved(dx: dx, dy: dy, dt: dt, timestamp: timestamp)
+        case .pinch:
+            guard preferences.pinchEnabled else { return [] }
+            pinchAccum = Double((currentSpan - startSpan) / max(startSpan, 1.0))
+            return drainPinch()
         }
     }
 

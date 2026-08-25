@@ -45,10 +45,10 @@ struct AppPreferences: Codable, Equatable {
     var pinchThreshold = 0.12
     var preferredTransport: TransportKind = .lan
     var automaticTransport = true
-    var controllerLayout: ControllerLayout = .standard
+    var controllerLayout: ControllerLayout = .fps
     var gameMapping: GameMapping = .fps
-    var controllerProfile: ControllerProfile = .mac
-    var controllerMapping: ControllerMapping = .mac
+    var controllerProfile: ControllerProfile = .gaming
+    var controllerMapping: ControllerMapping = .gaming
     var stickDeadZone = 0.12
     var stickSensitivity = 1.0
     var controllerHaptics = true

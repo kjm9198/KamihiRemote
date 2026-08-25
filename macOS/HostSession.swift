@@ -67,6 +67,21 @@ final class HostSession: ObservableObject {
         NotificationCenter.default.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             self?.advertise()
         }
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.broadcastActiveApp()
+        }
+    }
+
+    func broadcastActiveApp(to connection: NWConnection? = nil) {
+        guard let frontApp = NSWorkspace.shared.frontmostApplication else { return }
+        let bundleID = frontApp.bundleIdentifier ?? "unknown"
+        let name = frontApp.localizedName ?? "Unknown"
+        let command = RemoteCommand.activeApp(bundleID: bundleID, name: name)
+        if let connection {
+            tcp.send(command, token: pairingCode, to: connection)
+        } else {
+            tcp.broadcast(command, token: pairingCode)
+        }
     }
 
     func refreshAddress() {
@@ -184,6 +199,7 @@ final class HostSession: ObservableObject {
             to: connection
         )
         tcp.send(.pairAck(ok: true, sessionID: sessionID), token: pairingCode, to: connection)
+        broadcastActiveApp(to: connection)
     }
 
     private func handleReliable(_ command: RemoteCommand, connection: NWConnection) {
@@ -211,6 +227,8 @@ final class HostSession: ObservableObject {
                 tcp.send(.appEntry(name: app.displayName, bundleID: app.bundleIdentifier), token: pairingCode, to: connection)
             }
             tcp.send(.appListEnd, token: pairingCode, to: connection)
+        case .requestActiveApp:
+            broadcastActiveApp(to: connection)
         case .heartbeat(let id, let timestamp):
             tcp.send(.heartbeatAck(id: id, timestamp: timestamp), token: pairingCode, to: connection)
         case .releaseAll:

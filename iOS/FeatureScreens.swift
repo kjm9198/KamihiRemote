@@ -169,6 +169,7 @@ struct MediaScreen: View {
 
 struct DeckScreen: View {
     @EnvironmentObject private var session: RemoteSession
+    @State private var selectedCategory: ContextDeckCategory = .auto
     @State private var showsAdd = false
     @State private var showsAppGallery = false
     @State private var showsDictate = false
@@ -208,35 +209,58 @@ struct DeckScreen: View {
             .padding(.horizontal, KamihiUI.pad)
             .padding(.top, KamihiUI.pad)
 
+            // Category Bar
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(ContextDeckCategory.allCases) { cat in
+                        Button {
+                            selectedCategory = cat
+                            Haptics.touchTap()
+                        } label: {
+                            Text(cat.rawValue)
+                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(selectedCategory == cat ? Color.cyan.opacity(0.28) : Color.white.opacity(0.06), in: Capsule())
+                                .overlay(Capsule().stroke(selectedCategory == cat ? Color.cyan.opacity(0.8) : Color.white.opacity(0.12), lineWidth: 0.8))
+                                .foregroundStyle(selectedCategory == cat ? .cyan : .white.opacity(0.75))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, KamihiUI.pad)
+            }
+
             GeometryReader { geo in
-                let trackpadHeight = max(140, geo.size.height * 0.38)
+                let trackpadHeight = max(130, geo.size.height * 0.35)
                 let gridHeight = max(160, geo.size.height - trackpadHeight - 8)
                 VStack(spacing: 8) {
                     let columns = max(3, min(4, max(1, Int(geo.size.width / 92))))
                     ScrollView {
+                        let items = ContextDeckProfiles.items(for: selectedCategory, activeBundleID: session.activeAppBundleID)
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: KamihiUI.gap), count: columns), spacing: KamihiUI.gap) {
-                            ForEach(session.deck) { button in
-                                Button { run(button) } label: {
-                                    VStack(spacing: 8) {
-                                        Image(systemName: button.symbol)
-                                            .font(.system(size: 22, weight: .semibold))
-                                        Text(button.title)
-                                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            ForEach(items) { item in
+                                Button {
+                                    session.sendAcknowledged(item.command, title: item.title)
+                                    Haptics.touchTap()
+                                } label: {
+                                    VStack(spacing: 6) {
+                                        Image(systemName: item.symbol)
+                                            .font(.system(size: 20, weight: .semibold))
+                                            .foregroundStyle(.cyan)
+                                        Text(item.title)
+                                            .font(.system(size: 11, weight: .semibold, design: .rounded))
                                             .lineLimit(2)
-                                            .minimumScaleFactor(0.8)
+                                            .minimumScaleFactor(0.75)
                                             .multilineTextAlignment(.center)
                                     }
-                                    .frame(maxWidth: .infinity, minHeight: 72)
+                                    .frame(maxWidth: .infinity, minHeight: 68)
                                     .padding(6)
                                 }
                                 .buttonStyle(.plain)
                                 .foregroundStyle(.white)
                                 .glassEffect(.regular.interactive(), in: .rect(cornerRadius: KamihiUI.radiusMedium))
-                                .accessibilityLabel(button.title)
-                                .contextMenu {
-                                    Button("Edit") { editing = button }
-                                    Button("Remove", role: .destructive) { remove(button) }
-                                }
+                                .accessibilityLabel(item.title)
                             }
                         }
                         .padding(.horizontal, KamihiUI.pad)

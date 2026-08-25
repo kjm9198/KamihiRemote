@@ -51,6 +51,13 @@ final class TCPServer {
         connection.send(content: data, completion: .contentProcessed { _ in })
     }
 
+    func broadcast(_ command: RemoteCommand, token: String) {
+        let data = RemotePacket.encodeV1(token: token, command: command)
+        for connection in connections.values {
+            connection.send(content: data, completion: .contentProcessed { _ in })
+        }
+    }
+
     func stop() {
         listener?.cancel()
         listener = nil

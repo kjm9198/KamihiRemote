@@ -8,7 +8,7 @@ protocol GamepadOutput {
 }
 
 final class KeyboardGamepadOutput: GamepadOutput {
-    var mapping: ControllerMapping = .mac
+    var mapping: ControllerMapping = .gaming
     private var last = ControllerState.neutral
     private var heldKeys = Set<UInt16>()
 
@@ -116,24 +116,30 @@ final class KeyboardGamepadOutput: GamepadOutput {
     private func applyStick(_ action: StickAction, x: Double, y: Double) {
         switch action {
         case .wasd:
-            digital(y < -0.28, key: CGKeyCode(kVK_ANSI_W))
-            digital(y > 0.28, key: CGKeyCode(kVK_ANSI_S))
-            digital(x < -0.28, key: CGKeyCode(kVK_ANSI_A))
-            digital(x > 0.28, key: CGKeyCode(kVK_ANSI_D))
+            digital(y < -0.22, key: CGKeyCode(kVK_ANSI_W))
+            digital(y > 0.22, key: CGKeyCode(kVK_ANSI_S))
+            digital(x < -0.22, key: CGKeyCode(kVK_ANSI_A))
+            digital(x > 0.22, key: CGKeyCode(kVK_ANSI_D))
         case .arrows:
-            digital(y < -0.28, key: CGKeyCode(kVK_UpArrow))
-            digital(y > 0.28, key: CGKeyCode(kVK_DownArrow))
-            digital(x < -0.28, key: CGKeyCode(kVK_LeftArrow))
-            digital(x > 0.28, key: CGKeyCode(kVK_RightArrow))
+            digital(y < -0.22, key: CGKeyCode(kVK_UpArrow))
+            digital(y > 0.22, key: CGKeyCode(kVK_DownArrow))
+            digital(x < -0.22, key: CGKeyCode(kVK_LeftArrow))
+            digital(x > 0.22, key: CGKeyCode(kVK_RightArrow))
         case .mouse:
-            let dx = x * 14.0
-            let dy = y * 14.0
-            if hypot(dx, dy) > 0.2 {
+            let factor = 22.0
+            let dead = 0.05
+            let mag = hypot(x, y)
+            if mag > dead {
+                let normX = x / mag
+                let normY = y / mag
+                let scaledMag = pow((mag - dead) / (1.0 - dead), 1.25)
+                let dx = normX * scaledMag * factor
+                let dy = normY * scaledMag * factor
                 _ = InputEngine.move(dx: dx, dy: dy)
             }
         case .scroll:
-            let dx = x * 10.0
-            let dy = -y * 10.0
+            let dx = x * 12.0
+            let dy = -y * 12.0
             if hypot(dx, dy) > 0.2 {
                 _ = InputEngine.scroll(dx: dx, dy: dy, phase: .changed)
             }
