@@ -6,6 +6,7 @@ enum Haptics {
     private static let clickGen = UIImpactFeedbackGenerator(style: .medium)
     private static let pressGen = UIImpactFeedbackGenerator(style: .light)
     private static let softGen = UIImpactFeedbackGenerator(style: .soft)
+    private static let notificationGen = UINotificationFeedbackGenerator()
 
     static var level: HapticLevel = .normal
 
@@ -14,6 +15,7 @@ enum Haptics {
         clickGen.prepare()
         pressGen.prepare()
         softGen.prepare()
+        notificationGen.prepare()
     }
 
     static func click() { play(clickGen, 0.9) }
@@ -24,6 +26,12 @@ enum Haptics {
     static func connect() { play(softGen, 0.5) }
     static func slideChange() { play(clickGen, 0.55) }
     static func touchTap() { play(softGen, 0.4) }
+
+    static func error() {
+        guard level != .off else { return }
+        notificationGen.notificationOccurred(.error)
+        notificationGen.prepare()
+    }
 
     private static func play(_ generator: UIImpactFeedbackGenerator, _ intensity: CGFloat) {
         guard level != .off else { return }
@@ -44,5 +52,6 @@ enum Haptics {
     static func connect() {}
     static func slideChange() {}
     static func touchTap() {}
+    static func error() {}
 }
 #endif
