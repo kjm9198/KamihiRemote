@@ -13,7 +13,17 @@ xcodebuild -project "$ROOT/KamihiRemote.xcodeproj" -scheme KamihiRemote \
   -destination "platform=iOS Simulator,name=$SIM" \
   -derivedDataPath "$DERIVED" -configuration Debug build >/dev/null
 
-UDID="$(xcrun simctl list devices available | rg "$SIM \(" | head -1 | rg -o '[0-9A-F-]{36}')"
+# GitHub's macOS runner does not guarantee ripgrep (`rg`) is installed.
+# Keep this smoke test dependency-free by using the system grep/sed tools only.
+DEVICE_LINE="$(xcrun simctl list devices available | grep -F "$SIM (" | head -1 || true)"
+UDID="$(printf '%s\n' "$DEVICE_LINE" | grep -Eo '[0-9A-Fa-f-]{36}' | head -1 || true)"
+if [[ -z "$UDID" ]]; then
+  echo "error: Could not find an available '$SIM' simulator." >&2
+  echo "Available simulators:" >&2
+  xcrun simctl list devices available >&2
+  exit 1
+fi
+
 APP="$DERIVED/Build/Products/Debug-iphonesimulator/KamihiRemote.app"
 mkdir -p "$OUT"
 
