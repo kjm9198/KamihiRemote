@@ -171,10 +171,11 @@ struct DeckScreen: View {
     @EnvironmentObject private var session: RemoteSession
     @State private var showsAdd = false
     @State private var showsAppGallery = false
+    @State private var showsDictate = false
     @State private var editing: DeckButton?
 
     var body: some View {
-        VStack(spacing: KamihiUI.gap) {
+        VStack(spacing: 8) {
             HStack {
                 Text("DECK")
                     .font(KamihiUI.titleFont)
@@ -204,46 +205,70 @@ struct DeckScreen: View {
                     .foregroundStyle(.white.opacity(0.8))
                     .accessibilityLabel("Edit deck")
             }
+            .padding(.horizontal, KamihiUI.pad)
+            .padding(.top, KamihiUI.pad)
 
             GeometryReader { geo in
-                let columns = max(3, min(6, max(1, Int(geo.size.width / 100))))
-                ScrollView {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: KamihiUI.gap), count: columns), spacing: KamihiUI.gap) {
-                        ForEach(session.deck) { button in
-                            Button { run(button) } label: {
-                                VStack(spacing: 8) {
-                                    Image(systemName: button.symbol)
-                                        .font(.system(size: 22, weight: .semibold))
-                                    Text(button.title)
-                                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                        .lineLimit(2)
-                                        .minimumScaleFactor(0.8)
-                                        .multilineTextAlignment(.center)
+                let trackpadHeight = max(140, geo.size.height * 0.38)
+                let gridHeight = max(160, geo.size.height - trackpadHeight - 8)
+                VStack(spacing: 8) {
+                    let columns = max(3, min(4, max(1, Int(geo.size.width / 92))))
+                    ScrollView {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: KamihiUI.gap), count: columns), spacing: KamihiUI.gap) {
+                            ForEach(session.deck) { button in
+                                Button { run(button) } label: {
+                                    VStack(spacing: 8) {
+                                        Image(systemName: button.symbol)
+                                            .font(.system(size: 22, weight: .semibold))
+                                        Text(button.title)
+                                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                            .lineLimit(2)
+                                            .minimumScaleFactor(0.8)
+                                            .multilineTextAlignment(.center)
+                                    }
+                                    .frame(maxWidth: .infinity, minHeight: 72)
+                                    .padding(6)
                                 }
-                                .frame(maxWidth: .infinity, minHeight: 78)
-                                .padding(6)
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.white)
-                            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: KamihiUI.radiusMedium))
-                            .accessibilityLabel(button.title)
-                            .contextMenu {
-                                Button("Edit") { editing = button }
-                                Button("Remove", role: .destructive) { remove(button) }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(.white)
+                                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: KamihiUI.radiusMedium))
+                                .accessibilityLabel(button.title)
+                                .contextMenu {
+                                    Button("Edit") { editing = button }
+                                    Button("Remove", role: .destructive) { remove(button) }
+                                }
                             }
                         }
+                        .padding(.horizontal, KamihiUI.pad)
+                        .padding(.bottom, 4)
                     }
-                    .padding(.bottom, 8)
+                    .frame(height: gridHeight)
+
+                    VStack(spacing: 4) {
+                        Text("TRACKPAD")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .tracking(1.2)
+                            .foregroundStyle(.white.opacity(0.4))
+                        PolishedTrackpadSurface(showDiagnostics: false)
+                            .clipShape(RoundedRectangle(cornerRadius: KamihiUI.radiusLarge, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: KamihiUI.radiusLarge, style: .continuous)
+                                    .stroke(.white.opacity(0.08), lineWidth: 1)
+                            )
+                    }
+                    .padding(.horizontal, KamihiUI.pad)
+                    .padding(.bottom, KamihiUI.pad)
+                    .frame(height: trackpadHeight)
                 }
             }
         }
-        .padding(KamihiUI.pad)
         .confirmationDialog("Choose an Action", isPresented: $showsAdd, titleVisibility: .visible) {
             Button("Application") {
                 session.send(.requestAppList)
                 showsAppGallery = true
             }
             Button("Shortcut") { add(.shortcut, title: "Shortcut", symbol: "command", payload: "cmd+c") }
+            Button("Dictate Prompt") { add(.dictate, title: "Dictate", symbol: "mic.fill", payload: "prompt") }
             Button("Website") { add(.openURL, title: "Website", symbol: "globe", payload: "https://") }
             Button("System") { add(.system, title: "Mission Control", symbol: "rectangle.3.group", payload: SystemAction.missionControl.rawValue) }
             Button("Cancel", role: .cancel) {}
@@ -255,17 +280,26 @@ struct DeckScreen: View {
             }
             .environmentObject(session)
         }
+        .sheet(isPresented: $showsDictate) {
+            DictatePromptSheet().environmentObject(session)
+        }
         .sheet(isPresented: $session.showsDeckEditor) {
             DeckEditorSheet().environmentObject(session)
         }
-        #if DEBUG
         .onAppear {
+            // One-time bump onto the agent deck if still on legacy Music/Safari layout.
+            if session.deck.contains(where: { $0.id == "music" || $0.id == "safari" }),
+               session.deck.contains(where: { $0.id == "dictate" }) == false {
+                session.deck = DeckButton.defaultLayout
+                DeckButton.save(session.deck)
+            }
+            #if DEBUG
             if session.uiTestShowDeckGallery {
                 showsAppGallery = true
                 session.uiTestShowDeckGallery = false
             }
+            #endif
         }
-        #endif
         .sheet(item: $editing) { button in
             NavigationStack {
                 DeckTileEditor(
@@ -324,6 +358,8 @@ struct DeckScreen: View {
             if let action = MediaAction(rawValue: button.payload) {
                 session.sendAcknowledged(.media(action), title: button.title)
             }
+        case .dictate:
+            showsDictate = true
         }
     }
 }
@@ -432,6 +468,7 @@ struct DeckTileEditor: View {
                 Text("URL").tag(DeckButton.Kind.openURL)
                 Text("System").tag(DeckButton.Kind.system)
                 Text("Media").tag(DeckButton.Kind.media)
+                Text("Dictate").tag(DeckButton.Kind.dictate)
             }
             switch button.kind {
             case .openApp:
@@ -448,7 +485,7 @@ struct DeckTileEditor: View {
                     }
                 }
             case .shortcut:
-                TextField("cmd+c", text: $button.payload)
+                TextField("cmd+c or selectLine", text: $button.payload)
                     .textInputAutocapitalization(.never)
             case .openURL:
                 TextField("https://", text: $button.payload)
@@ -464,6 +501,9 @@ struct DeckTileEditor: View {
                 TextField("playPause", text: $button.payload)
             case .presentation:
                 TextField("next", text: $button.payload)
+            case .dictate:
+                Text("Opens mic dictation, then types the prompt on the Mac and presses Return.")
+                    .foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Tile")

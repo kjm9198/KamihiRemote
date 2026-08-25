@@ -242,7 +242,11 @@ enum InputEngine {
 
     @discardableResult
     static func shortcut(_ spec: String) -> Bool {
-        let parts = spec.lowercased().split(separator: "+").map(String.init)
+        let normalized = spec.lowercased().replacingOccurrences(of: " ", with: "")
+        if normalized == "selectline" || normalized == "selectrow" {
+            return selectLine()
+        }
+        let parts = normalized.split(separator: "+").map(String.init)
         var flags: CGEventFlags = []
         var key: CGKeyCode?
         for part in parts {
@@ -257,6 +261,14 @@ enum InputEngine {
         }
         guard let key else { return false }
         return hotkey(key: key, flags: flags)
+    }
+
+    /// Select the current line in most text fields / editors.
+    @discardableResult
+    static func selectLine() -> Bool {
+        let left = hotkey(key: CGKeyCode(kVK_LeftArrow), flags: .maskCommand)
+        let right = hotkey(key: CGKeyCode(kVK_RightArrow), flags: [.maskCommand, .maskShift])
+        return left && right
     }
 
     @discardableResult
@@ -447,15 +459,24 @@ enum InputEngine {
         guard canInjectEvents else {
             return (false, "Enable Accessibility for Kamihi Remote Host")
         }
-        let posted = hotkey(key: key, flags: .maskControl)
-            || hotkey(key: key, flags: [.maskControl, .maskShift])
-        guard posted else {
-            return (false, "\(title)\nCould not post Control+Arrow")
+        // Post Control+Arrow firmly (down/up with flags on both).
+        let primary = hotkey(key: key, flags: .maskControl)
+        if primary == false {
+            let fallback = hotkey(key: key, flags: [.maskControl, .maskShift])
+            if fallback == false {
+                return (false, "\(title)\nCould not post Control+Arrow")
+            }
         }
-        if await SpaceChangeVerifier.wait() {
+        if await SpaceChangeVerifier.wait(timeout: 0.85) {
             return (true, "Switched")
         }
-        return (false, "Mac did not switch Desktop. Enable Mission Control shortcuts for Control+Left/Right in System Settings → Keyboard → Keyboard Shortcuts.")
+        // Some Macs delay or suppress the notification even when Spaces change.
+        // Re-post once, then accept the keystroke as delivered so Deck isn't a silent fail.
+        _ = hotkey(key: key, flags: .maskControl)
+        if await SpaceChangeVerifier.wait(timeout: 0.45) {
+            return (true, "Switched")
+        }
+        return (true, "Control+Arrow sent — if Desktop didn’t move, enable Mission Control shortcuts for Control+Left/Right")
     }
 
     private static func performMissionControl() async -> (Bool, String) {
@@ -480,6 +501,8 @@ enum InputEngine {
         case "safari": return "com.apple.Safari"
         case "finder": return "com.apple.finder"
         case "music": return "com.apple.Music"
+        case "chatgpt", "chat gpt", "openai": return "com.openai.chat"
+        case "cursor": return "com.todesktop.230313mzl4w4u92"
         default: return name
         }
     }
