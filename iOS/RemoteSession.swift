@@ -19,6 +19,8 @@ final class RemoteSession: ObservableObject, CommandSending {
     @Published var manualPort = UserDefaults.standard.integer(forKey: "hostPort") == 0 ? Int(RemoteConstants.defaultUDPPort) : UserDefaults.standard.integer(forKey: "hostPort")
     @Published var showsSettings = false
     @Published var showsDeckEditor = false
+    @Published var showsKeyboard = false
+    @Published var showsMedia = false
     @Published var selectedTab: RemoteTab = .trackpad
     @Published var connectionState: ConnectionState = .idle
     @Published var statusText = "Looking for nearby Macs"
@@ -32,6 +34,9 @@ final class RemoteSession: ObservableObject, CommandSending {
     @Published var hostApps: [HostAppEntry] = []
     @Published var pendingAppName = ""
     @Published var gestureBanner: String? = nil
+    #if DEBUG
+    @Published var uiTestShowDeckGallery = false
+    #endif
 
     private var sessionID: String?
     private var sessionKey: SymmetricKey?
@@ -90,10 +95,41 @@ final class RemoteSession: ObservableObject, CommandSending {
         if preferences.autoConnect {
             connectIfPossible()
         }
+        #if DEBUG
         GestureEngineTests.runSelfChecks()
         _ = SessionCrypto.runSelfChecks()
+        applyUITestLaunchOverrides()
+        #endif
         transport.noteWiredUnsupported()
     }
+
+    #if DEBUG
+    /// Simulator smoke-test hooks: `-KamihiUITestTab controller|present|deck` and `-KamihiUITestKeyboard`.
+    private func applyUITestLaunchOverrides() {
+        let args = ProcessInfo.processInfo.arguments
+        if let index = args.firstIndex(of: "-KamihiUITestTab"), index + 1 < args.count {
+            switch args[index + 1].lowercased() {
+            case "controller": selectedTab = .controller
+            case "present", "slides": selectedTab = .slides
+            case "deck": selectedTab = .deck
+            default: break
+            }
+        }
+        if args.contains("-KamihiUITestKeyboard") {
+            showsKeyboard = true
+        }
+        if args.contains("-KamihiUITestDeckGallery") {
+            selectedTab = .deck
+            hostApps = [
+                HostAppEntry(displayName: "Safari", bundleIdentifier: "com.apple.Safari"),
+                HostAppEntry(displayName: "Finder", bundleIdentifier: "com.apple.finder"),
+                HostAppEntry(displayName: "Music", bundleIdentifier: "com.apple.Music"),
+                HostAppEntry(displayName: "Xcode", bundleIdentifier: "com.apple.dt.Xcode"),
+            ]
+            uiTestShowDeckGallery = true
+        }
+    }
+    #endif
 
     var isConnected: Bool { connectionState == .connected }
 
@@ -144,7 +180,7 @@ final class RemoteSession: ObservableObject, CommandSending {
         }
         let host = manualAddress.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !host.isEmpty, PairingSecret.isValid(pairingCode) else {
-            showsSettings = true
+            statusText = "Looking for nearby Macs"
             return
         }
         connect(to: HostIdentity(hostID: host, displayName: host, pairingSecret: pairingCode, lastAddress: host, lastPort: UInt16(clamping: manualPort), lastTCPPort: RemoteConstants.defaultTCPPort, lastConnected: nil))
@@ -298,8 +334,7 @@ final class RemoteSession: ObservableObject, CommandSending {
             tcp.send(.pair(code: pairingCode, deviceID: DeviceIdentity.deviceID))
             tcp.send(.pairRequest(deviceID: DeviceIdentity.deviceID, deviceName: UIDevice.current.name, publicKey: pub, code: pairingCode))
         } else {
-            showsSettings = true
-            statusText = "Scan the QR code or enter the pairing code from your Mac"
+            statusText = "Open Settings to enter the pairing code from your Mac"
         }
     }
 
@@ -352,14 +387,12 @@ enum ConnectionState: String {
 }
 
 enum RemoteTab: String, CaseIterable, Identifiable {
-    case trackpad, slides, keyboard, media, deck, controller
+    case trackpad, slides, deck, controller
     var id: String { rawValue }
     var title: String {
         switch self {
         case .trackpad: return "Trackpad"
-        case .slides: return "Slides"
-        case .keyboard: return "Keyboard"
-        case .media: return "Media"
+        case .slides: return "Present"
         case .deck: return "Deck"
         case .controller: return "Controller"
         }

@@ -163,6 +163,9 @@ final class GestureEngine {
 
     private func moved(changed: [FingerSample], active: [FingerSample], timestamp: TimeInterval, size: CGSize) -> GestureOutput {
         replaceActive(active)
+        if fingers.isEmpty {
+            return ended(changed: changed, active: [], timestamp: timestamp, size: size)
+        }
         maxClusterCount = max(maxClusterCount, fingers.count)
         let dt = max(timestamp - lastTimestamp, 0.0008)
         let points = currentPoints()
@@ -187,6 +190,8 @@ final class GestureEngine {
             if stickyFour {
                 if mode != .fourFingerSwipe { mode = .fourFingerCandidate }
                 lastFingerIDs = ids
+                var swipeCommands = processFourFingerSwipe(center: center)
+                commands.append(contentsOf: swipeCommands)
                 lastCentroid = center
                 lastTimestamp = timestamp
                 return GestureOutput(
@@ -198,6 +203,8 @@ final class GestureEngine {
             if stickyThree {
                 if mode != .threeFingerSwipe { mode = .threeFingerCandidate }
                 lastFingerIDs = ids
+                var swipeCommands = processThreeFingerSwipe(center: center)
+                commands.append(contentsOf: swipeCommands)
                 lastCentroid = center
                 lastTimestamp = timestamp
                 return GestureOutput(
@@ -239,49 +246,15 @@ final class GestureEngine {
             commands.append(contentsOf: scrollEngine.move(points: points, timestamp: timestamp))
             switch scrollEngine.intent {
             case .scroll: mode = .scrolling
-            case .pinch: mode = .pinching
+            case .pinch:
+                // Pinch disabled — treat as scroll candidate.
+                mode = .twoFingerCandidate
             case .unknown: mode = .twoFingerCandidate
             }
         case .threeFingerCandidate, .threeFingerSwipe:
-            if let start = startCentroid {
-                let dx = center.x - start.x
-                let dy = center.y - start.y
-                // Cumulative distance — small per-frame deltas still count.
-                // Keep this low: iOS often cancels 3-finger touches early.
-                if hypot(dx, dy) > 18 {
-                    let wasLocked = mode == .threeFingerSwipe
-                    mode = .threeFingerSwipe
-                    lastCentroid = center
-                    lockAxis(dx: dx, dy: dy)
-                    let action = threeFingerAction()
-                    committedAction = action
-                    // Fire once when the swipe locks so iOS cancelling the touch
-                    // mid-gesture cannot swallow Mission Control / Exposé.
-                    if wasLocked == false, didEmitSwipe == false, let action, action != .none {
-                        commands.append(.system(action))
-                        didEmitSwipe = true
-                        Haptics.gesture()
-                    }
-                }
-            }
+            commands.append(contentsOf: processThreeFingerSwipe(center: center))
         case .fourFingerCandidate, .fourFingerSwipe:
-            if let start = startCentroid {
-                let dx = center.x - start.x
-                let dy = center.y - start.y
-                if hypot(dx, dy) > 18 {
-                    let wasLocked = mode == .fourFingerSwipe
-                    mode = .fourFingerSwipe
-                    lastCentroid = center
-                    lockAxis(dx: dx, dy: dy)
-                    let action = fourFingerAction()
-                    committedAction = action
-                    if wasLocked == false, didEmitSwipe == false, let action, action != .none {
-                        commands.append(.system(action))
-                        didEmitSwipe = true
-                        Haptics.gesture()
-                    }
-                }
-            }
+            commands.append(contentsOf: processFourFingerSwipe(center: center))
         case .idle:
             break
         }
@@ -290,7 +263,12 @@ final class GestureEngine {
         lastTimestamp = timestamp
         return GestureOutput(
             commands: commands,
-            animation: makeAnimation(fingers: currentAnimationFingers(), size: size, down: true, dragging: mouseIsDown || mode == .dragging),
+            animation: makeAnimation(
+                fingers: currentAnimationFingers(),
+                size: size,
+                down: fingers.isEmpty == false,
+                dragging: mouseIsDown || mode == .dragging
+            ),
             debug: makeDebug()
         )
     }
@@ -512,9 +490,50 @@ final class GestureEngine {
         return dy > 0 ? preferences.bindings.fourFingerDown : preferences.bindings.fourFingerUp
     }
 
+    private func processThreeFingerSwipe(center: CGPoint) -> [RemoteCommand] {
+        guard let start = startCentroid else { return [] }
+        let dx = center.x - start.x
+        let dy = center.y - start.y
+        if hypot(dx, dy) > 14 {
+            let wasLocked = mode == .threeFingerSwipe
+            mode = .threeFingerSwipe
+            lastCentroid = center
+            lockAxis(dx: dx, dy: dy)
+            let action = threeFingerAction()
+            committedAction = action
+            if wasLocked == false, didEmitSwipe == false, let action, action != .none {
+                didEmitSwipe = true
+                Haptics.gesture()
+                return [.system(action)]
+            }
+        }
+        return []
+    }
+
+    private func processFourFingerSwipe(center: CGPoint) -> [RemoteCommand] {
+        guard let start = startCentroid else { return [] }
+        let dx = center.x - start.x
+        let dy = center.y - start.y
+        if hypot(dx, dy) > 14 {
+            let wasLocked = mode == .fourFingerSwipe
+            mode = .fourFingerSwipe
+            lastCentroid = center
+            lockAxis(dx: dx, dy: dy)
+            let action = fourFingerAction()
+            committedAction = action
+            if wasLocked == false, didEmitSwipe == false, let action, action != .none {
+                didEmitSwipe = true
+                Haptics.gesture()
+                return [.system(action)]
+            }
+        }
+        return []
+    }
+
     private func lockAxis(dx: CGFloat, dy: CGFloat) {
         if swipeAxis == nil {
-            swipeAxis = abs(dx) > abs(dy) ? .horizontal : .vertical
+            // Slight horizontal bias — desktop left/right swipes should lock easily.
+            swipeAxis = abs(dx) >= abs(dy) * 0.75 ? .horizontal : .vertical
         }
     }
 

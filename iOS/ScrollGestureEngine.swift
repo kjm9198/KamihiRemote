@@ -78,9 +78,8 @@ final class ScrollGestureEngine {
         let spanChange = abs(currentSpan - startSpan)
 
         if intent == .unknown {
-            if spanChange > 16, spanChange > translation * 0.8 {
-                intent = .pinch
-            } else if translation > 6 {
+            // Pinch-to-zoom disabled — always treat two-finger motion as scroll.
+            if translation > 4 {
                 intent = .scroll
             }
         }
@@ -92,8 +91,8 @@ final class ScrollGestureEngine {
         case .unknown:
             return []
         case .pinch:
-            pinchAccum = Double((currentSpan - startSpan) / max(startSpan, 1))
-            return drainPinch()
+            // Pinch disabled — ignore span changes.
+            return []
         case .scroll:
             return scrollMoved(dx: dx, dy: dy, dt: dt, timestamp: timestamp)
         }
@@ -105,9 +104,8 @@ final class ScrollGestureEngine {
             return []
         }
         if intent == .pinch {
-            let leftover = drainPinch()
             resetSoft()
-            return leftover
+            return []
         }
         guard intent == .scroll else {
             resetSoft()
@@ -124,7 +122,7 @@ final class ScrollGestureEngine {
         vy = releaseVelocity.vy
         let speed = hypot(vx, vy)
 
-        if preferences.scrollFeel == .macLike, speed > 160 {
+        if preferences.scrollFeel == .macLike, speed > 60 {
             momentumActive = true
             commands.append(.scroll(dx: vx / 60, dy: vy / 60, phase: .momentumBegan))
         } else {
@@ -145,7 +143,7 @@ final class ScrollGestureEngine {
         let lambda: Double
         switch preferences.scrollFeel {
         case .macLike:
-            lambda = 3.2
+            lambda = 1.8
         case .direct:
             momentumActive = false
             vx = 0
@@ -159,7 +157,7 @@ final class ScrollGestureEngine {
         vx *= decayFactor
         vy *= decayFactor
 
-        let minSpeed = 22.0
+        let minSpeed = 6.0
         if hypot(vx, vy) < minSpeed {
             momentumActive = false
             vx = 0

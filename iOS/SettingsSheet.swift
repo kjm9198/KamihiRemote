@@ -7,7 +7,7 @@ struct SettingsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Devices") {
+                Section("Connection") {
                     if session.browser.hosts.isEmpty {
                         Text("Searching on this Wi-Fi…").foregroundStyle(.secondary)
                     }
@@ -35,6 +35,16 @@ struct SettingsSheet: View {
                     TextField("Temporary pairing code", text: $session.pairingCode)
                         .keyboardType(.numberPad)
                         .font(.body.monospacedDigit())
+                    Toggle("Automatic", isOn: $session.preferences.automaticTransport)
+                    Picker("Preferred transport", selection: $session.preferences.preferredTransport) {
+                        ForEach(TransportKind.allCases) { kind in
+                            Text(kind.title).tag(kind)
+                        }
+                    }
+                    LabeledContent("Active", value: session.telemetry.transport)
+                    Text(session.transport.wiredStatus)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Trackpad") {
@@ -48,7 +58,6 @@ struct SettingsSheet: View {
                         Slider(value: $session.preferences.customSensitivity, in: 0.6...4.0, step: 0.1)
                     }
                     Toggle("Smoothing", isOn: $session.preferences.smoothingEnabled)
-                    Toggle("Always show pointer pad", isOn: $session.preferences.alwaysShowPointerPad)
                     Toggle("Tap to click", isOn: $session.preferences.tapToClick)
                     Toggle("Two-finger secondary click", isOn: $session.preferences.twoFingerSecondaryClick)
                     Picker("Scroll feel", selection: $session.preferences.scrollFeel) {
@@ -82,22 +91,9 @@ struct SettingsSheet: View {
 
                 Section("Deck") {
                     Button("Edit Deck") { session.showsDeckEditor = true }
-                    Text("Add applications after the Mac is connected. Kamihi asks the Mac for installed apps.")
+                    Text("Tap + on Deck, choose Application, then pick a Mac app once.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                }
-
-                Section("Presentation") {
-                    Picker("Profile", selection: $session.preferences.presentationProfile) {
-                        ForEach(PresentationProfile.allCases) { profile in
-                            Text(profile.title).tag(profile)
-                        }
-                    }
-                    Picker("Pointer style", selection: $session.preferences.presentationPointerStyle) {
-                        ForEach(PresentationPointerStyle.allCases) { style in
-                            Text(style.title).tag(style)
-                        }
-                    }
                 }
 
                 Section("Controller") {
@@ -117,17 +113,17 @@ struct SettingsSheet: View {
                     LabeledContent("Native Gamepad Driver", value: session.transport.nativeGamepadStatus)
                 }
 
-                Section("Connection") {
-                    Toggle("Automatic", isOn: $session.preferences.automaticTransport)
-                    Picker("Preferred transport", selection: $session.preferences.preferredTransport) {
-                        ForEach(TransportKind.allCases) { kind in
-                            Text(kind.title).tag(kind)
+                Section("Presentation") {
+                    Picker("Profile", selection: $session.preferences.presentationProfile) {
+                        ForEach(PresentationProfile.allCases) { profile in
+                            Text(profile.title).tag(profile)
                         }
                     }
-                    LabeledContent("Active", value: session.telemetry.transport)
-                    Text(session.transport.wiredStatus)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    Picker("Pointer style", selection: $session.preferences.presentationPointerStyle) {
+                        ForEach(PresentationPointerStyle.allCases) { style in
+                            Text(style.title).tag(style)
+                        }
+                    }
                 }
 
                 Section("Appearance") {
@@ -144,7 +140,7 @@ struct SettingsSheet: View {
                     }
                 }
 
-                Section("Developer") {
+                Section("Advanced") {
                     Toggle("Developer diagnostics", isOn: $session.preferences.showDeveloperDiagnostics)
                     LabeledContent("Protocol", value: "v\(RemoteConstants.protocolVersionString)")
                     LabeledContent("RTT", value: session.telemetry.rttMilliseconds == 0 ? "—" : "\(session.telemetry.rttMilliseconds) ms")
