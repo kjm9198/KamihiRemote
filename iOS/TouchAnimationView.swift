@@ -49,16 +49,10 @@ struct TouchAnimationView: View {
                 }
             }
 
-            GlassEffectContainer(spacing: 72) {
-                // Only show glass bubbles for real fingers — no idle center orb / shuriken.
-                if state.isFingerDown {
-                    connectedOrbs(at: time)
-                }
+            // Discrete glass bubbles — no GlassEffectContainer morphing, which pulls orbs off-finger.
+            if state.isFingerDown {
+                connectedOrbs(at: time)
             }
-            // Do NOT animate finger positions — bubbles must sit on the physical touch.
-            .transaction { $0.animation = nil }
-            .animation(nil, value: state.fingers)
-            .animation(.spring(response: 0.45, dampingFraction: 0.8), value: state.isConnected)
 
             ForEach(ripples) { ripple in
                 RippleView(ripple: ripple) {
@@ -118,17 +112,20 @@ struct TouchAnimationView: View {
                 fourFingerGroupAura(fingers: fingers)
             }
 
-            // Individual stable contact orbs — one glass bubble per physical finger
+            // Individual stable contact orbs — geometric center == finger tip. No rotation lag.
             ForEach(fingers) { finger in
+                let count = fingers.count
                 orb(
                     id: "finger-\(finger.id)",
-                    size: orbSize(count: fingers.count),
-                    stretch: fingers.count == 1 ? stretchAmount : groupStretch,
+                    size: orbSize(count: count),
+                    stretch: count == 1 ? min(stretchAmount, 0.18) : 0.02,
                     pressed: true
                 )
-                .scaleEffect(fingers.count == 1 ? clickScale : 1)
-                .rotationEffect(fingers.count == 1 ? stretchAngle : groupRotation)
+                .scaleEffect(count == 1 ? clickScale : 1)
+                // Only slight stretch for one finger; never rotate multi-finger orbs off-center.
+                .rotationEffect(count == 1 ? stretchAngle : .zero)
                 .position(finger.point)
+                .transaction { $0.animation = nil }
             }
         }
     }
@@ -237,14 +234,24 @@ struct TouchAnimationView: View {
         let width = size * (1 + stretch)
         let height = size * (1 - stretch * 0.45)
         let material: Glass = pressed
-            ? .regular.tint(.white.opacity(state.isDragging ? 0.44 : 0.24))
+            ? .regular.tint(.white.opacity(state.isDragging ? 0.44 : 0.28))
             : .regular.tint(Color(red: 0.55, green: 0.72, blue: 1.0).opacity(0.18))
-        return Capsule()
-            .fill(.clear)
-            .frame(width: width, height: height)
-            .glassEffect(material, in: .capsule)
-            .glassEffectID(id, in: glassSpace)
-            .shadow(color: .white.opacity(pressed ? 0.16 : 0.08), radius: pressed ? 16 : 8)
+        // Prefer Circle for multi-touch so visual center == position center.
+        return Group {
+            if stretch < 0.05 {
+                Circle()
+                    .fill(.clear)
+                    .frame(width: size, height: size)
+                    .glassEffect(material, in: .circle)
+            } else {
+                Capsule()
+                    .fill(.clear)
+                    .frame(width: width, height: height)
+                    .glassEffect(material, in: .capsule)
+            }
+        }
+        .shadow(color: .white.opacity(pressed ? 0.18 : 0.08), radius: pressed ? 14 : 8)
+        .allowsHitTesting(false)
     }
 
     private var orbOrigin: CGPoint {

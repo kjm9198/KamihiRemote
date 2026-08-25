@@ -212,7 +212,8 @@ final class GestureEngine {
                 let dx = center.x - start.x
                 let dy = center.y - start.y
                 // Cumulative distance — small per-frame deltas still count.
-                if hypot(dx, dy) > 28 {
+                // Keep this low: iOS often cancels 3-finger touches early.
+                if hypot(dx, dy) > 18 {
                     let wasLocked = mode == .threeFingerSwipe
                     mode = .threeFingerSwipe
                     lastCentroid = center
@@ -232,7 +233,7 @@ final class GestureEngine {
             if let start = startCentroid {
                 let dx = center.x - start.x
                 let dy = center.y - start.y
-                if hypot(dx, dy) > 28 {
+                if hypot(dx, dy) > 18 {
                     let wasLocked = mode == .fourFingerSwipe
                     mode = .fourFingerSwipe
                     lastCentroid = center
@@ -292,7 +293,7 @@ final class GestureEngine {
             case .threeFingerCandidate:
                 // Soft swipe that never quite locked — still honor cumulative direction.
                 lastCentroid = lastCentroid ?? centroid(currentPoints())
-                if didEmitSwipe == false, peakMovement > 20, let action = threeFingerActionFromPeak(), action != .none {
+                if didEmitSwipe == false, peakMovement > 14, let action = threeFingerActionFromPeak(), action != .none {
                     commands.append(.system(action))
                     didEmitSwipe = true
                     Haptics.gesture()
@@ -302,7 +303,7 @@ final class GestureEngine {
                 }
             case .fourFingerCandidate:
                 lastCentroid = lastCentroid ?? centroid(currentPoints())
-                if didEmitSwipe == false, peakMovement > 20, let action = fourFingerActionFromPeak(), action != .none {
+                if didEmitSwipe == false, peakMovement > 14, let action = fourFingerActionFromPeak(), action != .none {
                     commands.append(.system(action))
                     didEmitSwipe = true
                     Haptics.gesture()

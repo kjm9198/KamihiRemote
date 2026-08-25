@@ -292,6 +292,18 @@ struct TrackpadCanvas: View {
                     .accessibilityLabel("Mac trackpad")
                 TouchAnimationView(state: fitted(session.engine.animation, size: size))
                     .allowsHitTesting(false)
+                if let banner = session.gestureBanner {
+                    Text(banner)
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .glassEffect(.regular.interactive(), in: .capsule)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .padding(.top, 16)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
                 if session.preferences.showDeveloperDiagnostics {
                     debugHUD.allowsHitTesting(false)
                 }

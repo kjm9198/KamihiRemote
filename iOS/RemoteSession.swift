@@ -31,6 +31,7 @@ final class RemoteSession: ObservableObject, CommandSending {
     @Published var deck = DeckButton.load()
     @Published var hostApps: [HostAppEntry] = []
     @Published var pendingAppName = ""
+    @Published var gestureBanner: String? = nil
 
     private var sessionID: String?
     private var sessionKey: SymmetricKey?
@@ -38,6 +39,7 @@ final class RemoteSession: ObservableObject, CommandSending {
     private var reconnectAttempt = 0
     private var reconnectWork: DispatchWorkItem?
     private var cancellables = Set<AnyCancellable>()
+    private var bannerClearWork: DispatchWorkItem?
     private var handshakeSent = false
     private var resolvedAddress: String?
     private var lastController: ControllerState = .neutral
@@ -96,6 +98,9 @@ final class RemoteSession: ObservableObject, CommandSending {
     var isConnected: Bool { connectionState == .connected }
 
     func send(_ command: RemoteCommand) {
+        if case .system(let action) = command {
+            flashGesture(action.title)
+        }
         if pointerMode == .presentationLaser, case .move = command {
             let size = engine.animation.trackpadSize
             let x = engine.stats.x / max(size.width, 1)
@@ -108,6 +113,14 @@ final class RemoteSession: ObservableObject, CommandSending {
         } else {
             tcp.send(command)
         }
+    }
+
+    private func flashGesture(_ title: String) {
+        gestureBanner = title
+        bannerClearWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.gestureBanner = nil }
+        bannerClearWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: work)
     }
 
     func sendController(_ state: ControllerState) {
