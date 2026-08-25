@@ -8,25 +8,33 @@ protocol GamepadOutput {
 }
 
 final class KeyboardGamepadOutput: GamepadOutput {
-    var mapping: ControllerMapping = .gaming
+    var mapping: ControllerMapping = .gaming {
+        didSet {
+            if oldValue != mapping {
+                reset()
+            }
+        }
+    }
+
     private var last = ControllerState.neutral
-    private var heldKeys = Set<UInt16>()
+    private var heldKeyOwners: [UInt16: Set<String>] = [:]
 
     func apply(_ state: ControllerState) {
-        // Buttons
-        applyAction(mapping.a, down: state.isDown(.a), wasDown: last.isDown(.a))
-        applyAction(mapping.b, down: state.isDown(.b), wasDown: last.isDown(.b))
-        applyAction(mapping.x, down: state.isDown(.x), wasDown: last.isDown(.x))
-        applyAction(mapping.y, down: state.isDown(.y), wasDown: last.isDown(.y))
-        applyAction(mapping.l1, down: state.isDown(.l1), wasDown: last.isDown(.l1))
-        applyAction(mapping.r1, down: state.isDown(.r1), wasDown: last.isDown(.r1))
-        applyAction(mapping.l2, down: state.leftTrigger > 0.4, wasDown: last.leftTrigger > 0.4)
-        applyAction(mapping.r2, down: state.rightTrigger > 0.4, wasDown: last.rightTrigger > 0.4)
-        applyAction(mapping.start, down: state.isDown(.start), wasDown: last.isDown(.start))
-        applyAction(mapping.menu, down: state.isDown(.menu), wasDown: last.isDown(.menu))
-        applyAction(mapping.view, down: state.isDown(.view), wasDown: last.isDown(.view))
-        applyAction(mapping.l3, down: state.isDown(.l3), wasDown: last.isDown(.l3))
-        applyAction(mapping.r3, down: state.isDown(.r3), wasDown: last.isDown(.r3))
+        // Buttons. Each physical control owns its keyboard hold independently so
+        // multiple controls can safely map to the same key.
+        applyAction(mapping.a, owner: "button.a", down: state.isDown(.a), wasDown: last.isDown(.a))
+        applyAction(mapping.b, owner: "button.b", down: state.isDown(.b), wasDown: last.isDown(.b))
+        applyAction(mapping.x, owner: "button.x", down: state.isDown(.x), wasDown: last.isDown(.x))
+        applyAction(mapping.y, owner: "button.y", down: state.isDown(.y), wasDown: last.isDown(.y))
+        applyAction(mapping.l1, owner: "button.l1", down: state.isDown(.l1), wasDown: last.isDown(.l1))
+        applyAction(mapping.r1, owner: "button.r1", down: state.isDown(.r1), wasDown: last.isDown(.r1))
+        applyAction(mapping.l2, owner: "trigger.l2", down: state.leftTrigger > 0.4, wasDown: last.leftTrigger > 0.4)
+        applyAction(mapping.r2, owner: "trigger.r2", down: state.rightTrigger > 0.4, wasDown: last.rightTrigger > 0.4)
+        applyAction(mapping.start, owner: "button.start", down: state.isDown(.start), wasDown: last.isDown(.start))
+        applyAction(mapping.menu, owner: "button.menu", down: state.isDown(.menu), wasDown: last.isDown(.menu))
+        applyAction(mapping.view, owner: "button.view", down: state.isDown(.view), wasDown: last.isDown(.view))
+        applyAction(mapping.l3, owner: "button.l3", down: state.isDown(.l3), wasDown: last.isDown(.l3))
+        applyAction(mapping.r3, owner: "button.r3", down: state.isDown(.r3), wasDown: last.isDown(.r3))
 
         // D-Pad
         let dpad = DPadDirection(rawValue: state.dpad) ?? .none
@@ -41,39 +49,33 @@ final class KeyboardGamepadOutput: GamepadOutput {
         let lastLeft = lastDpad == .left || lastDpad == .upLeft || lastDpad == .downLeft
         let lastRight = lastDpad == .right || lastDpad == .upRight || lastDpad == .downRight
 
-        applyAction(mapping.dpadUp, down: up, wasDown: lastUp)
-        applyAction(mapping.dpadDown, down: down, wasDown: lastDown)
-        applyAction(mapping.dpadLeft, down: left, wasDown: lastLeft)
-        applyAction(mapping.dpadRight, down: right, wasDown: lastRight)
+        applyAction(mapping.dpadUp, owner: "dpad.up", down: up, wasDown: lastUp)
+        applyAction(mapping.dpadDown, owner: "dpad.down", down: down, wasDown: lastDown)
+        applyAction(mapping.dpadLeft, owner: "dpad.left", down: left, wasDown: lastLeft)
+        applyAction(mapping.dpadRight, owner: "dpad.right", down: right, wasDown: lastRight)
 
         // Analog Sticks
-        applyStick(mapping.leftStick, x: Double(state.leftX), y: Double(state.leftY))
-        applyStick(mapping.rightStick, x: Double(state.rightX), y: Double(state.rightY))
+        applyStick(mapping.leftStick, owner: "stick.left", x: Double(state.leftX), y: Double(state.leftY))
+        applyStick(mapping.rightStick, owner: "stick.right", x: Double(state.rightX), y: Double(state.rightY))
 
         last = state
     }
 
     func reset() {
-        for key in heldKeys {
+        for key in heldKeyOwners.keys {
             _ = InputEngine.keyUp(code: key, flags: 0)
         }
-        heldKeys.removeAll()
+        heldKeyOwners.removeAll()
         last = .neutral
     }
 
-    private func applyAction(_ action: ControllerAction, down: Bool, wasDown: Bool) {
+    private func applyAction(_ action: ControllerAction, owner: String, down: Bool, wasDown: Bool) {
         guard down != wasDown else { return }
         switch action {
         case .none:
             break
         case .key(let code, _):
-            if down {
-                heldKeys.insert(code)
-                _ = InputEngine.keyDown(code: code, flags: 0)
-            } else {
-                heldKeys.remove(code)
-                _ = InputEngine.keyUp(code: code, flags: 0)
-            }
+            setKeyOwner(owner, key: code, down: down)
         case .shortcut(let spec, _):
             if down {
                 _ = InputEngine.shortcut(spec)
@@ -113,18 +115,18 @@ final class KeyboardGamepadOutput: GamepadOutput {
         }
     }
 
-    private func applyStick(_ action: StickAction, x: Double, y: Double) {
+    private func applyStick(_ action: StickAction, owner: String, x: Double, y: Double) {
         switch action {
         case .wasd:
-            digital(y < -0.22, key: CGKeyCode(kVK_ANSI_W))
-            digital(y > 0.22, key: CGKeyCode(kVK_ANSI_S))
-            digital(x < -0.22, key: CGKeyCode(kVK_ANSI_A))
-            digital(x > 0.22, key: CGKeyCode(kVK_ANSI_D))
+            digital(y < -0.22, key: CGKeyCode(kVK_ANSI_W), owner: "\(owner).up")
+            digital(y > 0.22, key: CGKeyCode(kVK_ANSI_S), owner: "\(owner).down")
+            digital(x < -0.22, key: CGKeyCode(kVK_ANSI_A), owner: "\(owner).left")
+            digital(x > 0.22, key: CGKeyCode(kVK_ANSI_D), owner: "\(owner).right")
         case .arrows:
-            digital(y < -0.22, key: CGKeyCode(kVK_UpArrow))
-            digital(y > 0.22, key: CGKeyCode(kVK_DownArrow))
-            digital(x < -0.22, key: CGKeyCode(kVK_LeftArrow))
-            digital(x > 0.22, key: CGKeyCode(kVK_RightArrow))
+            digital(y < -0.22, key: CGKeyCode(kVK_UpArrow), owner: "\(owner).up")
+            digital(y > 0.22, key: CGKeyCode(kVK_DownArrow), owner: "\(owner).down")
+            digital(x < -0.22, key: CGKeyCode(kVK_LeftArrow), owner: "\(owner).left")
+            digital(x > 0.22, key: CGKeyCode(kVK_RightArrow), owner: "\(owner).right")
         case .mouse:
             let factor = 22.0
             let dead = 0.05
@@ -148,15 +150,29 @@ final class KeyboardGamepadOutput: GamepadOutput {
         }
     }
 
-    private func digital(_ down: Bool, key: CGKeyCode) {
+    private func digital(_ down: Bool, key: CGKeyCode, owner: String) {
+        setKeyOwner(owner, key: key, down: down)
+    }
+
+    private func setKeyOwner(_ owner: String, key: UInt16, down: Bool) {
+        var owners = heldKeyOwners[key] ?? []
+
         if down {
-            if heldKeys.contains(key) == false {
-                heldKeys.insert(key)
+            let inserted = owners.insert(owner).inserted
+            guard inserted else { return }
+            heldKeyOwners[key] = owners
+            if owners.count == 1 {
                 _ = InputEngine.keyDown(code: key, flags: 0)
             }
-        } else if heldKeys.contains(key) {
-            heldKeys.remove(key)
+            return
+        }
+
+        guard owners.remove(owner) != nil else { return }
+        if owners.isEmpty {
+            heldKeyOwners[key] = nil
             _ = InputEngine.keyUp(code: key, flags: 0)
+        } else {
+            heldKeyOwners[key] = owners
         }
     }
 }
