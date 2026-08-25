@@ -35,7 +35,6 @@
 | **Transport** | Connection State Machine & Reconnect | IMPLEMENTED | Scheduled exponential backoff reconnects in `RemoteSession.swift` |
 | **Transport** | Preserve Queued Commands Across Reconnect | IMPLEMENTED | `ReliableClient.connect` now preserves commands queued while TCP is down; explicit user stop still clears them |
 | **Transport** | Direct Wi-Fi & LAN Network.framework| IMPLEMENTED | `NWParameters.includePeerToPeer = true` across TCP and UDP |
-| **Transport** | CoreBluetooth (BLE) Transport | IMPLEMENTED | Service & characteristic UUIDs configured in `RemoteConstants` |
+| **Transport** | CoreBluetooth (BLE) Transport | NOT IMPLEMENTED | UUID constants exist, but no CoreBluetooth client/server transport is registered. `TransportManager` now refuses to select or advertise BLE until a real transport reports ready. |
 | **Controller** | Simultaneous Touches & Snapshot | IMPLEMENTED | Compact state snapshot serialization in `RemoteCommand.controller` |
 | **Air Mouse** | CoreMotion IMU Tracking | IMPLEMENTED | IMU tracking & sensitivity configuration in `TouchInputEngine` & `AppPreferences` |
-
