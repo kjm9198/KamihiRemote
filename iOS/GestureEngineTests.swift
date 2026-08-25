@@ -12,6 +12,7 @@ enum GestureEngineTests {
         do {
             try check("oneFingerMove", oneFingerMove)
             try check("oneFingerTap", oneFingerTap)
+            try check("oneFingerTapNeverOptions", oneFingerTapNeverOptions)
             try check("doubleClick", doubleClick)
             try check("twoFingerTap", twoFingerTap)
             try check("threeFingerTap", threeFingerTap)
@@ -19,6 +20,12 @@ enum GestureEngineTests {
             try check("fastScrollMomentum", fastScrollMomentum)
             try check("frameRateIndependence", frameRateIndependence)
             try check("horizontalThreeFingerSwipe", horizontalThreeFingerSwipe)
+            try check("threeFingerLeftSmallFrames", threeFingerLeftSmallFrames)
+            try check("threeFingerRightSmallFrames", threeFingerRightSmallFrames)
+            try check("threeFingerUpSmallFrames", threeFingerUpSmallFrames)
+            try check("threeFingerDownSmallFrames", threeFingerDownSmallFrames)
+            try check("threeFingerDropOneFingerStaysLocked", threeFingerDropOneFingerStaysLocked)
+            try check("threeFingerSingleTriggerOnly", threeFingerSingleTriggerOnly)
             try check("pinchDisabled", pinchDisabled)
             try check("twoFingerSticky", twoFingerSticky)
             try check("fingerCountTransitions", fingerCountTransitions)
@@ -215,12 +222,161 @@ enum GestureEngineTests {
         let swiped = start.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x + 40, y: $0.point.y)) }
         let locked = g.ingest(samples: swiped, timestamp: 10.06, phase: .moved, in: size)
         try require(g.mode == .threeFingerSwipe, "horizontal three finger swipe locks")
-        try require(locked.commands.contains(.system(.previousDesktop)), "swipe right fires previous desktop")
+        try require(locked.commands.contains(.system(.nextDesktop)), "swipe right fires next desktop")
         let left = start.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x - 40, y: $0.point.y)) }
         let g2 = engine()
         _ = g2.ingest(samples: start, timestamp: 11, phase: .began, in: size)
         let lockedLeft = g2.ingest(samples: left, timestamp: 11.06, phase: .moved, in: size)
-        try require(lockedLeft.commands.contains(.system(.nextDesktop)), "swipe left fires next desktop")
+        try require(lockedLeft.commands.contains(.system(.previousDesktop)), "swipe left fires previous desktop")
+    }
+
+    private static func threeFingerRightSmallFrames() throws {
+        let g = engine()
+        let start = [
+            FingerSample(id: 1, point: CGPoint(x: 100, y: 200)),
+            FingerSample(id: 2, point: CGPoint(x: 140, y: 200)),
+            FingerSample(id: 3, point: CGPoint(x: 180, y: 200))
+        ]
+        _ = g.ingest(samples: start, timestamp: 20.0, phase: .began, in: size)
+        var cumulativeX: CGFloat = 0
+        var t = 20.0
+        var emittedCommands: [RemoteCommand] = []
+        for delta in [4, 5, 4, 6, 5, 7, 6, 8] as [CGFloat] {
+            cumulativeX += delta
+            t += 0.008
+            let current = start.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x + cumulativeX, y: $0.point.y)) }
+            let out = g.ingest(samples: current, timestamp: t, phase: .moved, in: size)
+            emittedCommands.append(contentsOf: out.commands)
+        }
+        let systemCommands = emittedCommands.filter { if case .system = $0 { return true } else { return false } }
+        try require(systemCommands.count == 1, "exactly one system command emitted for cumulative right swipe")
+        try require(systemCommands.contains(.system(.nextDesktop)), "cumulative right swipe emits nextDesktop")
+    }
+
+    private static func threeFingerLeftSmallFrames() throws {
+        let g = engine()
+        let start = [
+            FingerSample(id: 1, point: CGPoint(x: 200, y: 200)),
+            FingerSample(id: 2, point: CGPoint(x: 240, y: 200)),
+            FingerSample(id: 3, point: CGPoint(x: 280, y: 200))
+        ]
+        _ = g.ingest(samples: start, timestamp: 21.0, phase: .began, in: size)
+        var cumulativeX: CGFloat = 0
+        var t = 21.0
+        var emittedCommands: [RemoteCommand] = []
+        for delta in [4, 5, 4, 6, 5, 7, 6, 8] as [CGFloat] {
+            cumulativeX += delta
+            t += 0.008
+            let current = start.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x - cumulativeX, y: $0.point.y)) }
+            let out = g.ingest(samples: current, timestamp: t, phase: .moved, in: size)
+            emittedCommands.append(contentsOf: out.commands)
+        }
+        let systemCommands = emittedCommands.filter { if case .system = $0 { return true } else { return false } }
+        try require(systemCommands.count == 1, "exactly one system command emitted for cumulative left swipe")
+        try require(systemCommands.contains(.system(.previousDesktop)), "cumulative left swipe emits previousDesktop")
+    }
+
+    private static func threeFingerUpSmallFrames() throws {
+        let g = engine()
+        let start = [
+            FingerSample(id: 1, point: CGPoint(x: 100, y: 300)),
+            FingerSample(id: 2, point: CGPoint(x: 140, y: 300)),
+            FingerSample(id: 3, point: CGPoint(x: 180, y: 300))
+        ]
+        _ = g.ingest(samples: start, timestamp: 22.0, phase: .began, in: size)
+        var cumulativeY: CGFloat = 0
+        var t = 22.0
+        var emittedCommands: [RemoteCommand] = []
+        for delta in [4, 5, 4, 6, 5, 7, 6, 8] as [CGFloat] {
+            cumulativeY += delta
+            t += 0.008
+            let current = start.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x, y: $0.point.y - cumulativeY)) }
+            let out = g.ingest(samples: current, timestamp: t, phase: .moved, in: size)
+            emittedCommands.append(contentsOf: out.commands)
+        }
+        let systemCommands = emittedCommands.filter { if case .system = $0 { return true } else { return false } }
+        try require(systemCommands.count == 1, "exactly one system command emitted for cumulative up swipe")
+        try require(systemCommands.contains(.system(.missionControl)), "cumulative up swipe emits missionControl")
+    }
+
+    private static func threeFingerDownSmallFrames() throws {
+        let g = engine()
+        let start = [
+            FingerSample(id: 1, point: CGPoint(x: 100, y: 100)),
+            FingerSample(id: 2, point: CGPoint(x: 140, y: 100)),
+            FingerSample(id: 3, point: CGPoint(x: 180, y: 100))
+        ]
+        _ = g.ingest(samples: start, timestamp: 23.0, phase: .began, in: size)
+        var cumulativeY: CGFloat = 0
+        var t = 23.0
+        var emittedCommands: [RemoteCommand] = []
+        for delta in [4, 5, 4, 6, 5, 7, 6, 8] as [CGFloat] {
+            cumulativeY += delta
+            t += 0.008
+            let current = start.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x, y: $0.point.y + cumulativeY)) }
+            let out = g.ingest(samples: current, timestamp: t, phase: .moved, in: size)
+            emittedCommands.append(contentsOf: out.commands)
+        }
+        let systemCommands = emittedCommands.filter { if case .system = $0 { return true } else { return false } }
+        try require(systemCommands.count == 1, "exactly one system command emitted for cumulative down swipe")
+        try require(systemCommands.contains(.system(.appExpose)), "cumulative down swipe emits appExpose")
+    }
+
+    private static func threeFingerDropOneFingerStaysLocked() throws {
+        let g = engine()
+        let start = [
+            FingerSample(id: 1, point: CGPoint(x: 100, y: 200)),
+            FingerSample(id: 2, point: CGPoint(x: 140, y: 200)),
+            FingerSample(id: 3, point: CGPoint(x: 180, y: 200))
+        ]
+        _ = g.handle(changed: start, active: start, timestamp: 24.0, phase: .began, in: size)
+        let moved = start.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x + 38, y: $0.point.y)) }
+        let locked = g.handle(changed: moved, active: moved, timestamp: 24.05, phase: .moved, in: size)
+        try require(g.mode == .threeFingerSwipe, "mode must lock to threeFingerSwipe")
+        try require(locked.commands.contains(.system(.nextDesktop)), "nextDesktop emitted on lock")
+
+        let remaining = [moved[0], moved[1]]
+        _ = g.handle(changed: [moved[2]], active: remaining, timestamp: 24.07, phase: .ended, in: size)
+        try require(g.mode == .threeFingerSwipe, "mode remains threeFingerSwipe on 1 finger drop")
+
+        let furtherMoved = remaining.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x + 20, y: $0.point.y)) }
+        let extra = g.handle(changed: furtherMoved, active: furtherMoved, timestamp: 24.09, phase: .moved, in: size)
+        try require(extra.commands.contains(where: { if case .system = $0 { return true } else { return false } }) == false, "must not re-trigger action")
+
+        let endAll = g.handle(changed: furtherMoved, active: [], timestamp: 24.11, phase: .ended, in: size)
+        try require(endAll.commands.contains(where: { if case .system = $0 { return true } else { return false } }) == false, "must not re-trigger on lift")
+        try require(g.mode == .idle, "resets to idle when all fingers lift")
+    }
+
+    private static func threeFingerSingleTriggerOnly() throws {
+        let g = engine()
+        let start = [
+            FingerSample(id: 1, point: CGPoint(x: 100, y: 200)),
+            FingerSample(id: 2, point: CGPoint(x: 140, y: 200)),
+            FingerSample(id: 3, point: CGPoint(x: 180, y: 200))
+        ]
+        _ = g.ingest(samples: start, timestamp: 25.0, phase: .began, in: size)
+        var totalSystemCommands = 0
+        var x: CGFloat = 0
+        var t = 25.0
+        for _ in 0..<15 {
+            x += 8
+            t += 0.01
+            let cur = start.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x + x, y: $0.point.y)) }
+            let out = g.ingest(samples: cur, timestamp: t, phase: .moved, in: size)
+            totalSystemCommands += out.commands.filter { if case .system = $0 { return true } else { return false } }.count
+        }
+        let end = g.ingest(samples: start.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x + x, y: $0.point.y)) }, timestamp: t + 0.01, phase: .ended, in: size)
+        totalSystemCommands += end.commands.filter { if case .system = $0 { return true } else { return false } }.count
+        try require(totalSystemCommands == 1, "exactly ONE system action triggered across entire swipe gesture")
+    }
+
+    private static func oneFingerTapNeverOptions() throws {
+        let g = engine()
+        _ = g.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 150, y: 150))], timestamp: 26.0, phase: .began, in: size)
+        let out = g.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 151, y: 150))], timestamp: 26.08, phase: .ended, in: size)
+        try require(out.commands.contains(.click), "1-finger tap emits click")
+        try require(out.commands.contains(.rightClick) == false, "1-finger tap must NEVER emit rightClick (options)")
     }
 
     private static func twoFingerSticky() throws {

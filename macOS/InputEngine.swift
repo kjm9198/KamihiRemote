@@ -432,26 +432,19 @@ enum InputEngine {
         case .missionControl:
             return await performMissionControl()
         case .appExpose:
-            if hotkey(key: CGKeyCode(kVK_DownArrow), flags: .maskControl) {
-                return (true, "App Exposé")
-            }
-            if hotkey(key: CGKeyCode(kVK_F10), flags: []) {
-                return (true, "App Exposé")
-            }
-            let ok = hotkey(key: CGKeyCode(kVK_F3), flags: [])
-            return (ok, ok ? "App Exposé" : "App Exposé failed")
+            return await performAppExpose()
         case .showDesktop:
             if hotkey(key: CGKeyCode(kVK_F11), flags: []) {
-                return (true, "Show Desktop")
+                return (true, "Show Desktop ✓")
             }
             let ok = hotkey(key: CGKeyCode(kVK_ANSI_D), flags: [.maskCommand, .maskControl])
-            return (ok, ok ? "Show Desktop" : "Show Desktop failed")
+            return (ok, ok ? "Show Desktop ✓" : "Show Desktop failed")
         case .launchpad:
             let ok = hotkey(key: CGKeyCode(kVK_F4), flags: [])
-            return (ok, ok ? "Launchpad" : "Launchpad failed")
+            return (ok, ok ? "Launchpad ✓" : "Launchpad failed")
         case .playPause:
             let ok = media(.playPause)
-            return (ok, ok ? "Play/Pause" : "Media failed")
+            return (ok, ok ? "Play/Pause ✓" : "Media failed")
         case .customShortcut:
             return (true, "Done")
         }
@@ -461,17 +454,31 @@ enum InputEngine {
         guard canInjectEvents else {
             return (false, "Accessibility permission required on Mac")
         }
+        let observer = SpaceChangeVerifier.begin()
         let left = (key == CGKeyCode(kVK_LeftArrow))
         let switched = switchDesktop(left: left)
         guard switched else {
-            return (false, "\(title) injection failed")
+            return (false, "\(title) CGEvent creation failed")
         }
-        let changed = await SpaceChangeVerifier.wait(timeout: 0.7)
+        let changed = await observer.wait(timeout: 1.0)
         if changed {
             return (true, "\(title) ✓")
         } else {
-            return (true, "\(title) (Sent)")
+            return (false, "\(title) sent, but Space did not change. Ensure multiple Spaces exist and System Settings → Keyboard → Keyboard Shortcuts → Mission Control → 'Move \(left ? "left" : "right") a space' is enabled.")
         }
+    }
+
+    private static func performAppExpose() async -> (Bool, String) {
+        guard canInjectEvents else {
+            return (false, "Accessibility permission required on Mac")
+        }
+        if hotkey(key: CGKeyCode(kVK_DownArrow), flags: .maskControl) {
+            return (true, "App Exposé ✓")
+        }
+        if hotkey(key: CGKeyCode(kVK_F10), flags: []) {
+            return (true, "App Exposé ✓")
+        }
+        return (false, "App Exposé shortcut (Control+Down) failed or disabled in System Settings")
     }
 
     private static func performMissionControl() async -> (Bool, String) {
@@ -507,23 +514,17 @@ enum InputEngine {
         guard canInjectEvents else { return false }
         let keyCode: CGKeyCode = left ? CGKeyCode(kVK_LeftArrow) : CGKeyCode(kVK_RightArrow)
 
-        if let down = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) {
-            down.flags = .maskControl
-            down.post(tap: .cghidEventTap)
-        }
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
+        else { return false }
+
+        down.flags = .maskControl
+        up.flags = .maskControl
+
+        down.post(tap: .cghidEventTap)
         usleep(35000)
+        up.post(tap: .cghidEventTap)
 
-        if let up = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) {
-            up.flags = .maskControl
-            up.post(tap: .cghidEventTap)
-        }
-
-        // AppleScript fallback for macOS Spaces switching
-        DispatchQueue.global(qos: .userInteractive).async {
-            let script = NSAppleScript(source: "tell application \"System Events\" to key code \(left ? 123 : 124) using control down")
-            var err: NSDictionary?
-            script?.executeAndReturnError(&err)
-        }
         return true
     }
 

@@ -21,6 +21,8 @@ final class HostSession: ObservableObject {
     @Published var pairingExpiresAt = Date().addingTimeInterval(RemoteConstants.pairingCodeTTL)
     @Published var trustedDevices: [TrustedPeer] = TrustedPeerStore.load()
     @Published var qrPayload = ""
+    @Published var lastTestResultText = ""
+    @Published var isTestingAction = false
 
     private var cancellables = Set<AnyCancellable>()
     private let hostID = DeviceIdentity.deviceID
@@ -119,6 +121,16 @@ final class HostSession: ObservableObject {
         let text = "created=\(result.created) posted=\(result.posted) trusted=\(result.trusted) \(Int(result.from.x)),\(Int(result.from.y)) → \(Int(result.to.x)),\(Int(result.to.y))"
         server.recordCursorTest(text, posted: result.posted)
         NSLog("Kamihi cursor test: %@", text)
+    }
+
+    func testSystemAction(_ action: SystemAction) {
+        isTestingAction = true
+        lastTestResultText = "Testing \(action.title)..."
+        Task { @MainActor in
+            let (ok, msg) = await InputEngine.performReporting(action)
+            self.lastTestResultText = "\(action.title): \(ok ? "PASS ✓" : "FAIL ✗") (\(msg))"
+            self.isTestingAction = false
+        }
     }
 
     func toggle() {

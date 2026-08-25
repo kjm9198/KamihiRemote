@@ -1,14 +1,14 @@
 import Foundation
 
 struct GestureBindings: Codable, Equatable {
-    /// Finger swipe LEFT → Next Desktop (Control+Right)
-    var threeFingerLeft: SystemAction = .nextDesktop
-    /// Finger swipe RIGHT → Previous Desktop (Control+Left)
-    var threeFingerRight: SystemAction = .previousDesktop
+    /// Finger swipe LEFT → Desktop on the left (Control+Left)
+    var threeFingerLeft: SystemAction = .previousDesktop
+    /// Finger swipe RIGHT → Desktop on the right (Control+Right)
+    var threeFingerRight: SystemAction = .nextDesktop
     var threeFingerUp: SystemAction = .missionControl
     var threeFingerDown: SystemAction = .appExpose
-    var fourFingerLeft: SystemAction = .nextDesktop
-    var fourFingerRight: SystemAction = .previousDesktop
+    var fourFingerLeft: SystemAction = .previousDesktop
+    var fourFingerRight: SystemAction = .nextDesktop
     var fourFingerUp: SystemAction = .missionControl
     var fourFingerDown: SystemAction = .showDesktop
 }
@@ -83,8 +83,8 @@ struct AppPreferences: Codable, Equatable {
         if let data = UserDefaults.standard.data(forKey: storageKey),
            let decoded = decodeFlexible(data) {
             var prefs = decoded
-            prefs.bindings.threeFingerLeft = .nextDesktop
-            prefs.bindings.threeFingerRight = .previousDesktop
+            prefs.bindings.threeFingerLeft = .previousDesktop
+            prefs.bindings.threeFingerRight = .nextDesktop
             prefs.twoFingerSecondaryClick = true
             return prefs
         }
@@ -96,8 +96,8 @@ struct AppPreferences: Codable, Equatable {
                 migrated.twoFingerSecondaryClick = true
                 migrated.smoothingEnabled = false
                 migrated.pinchEnabled = true
-                migrated.bindings.threeFingerLeft = .nextDesktop
-                migrated.bindings.threeFingerRight = .previousDesktop
+                migrated.bindings.threeFingerLeft = .previousDesktop
+                migrated.bindings.threeFingerRight = .nextDesktop
                 migrated.showDeveloperDiagnostics = false
                 migrated.save()
                 return migrated

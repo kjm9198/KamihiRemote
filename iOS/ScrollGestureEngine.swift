@@ -5,8 +5,14 @@ struct GestureDebug: Equatable {
     var activeCount = 0
     var points: [CGPoint] = []
     var mode = "idle"
+    var startCentroid = CGPoint.zero
+    var currentCentroid = CGPoint.zero
     var cumulativeX: CGFloat = 0
     var cumulativeY: CGFloat = 0
+    var axis: String = "none"
+    var direction: String = "none"
+    var isLocked: Bool = false
+    var lastCommand: String = "none"
     var scrollIntent = "none"
 }
 

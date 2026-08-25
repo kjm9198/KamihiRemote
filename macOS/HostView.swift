@@ -167,6 +167,36 @@ struct HostView: View {
                 diag("Cursor test", stats.lastTestResult)
                 diag("Last raw packet", stats.lastRawPacket)
                 diag("Parsed", stats.lastParsed)
+
+                Divider().padding(.vertical, 8)
+
+                Text("Local Injection Tests (Bypasses Phone Network)").font(.title2.weight(.semibold))
+                Text("Clicking these tests CGEvent injection and SpaceChangeVerifier notification on this Mac.").foregroundStyle(.secondary).font(.callout)
+
+                HStack(spacing: 10) {
+                    Button("TEST DESKTOP ←") { host.testSystemAction(.previousDesktop) }
+                        .disabled(host.isTestingAction)
+                    Button("TEST DESKTOP →") { host.testSystemAction(.nextDesktop) }
+                        .disabled(host.isTestingAction)
+                    Button("TEST MISSION CONTROL") { host.testSystemAction(.missionControl) }
+                        .disabled(host.isTestingAction)
+                    Button("TEST APP EXPOSÉ") { host.testSystemAction(.appExpose) }
+                        .disabled(host.isTestingAction)
+                }
+                .padding(.vertical, 4)
+
+                if host.lastTestResultText.isEmpty == false {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Test Output:")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.secondary)
+                        Text(host.lastTestResultText)
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundStyle(host.lastTestResultText.contains("PASS") ? Color.green : (host.lastTestResultText.contains("Testing") ? Color.cyan : Color.red))
+                    }
+                    .padding(10)
+                    .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
             }
             .font(.body.monospaced())
             .padding(28)
