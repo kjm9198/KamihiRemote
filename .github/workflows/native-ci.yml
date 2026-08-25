@@ -20,7 +20,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: native-ci-${{ github.ref }}
+  group: native-ci-v2-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
