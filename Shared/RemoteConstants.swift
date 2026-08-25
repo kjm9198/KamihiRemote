@@ -11,6 +11,10 @@ enum RemoteConstants {
     static let pingInterval: TimeInterval = 0.6
     static let pongTimeout: TimeInterval = 2.0
     static let heartbeatInterval: TimeInterval = 0.6
+    static let heartbeatMissLimit = 3
+    static let reliableQueueLimit = 32
+    static let actionAckTimeout: TimeInterval = 1.6
+    static let spaceChangeTimeout: TimeInterval = 0.7
     static let watchdogTimeout: TimeInterval = 1.8
     static let controllerWatchdog: TimeInterval = 0.18
     static let maxRealtimeHz: Double = 120
@@ -175,6 +179,12 @@ enum ScrollPhase: String, Codable, Sendable {
 
 enum ZoomAction: String, Codable, Sendable {
     case `in`, out
+}
+
+enum FocusedTextStatus: String, Codable, Sendable {
+    case value
+    case unavailable
+    case secure
 }
 
 enum GameMapping: String, CaseIterable, Identifiable, Codable {

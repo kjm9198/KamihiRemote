@@ -13,6 +13,8 @@ public enum UITouch {
 struct TouchAnimationFinger: Equatable, Identifiable {
     var id: Int
     var point: CGPoint
+    var previousPoint: CGPoint = .zero
+    var velocity: CGSize = .zero
     var phase: UITouch.Phase = .moved
 }
 

@@ -221,9 +221,37 @@ final class HostSession: ObservableObject {
             InputEngine.releaseAll()
         case .revokeDevice(let deviceID):
             revokeDevice(deviceID)
+        case .requestFocusedText:
+            sendFocusedText(to: connection)
+        case .action(let id, let inner):
+            Task { @MainActor in
+                await self.executeAcknowledged(id: id, command: inner, connection: connection)
+            }
         default:
-            _ = InputEngine.apply(command)
+            if command.shouldAcknowledge {
+                Task { @MainActor in
+                    let (ok, message) = await InputEngine.applyReporting(command)
+                    NSLog("Kamihi command %@ success=%@ %@", command.name, ok ? "YES" : "NO", message)
+                }
+            } else {
+                _ = InputEngine.apply(command)
+            }
         }
+    }
+
+    private func executeAcknowledged(id: String, command: RemoteCommand, connection: NWConnection) async {
+        if case .requestFocusedText = command {
+            sendFocusedText(to: connection)
+            tcp.send(.actionAck(id: id, success: true, message: "Requested"), token: pairingCode, to: connection)
+            return
+        }
+        let (ok, message) = await InputEngine.applyReporting(command)
+        tcp.send(.actionAck(id: id, success: ok, message: message), token: pairingCode, to: connection)
+    }
+
+    private func sendFocusedText(to connection: NWConnection) {
+        let snapshot = FocusedTextReader.snapshot()
+        tcp.send(.focusedText(status: snapshot.status, value: snapshot.value), token: pairingCode, to: connection)
     }
 }
 

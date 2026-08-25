@@ -60,6 +60,7 @@ struct SettingsSheet: View {
                     Toggle("Smoothing", isOn: $session.preferences.smoothingEnabled)
                     Toggle("Tap to click", isOn: $session.preferences.tapToClick)
                     Toggle("Two-finger secondary click", isOn: $session.preferences.twoFingerSecondaryClick)
+                    Toggle("Pinch to zoom", isOn: $session.preferences.pinchEnabled)
                     Picker("Scroll feel", selection: $session.preferences.scrollFeel) {
                         ForEach(ScrollFeel.allCases) { feel in
                             Text(feel.title).tag(feel)

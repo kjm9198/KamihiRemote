@@ -19,6 +19,8 @@ enum GestureEngineTests {
         frameRateIndependence()
         horizontalThreeFingerSwipe()
         pinchDisabled()
+        pinchEnabled()
+        twoFingerSticky()
         fingerCountTransitions()
         asyncThreeFingerRelease()
         threeFingerCumulative()
@@ -30,17 +32,18 @@ enum GestureEngineTests {
         return true
     }
 
-    private static func engine(tapToClick: Bool = false) -> GestureEngine {
+    private static func engine(tapToClick: Bool = true) -> GestureEngine {
         let engine = GestureEngine()
         engine.preferences.tapToClick = tapToClick
         engine.preferences.twoFingerSecondaryClick = true
         engine.preferences.scrollFeel = .macLike
+        engine.preferences.pinchEnabled = true
         return engine
     }
 
     private static func defaultEngine() -> GestureEngine {
         let engine = GestureEngine()
-        precondition(engine.preferences.tapToClick == false, "tap to click off by default")
+        precondition(engine.preferences.tapToClick == true, "tap to click on by default")
         return engine
     }
 
@@ -56,10 +59,14 @@ enum GestureEngineTests {
         _ = g.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 80, y: 80))], timestamp: 2, phase: .began, in: size)
         let ended = g.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 81, y: 80))], timestamp: 2.08, phase: .ended, in: size)
         precondition(ended.commands.contains(.click), "tap to click when enabled")
-        let g2 = defaultEngine()
+        let g2 = engine(tapToClick: false)
         _ = g2.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 80, y: 80))], timestamp: 2, phase: .began, in: size)
         let noClick = g2.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 81, y: 80))], timestamp: 2.08, phase: .ended, in: size)
-        precondition(noClick.commands.contains(.click) == false, "single tap must not click by default")
+        precondition(noClick.commands.contains(.click) == false, "single tap must not click when disabled")
+        let g3 = defaultEngine()
+        _ = g3.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 80, y: 80))], timestamp: 2.2, phase: .began, in: size)
+        let defaultClick = g3.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 81, y: 80))], timestamp: 2.28, phase: .ended, in: size)
+        precondition(defaultClick.commands.contains(.click), "default preferences click on tap")
     }
 
     private static func doubleClick() {
@@ -162,13 +169,25 @@ enum GestureEngineTests {
 
     private static func pinchDisabled() {
         let g = engine()
+        g.preferences.pinchEnabled = false
         let a = [FingerSample(id: 1, point: CGPoint(x: 140, y: 200)), FingerSample(id: 2, point: CGPoint(x: 180, y: 200))]
         _ = g.ingest(samples: a, timestamp: 7, phase: .began, in: size)
         let b = [FingerSample(id: 1, point: CGPoint(x: 80, y: 200)), FingerSample(id: 2, point: CGPoint(x: 260, y: 200))]
         let moved = g.ingest(samples: b, timestamp: 7.05, phase: .moved, in: size)
         let zoomed = moved.commands.contains { if case .zoom = $0 { return true } else { return false } }
-        precondition(zoomed == false, "pinch must not zoom")
-        precondition(moved.debug.scrollIntent != "pinch", "pinch intent disabled")
+        precondition(zoomed == false, "pinch must not zoom when disabled")
+    }
+
+    private static func pinchEnabled() {
+        let g = engine()
+        g.preferences.pinchEnabled = true
+        g.preferences.pinchThreshold = 0.08
+        let a = [FingerSample(id: 1, point: CGPoint(x: 140, y: 200)), FingerSample(id: 2, point: CGPoint(x: 180, y: 200))]
+        _ = g.ingest(samples: a, timestamp: 7.2, phase: .began, in: size)
+        let b = [FingerSample(id: 1, point: CGPoint(x: 80, y: 200)), FingerSample(id: 2, point: CGPoint(x: 260, y: 200))]
+        let moved = g.ingest(samples: b, timestamp: 7.28, phase: .moved, in: size)
+        let zoomed = moved.commands.contains { if case .zoom = $0 { return true } else { return false } }
+        precondition(zoomed, "pinch must zoom when enabled")
     }
 
     private static func horizontalThreeFingerSwipe() {
@@ -182,12 +201,25 @@ enum GestureEngineTests {
         let swiped = start.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x + 40, y: $0.point.y)) }
         let locked = g.ingest(samples: swiped, timestamp: 10.06, phase: .moved, in: size)
         precondition(g.mode == .threeFingerSwipe, "horizontal three finger swipe locks")
-        precondition(locked.commands.contains(.system(.previousDesktop)), "swipe right fires previous desktop")
+        precondition(locked.commands.contains(.system(.nextDesktop)), "swipe right fires next desktop")
         let left = start.map { FingerSample(id: $0.id, point: CGPoint(x: $0.point.x - 40, y: $0.point.y)) }
         let g2 = engine()
         _ = g2.ingest(samples: start, timestamp: 11, phase: .began, in: size)
         let lockedLeft = g2.ingest(samples: left, timestamp: 11.06, phase: .moved, in: size)
-        precondition(lockedLeft.commands.contains(.system(.nextDesktop)), "swipe left fires next desktop")
+        precondition(lockedLeft.commands.contains(.system(.previousDesktop)), "swipe left fires previous desktop")
+    }
+
+    private static func twoFingerSticky() {
+        let g = engine()
+        let start = [FingerSample(id: 1, point: CGPoint(x: 90, y: 120)), FingerSample(id: 2, point: CGPoint(x: 150, y: 120))]
+        _ = g.ingest(samples: start, timestamp: 14, phase: .began, in: size)
+        let moved = [FingerSample(id: 1, point: CGPoint(x: 90, y: 180)), FingerSample(id: 2, point: CGPoint(x: 150, y: 180))]
+        _ = g.ingest(samples: moved, timestamp: 14.05, phase: .moved, in: size)
+        precondition(g.mode == .scrolling || g.mode == .twoFingerCandidate)
+        _ = g.handle(changed: [moved[0]], active: [moved[1]], timestamp: 14.06, phase: .ended, in: size)
+        precondition(g.mode == .scrolling || g.mode == .twoFingerCandidate || g.mode == .pinching, "2→1 must not become pointer while scroll committed")
+        let out = g.handle(changed: [moved[1]], active: [], timestamp: 14.07, phase: .ended, in: size)
+        precondition(out.commands.contains { if case .move = $0 { return true } else { return false } } == false, "sticky scroll must not emit MOVE")
     }
 
     private static func fingerCountTransitions() {

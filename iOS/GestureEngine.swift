@@ -8,6 +8,7 @@ enum GestureMode: String, Equatable {
     case idle
     case pointer
     case tapCandidate
+    case dragPending
     case dragging
     case twoFingerCandidate
     case scrolling
@@ -16,6 +17,7 @@ enum GestureMode: String, Equatable {
     case threeFingerSwipe
     case fourFingerCandidate
     case fourFingerSwipe
+    case cancelled
 }
 
 struct FingerSample: Equatable {
@@ -58,6 +60,7 @@ final class GestureEngine {
     private var clickPulse = 0
     private var doubleClickPulse = 0
     private var lastFingerIDs: Set<Int> = []
+    private var previousFingers: [Int: CGPoint] = [:]
 
     private enum Axis { case horizontal, vertical }
 
@@ -125,12 +128,14 @@ final class GestureEngine {
             mouseIsDown = false
         }
         resetTracking()
-        mode = .idle
-        return GestureOutput(
+        mode = .cancelled
+        let idle = GestureOutput(
             commands: commands,
             animation: makeAnimation(fingers: [], size: size, down: false, dragging: false),
             debug: makeDebug()
         )
+        mode = .idle
+        return idle
     }
 
     private func began(changed: [FingerSample], active: [FingerSample], timestamp: TimeInterval, size: CGSize) -> GestureOutput {
@@ -153,7 +158,7 @@ final class GestureEngine {
         let cancelScroll = applyCount(fingers.count, timestamp: timestamp, points: points)
         commands.append(contentsOf: cancelScroll)
         lastFingerIDs = Set(fingers.keys)
-
+        snapshotPreviousFingers()
         return GestureOutput(
             commands: commands,
             animation: makeAnimation(fingers: currentAnimationFingers(), size: size, down: true, dragging: mouseIsDown),
@@ -179,6 +184,9 @@ final class GestureEngine {
         if ids != lastFingerIDs {
             // Sticky multi-finger: once we've seen 3+ contacts, do not demote to
             // 2-finger scroll if iOS briefly drops a touch before the swipe locks.
+            let stickyTwo = maxClusterCount >= 2
+                && fingers.count == 1
+                && (mode == .twoFingerCandidate || mode == .scrolling || mode == .pinching)
             let stickyThree = maxClusterCount >= 3
                 && fingers.count > 0
                 && fingers.count < 3
@@ -187,6 +195,17 @@ final class GestureEngine {
                 && fingers.count > 0
                 && fingers.count < 4
                 && (mode == .fourFingerCandidate || mode == .fourFingerSwipe || mode == .threeFingerCandidate || mode == .threeFingerSwipe)
+            if stickyTwo {
+                lastFingerIDs = ids
+                lastCentroid = center
+                lastTimestamp = timestamp
+                snapshotPreviousFingers()
+                return GestureOutput(
+                    commands: commands,
+                    animation: makeAnimation(fingers: currentAnimationFingers(), size: size, down: true, dragging: false),
+                    debug: makeDebug()
+                )
+            }
             if stickyFour {
                 if mode != .fourFingerSwipe { mode = .fourFingerCandidate }
                 lastFingerIDs = ids
@@ -229,7 +248,7 @@ final class GestureEngine {
         }
 
         switch mode {
-        case .tapCandidate, .pointer, .dragging:
+        case .tapCandidate, .pointer, .dragPending, .dragging:
             if peakMovement > 8 {
                 cancelLongPress()
                 if mode == .tapCandidate { mode = .pointer }
@@ -247,20 +266,20 @@ final class GestureEngine {
             switch scrollEngine.intent {
             case .scroll: mode = .scrolling
             case .pinch:
-                // Pinch disabled — treat as scroll candidate.
-                mode = .twoFingerCandidate
+                mode = preferences.pinchEnabled ? .pinching : .twoFingerCandidate
             case .unknown: mode = .twoFingerCandidate
             }
         case .threeFingerCandidate, .threeFingerSwipe:
             commands.append(contentsOf: processThreeFingerSwipe(center: center))
         case .fourFingerCandidate, .fourFingerSwipe:
             commands.append(contentsOf: processFourFingerSwipe(center: center))
-        case .idle:
+        case .idle, .cancelled:
             break
         }
 
         lastCentroid = center
         lastTimestamp = timestamp
+        snapshotPreviousFingers()
         return GestureOutput(
             commands: commands,
             animation: makeAnimation(
@@ -284,6 +303,17 @@ final class GestureEngine {
         // Wait until all fingers have released (remaining == 0).
         if (mode == .threeFingerSwipe || mode == .fourFingerSwipe) && remaining > 0 {
             lastCentroid = centroid(currentPoints())
+            snapshotPreviousFingers()
+            return GestureOutput(
+                commands: commands,
+                animation: makeAnimation(fingers: currentAnimationFingers(), size: size, down: true, dragging: false),
+                debug: makeDebug()
+            )
+        }
+        if remaining > 0 && (mode == .scrolling || mode == .pinching || mode == .twoFingerCandidate) && maxClusterCount >= 2 {
+            lastCentroid = centroid(currentPoints())
+            lastFingerIDs = Set(fingers.keys)
+            snapshotPreviousFingers()
             return GestureOutput(
                 commands: commands,
                 animation: makeAnimation(fingers: currentAnimationFingers(), size: size, down: true, dragging: false),
@@ -329,7 +359,7 @@ final class GestureEngine {
                 } else {
                     commands.append(contentsOf: scrollEnd)
                 }
-            case .tapCandidate, .pointer:
+            case .tapCandidate, .pointer, .dragPending:
                 if mouseIsDown {
                     commands.append(.mouseUp)
                     mouseIsDown = false
@@ -365,6 +395,7 @@ final class GestureEngine {
         commands.append(contentsOf: cancelScroll)
         lastCentroid = centroid(currentPoints())
         lastFingerIDs = Set(fingers.keys)
+        snapshotPreviousFingers()
         return GestureOutput(
             commands: commands,
             animation: makeAnimation(fingers: currentAnimationFingers(), size: size, down: true, dragging: mouseIsDown),
@@ -375,6 +406,7 @@ final class GestureEngine {
     @discardableResult
     private func applyCount(_ count: Int, timestamp: TimeInterval, points: [CGPoint]) -> [RemoteCommand] {
         cancelLongPress()
+        // Finger-count changes must not reuse the previous centroid or pointer deltas.
         lastDx = 0
         lastDy = 0
         startCentroid = centroid(points)
@@ -546,6 +578,7 @@ final class GestureEngine {
 
     private func resetTracking() {
         fingers.removeAll()
+        previousFingers.removeAll()
         lastCentroid = nil
         startCentroid = nil
         swipeAxis = nil
@@ -558,6 +591,10 @@ final class GestureEngine {
         lastFingerIDs.removeAll()
     }
 
+    private func snapshotPreviousFingers() {
+        previousFingers = fingers
+    }
+
     private func currentPoints() -> [CGPoint] {
         fingers.keys.sorted().compactMap { fingers[$0] }
     }
@@ -565,7 +602,13 @@ final class GestureEngine {
     private func currentAnimationFingers() -> [TouchAnimationFinger] {
         fingers.keys.sorted().compactMap { id in
             guard let pt = fingers[id] else { return nil }
-            return TouchAnimationFinger(id: id, point: pt)
+            let previous = previousFingers[id] ?? pt
+            return TouchAnimationFinger(
+                id: id,
+                point: pt,
+                previousPoint: previous,
+                velocity: CGSize(width: pt.x - previous.x, height: pt.y - previous.y)
+            )
         }
     }
 

@@ -6,6 +6,9 @@ final class UDPClient: ObservableObject {
     @Published private(set) var packetsSent = 0
     @Published private(set) var movePacketsSent = 0
     @Published private(set) var realtimePacketsPerSecond = 0
+    private(set) var isConfigured = false
+    private var sentCount = 0
+    private var moveCount = 0
 
     private var connection: NWConnection?
     private var pairingCode = ""
@@ -37,6 +40,7 @@ final class UDPClient: ObservableObject {
             using: parameters
         )
         self.connection = connection
+        isConfigured = true
         connection.start(queue: queue)
         startFlush()
         startMeter()
@@ -90,6 +94,7 @@ final class UDPClient: ObservableObject {
         sessionKey = nil
         hasPendingMove = false
         hasPendingScroll = false
+        isConfigured = false
     }
 
     private func startFlush() {
@@ -109,7 +114,11 @@ final class UDPClient: ObservableObject {
             guard let self else { return }
             let count = self.movesThisSecond
             self.movesThisSecond = 0
+            let packets = self.sentCount
+            let moves = self.moveCount
             DispatchQueue.main.async {
+                self.packetsSent = packets
+                self.movePacketsSent = moves
                 self.realtimePacketsPerSecond = count
             }
         }
@@ -153,11 +162,9 @@ final class UDPClient: ObservableObject {
             return
         }
         connection.send(content: data, completion: .idempotent)
-        DispatchQueue.main.async {
-            self.packetsSent += 1
-            if case .move = command {
-                self.movePacketsSent += 1
-            }
+        sentCount += 1
+        if case .move = command {
+            moveCount += 1
         }
     }
 }

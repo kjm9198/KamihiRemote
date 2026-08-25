@@ -78,8 +78,9 @@ final class ScrollGestureEngine {
         let spanChange = abs(currentSpan - startSpan)
 
         if intent == .unknown {
-            // Pinch-to-zoom disabled — always treat two-finger motion as scroll.
-            if translation > 4 {
+            if preferences.pinchEnabled, spanChange > 14, spanChange > translation * 1.25 {
+                intent = .pinch
+            } else if translation > 4 {
                 intent = .scroll
             }
         }
@@ -91,8 +92,9 @@ final class ScrollGestureEngine {
         case .unknown:
             return []
         case .pinch:
-            // Pinch disabled — ignore span changes.
-            return []
+            let ratio = Double((currentSpan - startSpan) / max(startSpan, 1))
+            pinchAccum += ratio
+            return drainPinch()
         case .scroll:
             return scrollMoved(dx: dx, dy: dy, dt: dt, timestamp: timestamp)
         }

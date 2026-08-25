@@ -1,8 +1,8 @@
 import Foundation
 
 struct GestureBindings: Codable, Equatable {
-    var threeFingerLeft: SystemAction = .nextDesktop
-    var threeFingerRight: SystemAction = .previousDesktop
+    var threeFingerLeft: SystemAction = .previousDesktop
+    var threeFingerRight: SystemAction = .nextDesktop
     var threeFingerUp: SystemAction = .missionControl
     var threeFingerDown: SystemAction = .appExpose
     var fourFingerLeft: SystemAction = .previousDesktop
@@ -15,13 +15,13 @@ struct AppPreferences: Codable, Equatable {
     var pointerPreset: PointerPreset = .normal
     var customSensitivity: Double = 1.8
     var useCustomSensitivity = false
-    var smoothing = 0.28
-    var smoothingEnabled = true
+    var smoothing = 0.18
+    var smoothingEnabled = false
     var naturalScrolling = true
     var scrollSpeed = 1.0
     var scrollFeel: ScrollFeel = .macLike
     var scrollMomentum = 0.93
-    var tapToClick = false
+    var tapToClick = true
     var twoFingerSecondaryClick = true
     var hapticLevel: HapticLevel = .normal
     var orientation: OrientationMode = .automatic
@@ -37,6 +37,7 @@ struct AppPreferences: Codable, Equatable {
     var lastHostID: String?
     var bindings = GestureBindings()
     var alwaysShowPointerPad = true
+    var pinchEnabled = true
     var pinchInShortcut = "cmd+-"
     var pinchOutShortcut = "cmd+="
     var pinchThreshold = 0.12
@@ -72,24 +73,23 @@ struct AppPreferences: Codable, Equatable {
         }
     }
 
-    static let storageKey = "appPreferences.v4"
+    static let storageKey = "appPreferences.v5"
 
     static func load() -> AppPreferences {
         if let data = UserDefaults.standard.data(forKey: storageKey),
-           let decoded = try? JSONDecoder().decode(AppPreferences.self, from: data) {
+           let decoded = decodeFlexible(data) {
             return decoded
         }
 
-        // v0.4.1 migration: older builds could preserve tap-to-click and the large
-        // developer HUD from earlier debugging sessions. Reset only the interaction
-        // defaults the user explicitly asked to change, while preserving all other
-        // preferences.
-        for legacyKey in ["appPreferences.v3", "appPreferences.v2"] {
+        for legacyKey in ["appPreferences.v4", "appPreferences.v3", "appPreferences.v2"] {
             if let data = UserDefaults.standard.data(forKey: legacyKey),
-               let decoded = try? JSONDecoder().decode(AppPreferences.self, from: data) {
-                var migrated = decoded
-                migrated.tapToClick = false
+               var migrated = decodeFlexible(data) {
+                migrated.tapToClick = true
                 migrated.twoFingerSecondaryClick = true
+                migrated.smoothingEnabled = false
+                migrated.pinchEnabled = true
+                migrated.bindings.threeFingerLeft = .previousDesktop
+                migrated.bindings.threeFingerRight = .nextDesktop
                 migrated.showDeveloperDiagnostics = false
                 migrated.save()
                 return migrated
@@ -97,6 +97,19 @@ struct AppPreferences: Codable, Equatable {
         }
 
         return AppPreferences()
+    }
+
+    private static func decodeFlexible(_ data: Data) -> AppPreferences? {
+        if let decoded = try? JSONDecoder().decode(AppPreferences.self, from: data) {
+            return decoded
+        }
+        guard var object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        if object["pinchEnabled"] == nil { object["pinchEnabled"] = true }
+        if object["tapToClick"] == nil { object["tapToClick"] = true }
+        guard let repaired = try? JSONSerialization.data(withJSONObject: object),
+              let decoded = try? JSONDecoder().decode(AppPreferences.self, from: repaired)
+        else { return nil }
+        return decoded
     }
 
     func save() {
@@ -126,7 +139,8 @@ struct DeckButton: Codable, Equatable, Identifiable {
         .init(id: "undo", title: "Undo", symbol: "arrow.uturn.backward", kind: .shortcut, payload: "cmd+z"),
         .init(id: "deskL", title: "Desktop ←", symbol: "rectangle.leadinghalf.inset.filled", kind: .system, payload: SystemAction.previousDesktop.rawValue),
         .init(id: "mission", title: "Mission", symbol: "square.grid.3x3", kind: .system, payload: SystemAction.missionControl.rawValue),
-        .init(id: "deskR", title: "Desktop →", symbol: "rectangle.trailinghalf.inset.filled", kind: .system, payload: SystemAction.nextDesktop.rawValue)
+        .init(id: "deskR", title: "Desktop →", symbol: "rectangle.trailinghalf.inset.filled", kind: .system, payload: SystemAction.nextDesktop.rawValue),
+        .init(id: "showDesk", title: "Show Desktop", symbol: "menubar.dock.rectangle", kind: .system, payload: SystemAction.showDesktop.rawValue)
     ]
 
     static func load() -> [DeckButton] {

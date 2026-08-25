@@ -60,4 +60,22 @@ struct LinkTelemetry: Equatable {
     var uptimeSeconds = 0
     var transport = "UDP+TCP"
     var quality: ConnectionQuality = .offline
+    var tcpReady = false
+    var udpConfigured = false
+    var lastHeartbeatAge: TimeInterval = 0
+    var sessionShort = "—"
+    var lastCommand = "—"
+    var gestureMode = "idle"
+    var fingerCount = 0
+}
+
+struct DeckActionTrace: Equatable {
+    var title = ""
+    var sent = false
+    var received = false
+    var executed = false
+    var success: Bool?
+    var message = ""
+    var latencyMilliseconds: Int?
+    var updatedAt = Date.distantPast
 }

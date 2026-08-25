@@ -62,7 +62,8 @@ final class TouchInputEngine: NSObject, ObservableObject {
             stats.touchCount += 1
         }
         let output = gesture.handle(changed: changed, active: active, timestamp: timestamp, phase: phase, in: size)
-        emit(output, immediate: true)
+        let edge = phase == .began || phase == .ended || phase == .cancelled || active.isEmpty
+        emit(output, immediate: edge)
         if phase == .ended || phase == .cancelled || active.isEmpty {
             if active.isEmpty || gesture.mode == .idle {
                 stats.touchActive = false
@@ -102,7 +103,13 @@ final class TouchInputEngine: NSObject, ObservableObject {
 
     private func emit(_ output: GestureOutput, immediate: Bool = false) {
         latestAnimation = output.animation
-        if immediate || animation != latestAnimation {
+        // Publish contact begin/end immediately; continuous MOVE updates flush on CADisplayLink
+        // so the rest of the app shell is not invalidated at 120 Hz.
+        let contactEdge = output.animation.isFingerDown != animation.isFingerDown
+            || output.animation.fingerCount != animation.fingerCount
+            || output.animation.clickPulse != animation.clickPulse
+            || immediate
+        if contactEdge {
             animation = latestAnimation
         }
         debug = output.debug
