@@ -7,28 +7,95 @@ protocol GamepadOutput {
     func reset()
 }
 
+/// Keyboard/mouse fallback gamepad output for games that do not consume a native virtual controller.
+///
+/// Controller packets are event-driven, but mouse-look and scrolling are continuous actions. We retain
+/// the latest analog state and render those actions at a stable 90 Hz on a dedicated serial queue. This
+/// means holding a stick still continues to turn/scroll without requiring the phone to waste bandwidth
+/// retransmitting an identical state every frame.
 final class KeyboardGamepadOutput: GamepadOutput {
-    var mapping: ControllerMapping = .gaming
+    private let queue = DispatchQueue(label: "kamihi.gamepad.output", qos: .userInteractive)
+    private var timer: DispatchSourceTimer?
+
+    private var activeMapping: ControllerMapping = .gaming
+    var mapping: ControllerMapping {
+        get { queue.sync { activeMapping } }
+        set {
+            queue.async { [weak self] in
+                guard let self else { return }
+                self.resetLocked()
+                self.activeMapping = newValue
+            }
+        }
+    }
+
     private var last = ControllerState.neutral
-    private var heldKeys = Set<UInt16>()
+    private var current = ControllerState.neutral
+
+    /// A key can be owned by more than one controller source (for example A and R2 both mapped to Space).
+    /// The physical key is released only after the final owner lets go.
+    private var keyOwners: [UInt16: Set<String>] = [:]
+    private var leftMouseOwners = Set<String>()
+
+    private var leftTriggerDown = false
+    private var rightTriggerDown = false
+    private var scrollActive = false
+
+    init() {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(
+            deadline: .now() + .milliseconds(10),
+            repeating: 1.0 / RemoteConstants.controllerHz,
+            leeway: .milliseconds(2)
+        )
+        timer.setEventHandler { [weak self] in
+            self?.renderContinuousOutput()
+        }
+        self.timer = timer
+        timer.resume()
+    }
+
+    deinit {
+        timer?.cancel()
+    }
 
     func apply(_ state: ControllerState) {
-        // Buttons
-        applyAction(mapping.a, down: state.isDown(.a), wasDown: last.isDown(.a))
-        applyAction(mapping.b, down: state.isDown(.b), wasDown: last.isDown(.b))
-        applyAction(mapping.x, down: state.isDown(.x), wasDown: last.isDown(.x))
-        applyAction(mapping.y, down: state.isDown(.y), wasDown: last.isDown(.y))
-        applyAction(mapping.l1, down: state.isDown(.l1), wasDown: last.isDown(.l1))
-        applyAction(mapping.r1, down: state.isDown(.r1), wasDown: last.isDown(.r1))
-        applyAction(mapping.l2, down: state.leftTrigger > 0.4, wasDown: last.leftTrigger > 0.4)
-        applyAction(mapping.r2, down: state.rightTrigger > 0.4, wasDown: last.rightTrigger > 0.4)
-        applyAction(mapping.start, down: state.isDown(.start), wasDown: last.isDown(.start))
-        applyAction(mapping.menu, down: state.isDown(.menu), wasDown: last.isDown(.menu))
-        applyAction(mapping.view, down: state.isDown(.view), wasDown: last.isDown(.view))
-        applyAction(mapping.l3, down: state.isDown(.l3), wasDown: last.isDown(.l3))
-        applyAction(mapping.r3, down: state.isDown(.r3), wasDown: last.isDown(.r3))
+        queue.async { [weak self] in
+            self?.applyLocked(state)
+        }
+    }
 
-        // D-Pad
+    func reset() {
+        queue.sync {
+            resetLocked()
+        }
+    }
+
+    private func applyLocked(_ state: ControllerState) {
+        let mapping = activeMapping
+
+        // Face / shoulder / navigation buttons.
+        applyAction(mapping.a, down: state.isDown(.a), wasDown: last.isDown(.a), owner: "button.a")
+        applyAction(mapping.b, down: state.isDown(.b), wasDown: last.isDown(.b), owner: "button.b")
+        applyAction(mapping.x, down: state.isDown(.x), wasDown: last.isDown(.x), owner: "button.x")
+        applyAction(mapping.y, down: state.isDown(.y), wasDown: last.isDown(.y), owner: "button.y")
+        applyAction(mapping.l1, down: state.isDown(.l1), wasDown: last.isDown(.l1), owner: "button.l1")
+        applyAction(mapping.r1, down: state.isDown(.r1), wasDown: last.isDown(.r1), owner: "button.r1")
+        applyAction(mapping.start, down: state.isDown(.start), wasDown: last.isDown(.start), owner: "button.start")
+        applyAction(mapping.menu, down: state.isDown(.menu), wasDown: last.isDown(.menu), owner: "button.menu")
+        applyAction(mapping.view, down: state.isDown(.view), wasDown: last.isDown(.view), owner: "button.view")
+        applyAction(mapping.l3, down: state.isDown(.l3), wasDown: last.isDown(.l3), owner: "button.l3")
+        applyAction(mapping.r3, down: state.isDown(.r3), wasDown: last.isDown(.r3), owner: "button.r3")
+
+        // Analog triggers use hysteresis so values hovering around the threshold do not chatter.
+        let previousLeftTrigger = leftTriggerDown
+        let previousRightTrigger = rightTriggerDown
+        leftTriggerDown = triggerState(value: state.leftTrigger, currentlyDown: leftTriggerDown)
+        rightTriggerDown = triggerState(value: state.rightTrigger, currentlyDown: rightTriggerDown)
+        applyAction(mapping.l2, down: leftTriggerDown, wasDown: previousLeftTrigger, owner: "trigger.l2")
+        applyAction(mapping.r2, down: rightTriggerDown, wasDown: previousRightTrigger, owner: "trigger.r2")
+
+        // D-Pad supports diagonals without prematurely releasing either axis.
         let dpad = DPadDirection(rawValue: state.dpad) ?? .none
         let lastDpad = DPadDirection(rawValue: last.dpad) ?? .none
         let up = dpad == .up || dpad == .upLeft || dpad == .upRight
@@ -41,49 +108,56 @@ final class KeyboardGamepadOutput: GamepadOutput {
         let lastLeft = lastDpad == .left || lastDpad == .upLeft || lastDpad == .downLeft
         let lastRight = lastDpad == .right || lastDpad == .upRight || lastDpad == .downRight
 
-        applyAction(mapping.dpadUp, down: up, wasDown: lastUp)
-        applyAction(mapping.dpadDown, down: down, wasDown: lastDown)
-        applyAction(mapping.dpadLeft, down: left, wasDown: lastLeft)
-        applyAction(mapping.dpadRight, down: right, wasDown: lastRight)
+        applyAction(mapping.dpadUp, down: up, wasDown: lastUp, owner: "dpad.up")
+        applyAction(mapping.dpadDown, down: down, wasDown: lastDown, owner: "dpad.down")
+        applyAction(mapping.dpadLeft, down: left, wasDown: lastLeft, owner: "dpad.left")
+        applyAction(mapping.dpadRight, down: right, wasDown: lastRight, owner: "dpad.right")
 
-        // Analog Sticks
-        applyStick(mapping.leftStick, x: Double(state.leftX), y: Double(state.leftY))
-        applyStick(mapping.rightStick, x: Double(state.rightX), y: Double(state.rightY))
+        // WASD/arrow sticks are stateful key holds and only need transitions. Mouse/scroll are rendered
+        // continuously by renderContinuousOutput().
+        applyDigitalStick(mapping.leftStick, x: Double(state.leftX), y: Double(state.leftY), owner: "stick.left")
+        applyDigitalStick(mapping.rightStick, x: Double(state.rightX), y: Double(state.rightY), owner: "stick.right")
 
+        current = state
         last = state
     }
 
-    func reset() {
-        for key in heldKeys {
+    private func resetLocked() {
+        if scrollActive {
+            _ = InputEngine.scroll(dx: 0, dy: 0, phase: .ended)
+            scrollActive = false
+        }
+
+        if leftMouseOwners.isEmpty == false {
+            _ = InputEngine.mouseUp()
+            leftMouseOwners.removeAll()
+        }
+
+        for key in keyOwners.keys {
             _ = InputEngine.keyUp(code: key, flags: 0)
         }
-        heldKeys.removeAll()
+        keyOwners.removeAll()
+
+        leftTriggerDown = false
+        rightTriggerDown = false
+        current = .neutral
         last = .neutral
     }
 
-    private func applyAction(_ action: ControllerAction, down: Bool, wasDown: Bool) {
+    private func applyAction(_ action: ControllerAction, down: Bool, wasDown: Bool, owner: String) {
         guard down != wasDown else { return }
+
         switch action {
         case .none:
             break
         case .key(let code, _):
-            if down {
-                heldKeys.insert(code)
-                _ = InputEngine.keyDown(code: code, flags: 0)
-            } else {
-                heldKeys.remove(code)
-                _ = InputEngine.keyUp(code: code, flags: 0)
-            }
+            setKey(code, down: down, owner: owner)
         case .shortcut(let spec, _):
             if down {
                 _ = InputEngine.shortcut(spec)
             }
         case .click:
-            if down {
-                _ = InputEngine.mouseDown()
-            } else {
-                _ = InputEngine.mouseUp()
-            }
+            setLeftMouse(down: down, owner: owner)
         case .rightClick:
             if down {
                 _ = InputEngine.rightClick()
@@ -113,50 +187,147 @@ final class KeyboardGamepadOutput: GamepadOutput {
         }
     }
 
-    private func applyStick(_ action: StickAction, x: Double, y: Double) {
+    private func triggerState(value: Float, currentlyDown: Bool) -> Bool {
+        if currentlyDown {
+            return value > 0.30
+        }
+        return value >= 0.45
+    }
+
+    private func applyDigitalStick(_ action: StickAction, x: Double, y: Double, owner: String) {
         switch action {
         case .wasd:
-            digital(y < -0.22, key: CGKeyCode(kVK_ANSI_W))
-            digital(y > 0.22, key: CGKeyCode(kVK_ANSI_S))
-            digital(x < -0.22, key: CGKeyCode(kVK_ANSI_A))
-            digital(x > 0.22, key: CGKeyCode(kVK_ANSI_D))
+            digital(y < -0.22, key: CGKeyCode(kVK_ANSI_W), owner: owner + ".up")
+            digital(y > 0.22, key: CGKeyCode(kVK_ANSI_S), owner: owner + ".down")
+            digital(x < -0.22, key: CGKeyCode(kVK_ANSI_A), owner: owner + ".left")
+            digital(x > 0.22, key: CGKeyCode(kVK_ANSI_D), owner: owner + ".right")
         case .arrows:
-            digital(y < -0.22, key: CGKeyCode(kVK_UpArrow))
-            digital(y > 0.22, key: CGKeyCode(kVK_DownArrow))
-            digital(x < -0.22, key: CGKeyCode(kVK_LeftArrow))
-            digital(x > 0.22, key: CGKeyCode(kVK_RightArrow))
-        case .mouse:
-            let factor = 22.0
-            let dead = 0.05
-            let mag = hypot(x, y)
-            if mag > dead {
-                let normX = x / mag
-                let normY = y / mag
-                let scaledMag = pow((mag - dead) / (1.0 - dead), 1.25)
-                let dx = normX * scaledMag * factor
-                let dy = normY * scaledMag * factor
-                _ = InputEngine.move(dx: dx, dy: dy)
-            }
-        case .scroll:
-            let dx = x * 12.0
-            let dy = -y * 12.0
-            if hypot(dx, dy) > 0.2 {
-                _ = InputEngine.scroll(dx: dx, dy: dy, phase: .changed)
-            }
-        case .none:
+            digital(y < -0.22, key: CGKeyCode(kVK_UpArrow), owner: owner + ".up")
+            digital(y > 0.22, key: CGKeyCode(kVK_DownArrow), owner: owner + ".down")
+            digital(x < -0.22, key: CGKeyCode(kVK_LeftArrow), owner: owner + ".left")
+            digital(x > 0.22, key: CGKeyCode(kVK_RightArrow), owner: owner + ".right")
+        case .mouse, .scroll, .none:
             break
         }
     }
 
-    private func digital(_ down: Bool, key: CGKeyCode) {
+    private func renderContinuousOutput() {
+        let mapping = activeMapping
+        let state = current
+
+        var mouseDX = 0.0
+        var mouseDY = 0.0
+        var scrollDX = 0.0
+        var scrollDY = 0.0
+
+        accumulateContinuous(
+            mapping.leftStick,
+            x: Double(state.leftX),
+            y: Double(state.leftY),
+            mouseDX: &mouseDX,
+            mouseDY: &mouseDY,
+            scrollDX: &scrollDX,
+            scrollDY: &scrollDY
+        )
+        accumulateContinuous(
+            mapping.rightStick,
+            x: Double(state.rightX),
+            y: Double(state.rightY),
+            mouseDX: &mouseDX,
+            mouseDY: &mouseDY,
+            scrollDX: &scrollDX,
+            scrollDY: &scrollDY
+        )
+
+        if hypot(mouseDX, mouseDY) > 0.001 {
+            _ = InputEngine.move(dx: mouseDX, dy: mouseDY)
+        }
+
+        let hasScroll = hypot(scrollDX, scrollDY) > 0.2
+        if hasScroll {
+            _ = InputEngine.scroll(
+                dx: scrollDX,
+                dy: scrollDY,
+                phase: scrollActive ? .changed : .began
+            )
+            scrollActive = true
+        } else if scrollActive {
+            _ = InputEngine.scroll(dx: 0, dy: 0, phase: .ended)
+            scrollActive = false
+        }
+    }
+
+    private func accumulateContinuous(
+        _ action: StickAction,
+        x: Double,
+        y: Double,
+        mouseDX: inout Double,
+        mouseDY: inout Double,
+        scrollDX: inout Double,
+        scrollDY: inout Double
+    ) {
+        switch action {
+        case .mouse:
+            let dead = 0.045
+            let mag = min(hypot(x, y), 1.0)
+            guard mag > dead else { return }
+            let normX = x / max(mag, 0.0001)
+            let normY = y / max(mag, 0.0001)
+            let normalized = (mag - dead) / (1.0 - dead)
+            let curve = pow(normalized, 1.35)
+            let pixelsPerTick = 10.0
+            mouseDX += normX * curve * pixelsPerTick
+            mouseDY += normY * curve * pixelsPerTick
+        case .scroll:
+            let gain = 3.2
+            scrollDX += x * gain
+            scrollDY += -y * gain
+        case .wasd, .arrows, .none:
+            break
+        }
+    }
+
+    private func digital(_ down: Bool, key: CGKeyCode, owner: String) {
+        setKey(key, down: down, owner: owner)
+    }
+
+    private func setKey(_ key: UInt16, down: Bool, owner: String) {
+        var owners = keyOwners[key] ?? []
+
         if down {
-            if heldKeys.contains(key) == false {
-                heldKeys.insert(key)
+            guard owners.contains(owner) == false else { return }
+            let wasEmpty = owners.isEmpty
+            owners.insert(owner)
+            keyOwners[key] = owners
+            if wasEmpty {
                 _ = InputEngine.keyDown(code: key, flags: 0)
             }
-        } else if heldKeys.contains(key) {
-            heldKeys.remove(key)
+            return
+        }
+
+        guard owners.remove(owner) != nil else { return }
+        if owners.isEmpty {
+            keyOwners.removeValue(forKey: key)
             _ = InputEngine.keyUp(code: key, flags: 0)
+        } else {
+            keyOwners[key] = owners
+        }
+    }
+
+    private func setLeftMouse(down: Bool, owner: String) {
+        if down {
+            guard leftMouseOwners.contains(owner) == false else { return }
+            let wasEmpty = leftMouseOwners.isEmpty
+            leftMouseOwners.insert(owner)
+            if wasEmpty {
+                _ = InputEngine.mouseDown()
+            }
+            return
+        }
+
+        guard leftMouseOwners.remove(owner) != nil else { return }
+        if leftMouseOwners.isEmpty {
+            _ = InputEngine.mouseUp()
         }
     }
 }
