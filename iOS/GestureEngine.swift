@@ -1,6 +1,8 @@
 import CoreGraphics
 import Foundation
+#if canImport(UIKit)
 import UIKit
+#endif
 
 enum GestureMode: String, Equatable {
     case idle
@@ -19,6 +21,7 @@ enum GestureMode: String, Equatable {
 struct FingerSample: Equatable {
     var id: Int
     var point: CGPoint
+    var phase: UITouch.Phase = .moved
 }
 
 struct GestureOutput {
@@ -42,7 +45,9 @@ final class GestureEngine {
     private var startTime: TimeInterval = 0
     private var startCentroid: CGPoint?
     private var peakMovement: CGFloat = 0
+    private var maxClusterCount: Int = 0
     private var swipeAxis: Axis?
+    private var committedAction: SystemAction?
     private var lastClickTime: TimeInterval = 0
     private var mouseIsDown = false
     private var longPressWork: DispatchWorkItem?
@@ -68,7 +73,7 @@ final class GestureEngine {
         }
     }
 
-    /// Test-facing ingest that does not depend on a UIEvent.
+    /// Test-facing ingest that simulates touches and updates active fingers.
     func ingest(samples: [FingerSample], timestamp: TimeInterval, phase: UITouch.Phase, in size: CGSize) -> GestureOutput {
         switch phase {
         case .began:
@@ -93,7 +98,11 @@ final class GestureEngine {
 
     func tickMomentum(dt: TimeInterval, size: CGSize) -> GestureOutput {
         let commands = scrollEngine.tickMomentum(dt: dt)
-        return GestureOutput(commands: commands, animation: makeAnimation(points: currentPoints(), size: size, down: !fingers.isEmpty, dragging: mouseIsDown), debug: makeDebug())
+        return GestureOutput(
+            commands: commands,
+            animation: makeAnimation(fingers: currentAnimationFingers(), size: size, down: !fingers.isEmpty, dragging: mouseIsDown),
+            debug: makeDebug()
+        )
     }
 
     func cancel(size: CGSize) -> GestureOutput {
@@ -106,28 +115,43 @@ final class GestureEngine {
         }
         resetTracking()
         mode = .idle
-        return GestureOutput(commands: commands, animation: makeAnimation(points: [], size: size, down: false, dragging: false), debug: makeDebug())
+        return GestureOutput(
+            commands: commands,
+            animation: makeAnimation(fingers: [], size: size, down: false, dragging: false),
+            debug: makeDebug()
+        )
     }
 
     private func began(changed: [FingerSample], active: [FingerSample], timestamp: TimeInterval, size: CGSize) -> GestureOutput {
         Haptics.prepare()
         replaceActive(active)
+        maxClusterCount = max(maxClusterCount, fingers.count)
         startTime = timestamp
         lastTimestamp = timestamp
         peakMovement = 0
         swipeAxis = nil
+        committedAction = nil
         lastDx = 0
         lastDy = 0
         let points = currentPoints()
         startCentroid = centroid(points)
         lastCentroid = startCentroid
-        applyCount(points.count, timestamp: timestamp, points: points)
+
+        var commands = takeQueued()
+        let cancelScroll = applyCount(fingers.count, timestamp: timestamp, points: points)
+        commands.append(contentsOf: cancelScroll)
         lastFingerIDs = Set(fingers.keys)
-        return GestureOutput(commands: takeQueued(), animation: makeAnimation(points: points, size: size, down: true, dragging: mouseIsDown), debug: makeDebug())
+
+        return GestureOutput(
+            commands: commands,
+            animation: makeAnimation(fingers: currentAnimationFingers(), size: size, down: true, dragging: mouseIsDown),
+            debug: makeDebug()
+        )
     }
 
     private func moved(changed: [FingerSample], active: [FingerSample], timestamp: TimeInterval, size: CGSize) -> GestureOutput {
         replaceActive(active)
+        maxClusterCount = max(maxClusterCount, fingers.count)
         let dt = max(timestamp - lastTimestamp, 0.0008)
         let points = currentPoints()
         let center = centroid(points)
@@ -137,12 +161,17 @@ final class GestureEngine {
 
         var commands = takeQueued()
         let ids = Set(fingers.keys)
-        if ids != lastFingerIDs {
-            applyCount(points.count, timestamp: timestamp, points: points)
+        if ids != lastFingerIDs && mode != .threeFingerSwipe && mode != .fourFingerSwipe {
+            let cancelScroll = applyCount(fingers.count, timestamp: timestamp, points: points)
+            commands.append(contentsOf: cancelScroll)
             lastFingerIDs = ids
             lastCentroid = center
             lastTimestamp = timestamp
-            return GestureOutput(commands: commands, animation: makeAnimation(points: points, size: size, down: true, dragging: mouseIsDown), debug: makeDebug())
+            return GestureOutput(
+                commands: commands,
+                animation: makeAnimation(fingers: currentAnimationFingers(), size: size, down: true, dragging: mouseIsDown),
+                debug: makeDebug()
+            )
         }
 
         switch mode {
@@ -154,7 +183,7 @@ final class GestureEngine {
             if mode != .tapCandidate, let previous = lastCentroid {
                 let dx = Double(center.x - previous.x)
                 let dy = Double(center.y - previous.y)
-                if hypot(dx, dy) >= 0.45 {
+                if hypot(dx, dy) >= 0.4 {
                     let accelerated = accelerate(dx: dx, dy: dy, dt: min(max(dt, 1.0 / 240.0), 1.0 / 30.0))
                     commands.append(.move(dx: accelerated.dx, dy: accelerated.dy))
                 }
@@ -170,18 +199,20 @@ final class GestureEngine {
             if let start = startCentroid {
                 let dx = center.x - start.x
                 let dy = center.y - start.y
-                if hypot(dx, dy) > 36 {
+                if hypot(dx, dy) > 24 {
                     mode = .threeFingerSwipe
                     lockAxis(dx: dx, dy: dy)
+                    committedAction = threeFingerAction()
                 }
             }
         case .fourFingerCandidate, .fourFingerSwipe:
             if let start = startCentroid {
                 let dx = center.x - start.x
                 let dy = center.y - start.y
-                if hypot(dx, dy) > 36 {
+                if hypot(dx, dy) > 24 {
                     mode = .fourFingerSwipe
                     lockAxis(dx: dx, dy: dy)
+                    committedAction = fourFingerAction()
                 }
             }
         case .idle:
@@ -190,7 +221,11 @@ final class GestureEngine {
 
         lastCentroid = center
         lastTimestamp = timestamp
-        return GestureOutput(commands: commands, animation: makeAnimation(points: points, size: size, down: true, dragging: mouseIsDown || mode == .dragging), debug: makeDebug())
+        return GestureOutput(
+            commands: commands,
+            animation: makeAnimation(fingers: currentAnimationFingers(), size: size, down: true, dragging: mouseIsDown || mode == .dragging),
+            debug: makeDebug()
+        )
     }
 
     private func ended(changed: [FingerSample], active: [FingerSample], timestamp: TimeInterval, size: CGSize) -> GestureOutput {
@@ -198,7 +233,18 @@ final class GestureEngine {
         var commands = takeQueued()
         let remaining = fingers.count
         let duration = timestamp - startTime
-        let isTap = peakMovement < 12 && duration < 0.32
+        let isTap = peakMovement < 14 && duration < 0.35
+
+        // If in an active 3 or 4 finger swipe, do NOT cancel when individual fingers lift asynchronously.
+        // Wait until all fingers have released (remaining == 0).
+        if (mode == .threeFingerSwipe || mode == .fourFingerSwipe) && remaining > 0 {
+            lastCentroid = centroid(currentPoints())
+            return GestureOutput(
+                commands: commands,
+                animation: makeAnimation(fingers: currentAnimationFingers(), size: size, down: true, dragging: false),
+                debug: makeDebug()
+            )
+        }
 
         if remaining == 0 {
             cancelLongPress()
@@ -208,20 +254,34 @@ final class GestureEngine {
                 mouseIsDown = false
                 Haptics.dragEnd()
             case .threeFingerSwipe:
-                if let action = threeFingerAction(), action != .none {
+                if let action = committedAction ?? threeFingerAction(), action != .none {
                     commands.append(.system(action))
                     Haptics.gesture()
                 }
             case .fourFingerSwipe:
-                if let action = fourFingerAction(), action != .none {
+                if let action = committedAction ?? fourFingerAction(), action != .none {
                     commands.append(.system(action))
                     Haptics.gesture()
+                }
+            case .threeFingerCandidate:
+                if isTap, maxClusterCount == 3 {
+                    // 3-finger tap: Look Up / Dictionary (Cmd+Ctrl+D)
+                    commands.append(.shortcut("cmd+ctrl+d"))
+                    Haptics.click()
+                }
+            case .twoFingerCandidate, .scrolling, .pinching:
+                let scrollEnd = scrollEngine.end(isTap: isTap)
+                if isTap, maxClusterCount == 2, preferences.twoFingerSecondaryClick {
+                    commands.append(.rightClick)
+                    Haptics.rightClick()
+                } else {
+                    commands.append(contentsOf: scrollEnd)
                 }
             case .tapCandidate, .pointer:
                 if mouseIsDown {
                     commands.append(.mouseUp)
                     mouseIsDown = false
-                } else if isTap, preferences.tapToClick {
+                } else if isTap, maxClusterCount == 1, preferences.tapToClick {
                     let isDouble = timestamp - lastClickTime < 0.3
                     lastClickTime = timestamp
                     clickPulse += 1
@@ -233,14 +293,6 @@ final class GestureEngine {
                     }
                     Haptics.click()
                 }
-            case .twoFingerCandidate, .scrolling, .pinching:
-                let scrollEnd = scrollEngine.end(isTap: isTap)
-                if isTap, preferences.twoFingerSecondaryClick {
-                    commands.append(.rightClick)
-                    Haptics.rightClick()
-                } else {
-                    commands.append(contentsOf: scrollEnd)
-                }
             default:
                 if mouseIsDown {
                     commands.append(.mouseUp)
@@ -250,16 +302,26 @@ final class GestureEngine {
             }
             resetTracking()
             mode = .idle
-            return GestureOutput(commands: commands, animation: makeAnimation(points: [], size: size, down: false, dragging: false), debug: makeDebug())
+            return GestureOutput(
+                commands: commands,
+                animation: makeAnimation(fingers: [], size: size, down: false, dragging: false),
+                debug: makeDebug()
+            )
         }
 
-        applyCount(remaining, timestamp: timestamp, points: currentPoints())
+        let cancelScroll = applyCount(remaining, timestamp: timestamp, points: currentPoints())
+        commands.append(contentsOf: cancelScroll)
         lastCentroid = centroid(currentPoints())
         lastFingerIDs = Set(fingers.keys)
-        return GestureOutput(commands: commands, animation: makeAnimation(points: currentPoints(), size: size, down: true, dragging: mouseIsDown), debug: makeDebug())
+        return GestureOutput(
+            commands: commands,
+            animation: makeAnimation(fingers: currentAnimationFingers(), size: size, down: true, dragging: mouseIsDown),
+            debug: makeDebug()
+        )
     }
 
-    private func applyCount(_ count: Int, timestamp: TimeInterval, points: [CGPoint]) {
+    @discardableResult
+    private func applyCount(_ count: Int, timestamp: TimeInterval, points: [CGPoint]) -> [RemoteCommand] {
         cancelLongPress()
         lastDx = 0
         lastDy = 0
@@ -267,23 +329,25 @@ final class GestureEngine {
         lastCentroid = startCentroid
         peakMovement = 0
         swipeAxis = nil
+        committedAction = nil
+
         switch count {
         case 1:
             mode = mouseIsDown ? .dragging : (mode == .idle ? .tapCandidate : .pointer)
             if mode == .tapCandidate { scheduleLongPress() }
-            _ = scrollEngine.cancel()
+            return scrollEngine.cancel()
         case 2:
             mode = .twoFingerCandidate
-            scrollEngine.begin(points: points, timestamp: timestamp)
+            return scrollEngine.begin(points: points, timestamp: timestamp)
         case 3:
             mode = .threeFingerCandidate
-            _ = scrollEngine.cancel()
+            return scrollEngine.cancel()
         case 4...:
             mode = .fourFingerCandidate
-            _ = scrollEngine.cancel()
+            return scrollEngine.cancel()
         default:
             mode = .idle
-            _ = scrollEngine.cancel()
+            return scrollEngine.cancel()
         }
     }
 
@@ -303,7 +367,7 @@ final class GestureEngine {
             outY = outY * (1 - alpha) + lastDy * alpha
         }
         let magnitude = hypot(outX, outY)
-        let maxStep = 56.0 * max(preferences.effectiveSensitivity, 0.6)
+        let maxStep = 64.0 * max(preferences.effectiveSensitivity, 0.6)
         if magnitude > maxStep {
             outX *= maxStep / magnitude
             outY *= maxStep / magnitude
@@ -371,14 +435,23 @@ final class GestureEngine {
         lastCentroid = nil
         startCentroid = nil
         swipeAxis = nil
+        committedAction = nil
         lastDx = 0
         lastDy = 0
         peakMovement = 0
+        maxClusterCount = 0
         lastFingerIDs.removeAll()
     }
 
     private func currentPoints() -> [CGPoint] {
         fingers.keys.sorted().compactMap { fingers[$0] }
+    }
+
+    private func currentAnimationFingers() -> [TouchAnimationFinger] {
+        fingers.keys.sorted().compactMap { id in
+            guard let pt = fingers[id] else { return nil }
+            return TouchAnimationFinger(id: id, point: pt)
+        }
     }
 
     private func centroid(_ points: [CGPoint]) -> CGPoint {
@@ -387,11 +460,15 @@ final class GestureEngine {
         return CGPoint(x: total.x / CGFloat(points.count), y: total.y / CGFloat(points.count))
     }
 
-    private func makeAnimation(points: [CGPoint], size: CGSize, down: Bool, dragging: Bool) -> TouchAnimationState {
-        TouchAnimationState(
+    private func makeAnimation(fingers: [TouchAnimationFinger], size: CGSize, down: Bool, dragging: Bool) -> TouchAnimationState {
+        let start = startCentroid ?? .zero
+        let current = lastCentroid ?? start
+        let progress = CGSize(width: current.x - start.x, height: current.y - start.y)
+
+        return TouchAnimationState(
             isConnected: isConnected,
-            fingerCount: points.count,
-            points: points,
+            fingerCount: fingers.count,
+            fingers: fingers,
             velocity: CGSize(width: lastDx, height: lastDy),
             isFingerDown: down,
             isDragging: dragging,
@@ -399,7 +476,10 @@ final class GestureEngine {
             doubleClickPulse: doubleClickPulse,
             trackpadSize: size,
             modeName: mode.rawValue,
-            isPrecision: precisionActive
+            isPrecision: precisionActive,
+            scrollIntent: scrollEngine.intent.rawValue,
+            gestureProgress: progress,
+            lockedAction: committedAction
         )
     }
 

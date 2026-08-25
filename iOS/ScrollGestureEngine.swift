@@ -32,11 +32,24 @@ final class ScrollGestureEngine {
     private var momentumActive = false
     private var axisLock: Axis?
 
+    private struct VelocitySample {
+        var dx: Double
+        var dy: Double
+        var dt: TimeInterval
+        var timestamp: TimeInterval
+    }
+    private var velocityHistory: [VelocitySample] = []
+
     private enum Axis { case horizontal, vertical }
 
     var isMomentumActive: Bool { momentumActive }
 
-    func begin(points: [CGPoint], timestamp: TimeInterval) {
+    func begin(points: [CGPoint], timestamp: TimeInterval) -> [RemoteCommand] {
+        var cancelCommands: [RemoteCommand] = []
+        if momentumActive {
+            momentumActive = false
+            cancelCommands.append(.scroll(dx: 0, dy: 0, phase: .momentumEnded))
+        }
         intent = .unknown
         startCentroid = centroid(points)
         lastCentroid = startCentroid
@@ -44,27 +57,30 @@ final class ScrollGestureEngine {
         lastTime = timestamp
         vx = 0
         vy = 0
+        velocityHistory.removeAll()
         pinchAccum = 0
         firedPinch = 0
         hasBegan = false
-        momentumActive = false
         axisLock = nil
+        return cancelCommands
     }
 
     func move(points: [CGPoint], timestamp: TimeInterval) -> [RemoteCommand] {
-        momentumActive = false
+        if momentumActive {
+            momentumActive = false
+        }
         let center = centroid(points)
         let currentSpan = span(points)
-        let dt = max(timestamp - lastTime, 0.001)
+        let dt = max(timestamp - lastTime, 0.0008)
         let dx = Double(center.x - lastCentroid.x)
         let dy = Double(center.y - lastCentroid.y)
         let translation = hypot(center.x - startCentroid.x, center.y - startCentroid.y)
         let spanChange = abs(currentSpan - startSpan)
 
         if intent == .unknown {
-            if spanChange > 18, spanChange > translation * 0.85 {
+            if spanChange > 16, spanChange > translation * 0.8 {
                 intent = .pinch
-            } else if translation > 10 {
+            } else if translation > 6 {
                 intent = .scroll
             }
         }
@@ -79,7 +95,7 @@ final class ScrollGestureEngine {
             pinchAccum = Double((currentSpan - startSpan) / max(startSpan, 1))
             return drainPinch()
         case .scroll:
-            return scrollMoved(dx: dx, dy: dy, dt: dt)
+            return scrollMoved(dx: dx, dy: dy, dt: dt, timestamp: timestamp)
         }
     }
 
@@ -101,10 +117,16 @@ final class ScrollGestureEngine {
         if hasBegan {
             commands.append(.scroll(dx: 0, dy: 0, phase: .ended))
         }
+
+        // Estimate release velocity from rolling weighted history
+        let releaseVelocity = estimateReleaseVelocity()
+        vx = releaseVelocity.vx
+        vy = releaseVelocity.vy
         let speed = hypot(vx, vy)
-        if preferences.effectiveScrollDecay > 0.2, speed > 420 {
+
+        if preferences.scrollFeel == .macLike, speed > 160 {
             momentumActive = true
-            commands.append(.scroll(dx: vx / 90, dy: vy / 90, phase: .momentumBegan))
+            commands.append(.scroll(dx: vx / 60, dy: vy / 60, phase: .momentumBegan))
         } else {
             momentumActive = false
             vx = 0
@@ -112,14 +134,33 @@ final class ScrollGestureEngine {
         }
         intent = .unknown
         hasBegan = false
+        velocityHistory.removeAll()
         return commands
     }
 
     func tickMomentum(dt: TimeInterval) -> [RemoteCommand] {
         guard momentumActive else { return [] }
-        vx *= preferences.effectiveScrollDecay
-        vy *= preferences.effectiveScrollDecay
-        if hypot(vx, vy) < 28 {
+        // Continuous time-based exponential decay: v(t+dt) = v(t) * exp(-lambda * dt)
+        // For Mac-like feel, lambda is ~3.2 s^-1
+        let lambda: Double
+        switch preferences.scrollFeel {
+        case .macLike:
+            lambda = 3.2
+        case .direct:
+            momentumActive = false
+            vx = 0
+            vy = 0
+            return [.scroll(dx: 0, dy: 0, phase: .momentumEnded)]
+        case .custom:
+            lambda = max(1.0, (1.0 - preferences.scrollMomentum) * 35.0)
+        }
+
+        let decayFactor = exp(-lambda * dt)
+        vx *= decayFactor
+        vy *= decayFactor
+
+        let minSpeed = 22.0
+        if hypot(vx, vy) < minSpeed {
             momentumActive = false
             vx = 0
             vy = 0
@@ -138,6 +179,7 @@ final class ScrollGestureEngine {
         }
         resetSoft()
         momentumActive = false
+        velocityHistory.removeAll()
         return commands
     }
 
@@ -150,7 +192,7 @@ final class ScrollGestureEngine {
 
     private func drainPinch() -> [RemoteCommand] {
         var commands: [RemoteCommand] = []
-        let threshold = max(preferences.pinchThreshold, 0.06)
+        let threshold = max(preferences.pinchThreshold, 0.05)
         while pinchAccum - firedPinch >= threshold {
             commands.append(.zoom(.in))
             firedPinch += threshold
@@ -162,26 +204,30 @@ final class ScrollGestureEngine {
         return commands
     }
 
-    private func scrollMoved(dx: Double, dy: Double, dt: TimeInterval) -> [RemoteCommand] {
-        let alpha = 0.35
-        vx = vx * (1 - alpha) + (dx / dt) * alpha
-        vy = vy * (1 - alpha) + (dy / dt) * alpha
+    private func scrollMoved(dx: Double, dy: Double, dt: TimeInterval, timestamp: TimeInterval) -> [RemoteCommand] {
+        velocityHistory.append(VelocitySample(dx: dx, dy: dy, dt: dt, timestamp: timestamp))
+        if velocityHistory.count > 16 {
+            velocityHistory.removeFirst(velocityHistory.count - 16)
+        }
 
         var outX = dx
         var outY = dy
-        if abs(outX) > abs(outY) * 2.4 {
+
+        // Axis assistance: gently damp the minor axis if user is scrolling mostly along one axis
+        if abs(outX) > abs(outY) * 2.2 {
             axisLock = .horizontal
-        } else if abs(outY) > abs(outX) * 2.4 {
+        } else if abs(outY) > abs(outX) * 2.2 {
             axisLock = .vertical
         }
-        if axisLock == .horizontal { outY *= 0.12 }
-        if axisLock == .vertical { outX *= 0.12 }
+        if axisLock == .horizontal { outY *= 0.15 }
+        if axisLock == .vertical { outX *= 0.15 }
 
         let direction = preferences.naturalScrolling ? 1.0 : -1.0
         let gain = preferences.effectiveScrollGain
         outX *= gain * direction
         outY *= gain * direction
-        guard hypot(outX, outY) > 0.2 else { return [] }
+
+        guard hypot(outX, outY) > 0.1 else { return [] }
 
         if hasBegan == false {
             hasBegan = true
@@ -191,6 +237,33 @@ final class ScrollGestureEngine {
             ]
         }
         return [.scroll(dx: outX, dy: outY, phase: .changed)]
+    }
+
+    private func estimateReleaseVelocity() -> (vx: Double, vy: Double) {
+        guard let latestTime = velocityHistory.last?.timestamp else { return (0, 0) }
+        // Look at samples from the last 80ms
+        let recent = velocityHistory.filter { latestTime - $0.timestamp <= 0.08 }
+        guard !recent.isEmpty else { return (0, 0) }
+
+        var totalWeight = 0.0
+        var weightedVx = 0.0
+        var weightedVy = 0.0
+
+        let direction = preferences.naturalScrolling ? 1.0 : -1.0
+        let gain = preferences.effectiveScrollGain
+
+        for sample in recent {
+            let age = latestTime - sample.timestamp
+            let weight = exp(-age / 0.03) // higher weight for newest samples
+            let sampleVx = (sample.dx / max(sample.dt, 0.001)) * gain * direction
+            let sampleVy = (sample.dy / max(sample.dt, 0.001)) * gain * direction
+            weightedVx += sampleVx * weight
+            weightedVy += sampleVy * weight
+            totalWeight += weight
+        }
+
+        guard totalWeight > 0 else { return (0, 0) }
+        return (weightedVx / totalWeight, weightedVy / totalWeight)
     }
 
     private func centroid(_ points: [CGPoint]) -> CGPoint {

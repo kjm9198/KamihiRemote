@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import CryptoKit
 
 final class UDPClient: ObservableObject {
     @Published private(set) var packetsSent = 0
@@ -9,6 +10,7 @@ final class UDPClient: ObservableObject {
     private var connection: NWConnection?
     private var pairingCode = ""
     private var sessionID: String?
+    private var sessionKey: SymmetricKey?
     private var sequence: UInt64 = 0
     private let queue = DispatchQueue(label: "kamihi.udp.client", qos: .userInteractive)
     private var pendingDx = 0.0
@@ -21,10 +23,11 @@ final class UDPClient: ObservableObject {
     private var movesThisSecond = 0
     private var meterTimer: DispatchSourceTimer?
 
-    func configure(host: String, port: UInt16, pairingCode: String, sessionID: String?) {
+    func configure(host: String, port: UInt16, pairingCode: String, sessionID: String?, sessionKey: SymmetricKey? = nil) {
         stop()
         self.pairingCode = pairingCode
         self.sessionID = sessionID
+        self.sessionKey = sessionKey
         sequence = 0
         let parameters = NWParameters.udp
         parameters.includePeerToPeer = true
@@ -39,8 +42,11 @@ final class UDPClient: ObservableObject {
         startMeter()
     }
 
-    func updateSession(_ sessionID: String?) {
-        queue.async { self.sessionID = sessionID }
+    func updateSession(_ sessionID: String?, sessionKey: SymmetricKey? = nil) {
+        queue.async {
+            self.sessionID = sessionID
+            self.sessionKey = sessionKey
+        }
     }
 
     func send(_ command: RemoteCommand) {
@@ -81,6 +87,7 @@ final class UDPClient: ObservableObject {
         connection?.cancel()
         connection = nil
         sessionID = nil
+        sessionKey = nil
         hasPendingMove = false
         hasPendingScroll = false
     }
@@ -129,7 +136,14 @@ final class UDPClient: ObservableObject {
     private func write(_ command: RemoteCommand) {
         guard let connection else { return }
         let data: Data
-        if let sessionID {
+        if let sessionID, let sessionKey {
+            sequence += 1
+            if let encrypted = try? RemotePacket.encodeK3(sessionID: sessionID, sequence: sequence, command: command, key: sessionKey) {
+                data = encrypted
+            } else {
+                data = RemotePacket.encodeV2(sessionID: sessionID, sequence: sequence, command: command)
+            }
+        } else if let sessionID {
             sequence += 1
             data = RemotePacket.encodeV2(sessionID: sessionID, sequence: sequence, command: command)
         } else if PairingSecret.isValid(pairingCode) {

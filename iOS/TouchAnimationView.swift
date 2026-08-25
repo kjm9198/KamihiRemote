@@ -11,7 +11,7 @@ struct TouchAnimationView: View {
     private var reduceMotion: Bool { systemReduceMotion }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: reduceMotion ? 1 / 20 : 1 / 60, paused: false)) { timeline in
+        TimelineView(.animation(minimumInterval: reduceMotion ? 1 / 30 : 1 / 60, paused: false)) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
             canvas(at: t)
         }
@@ -20,7 +20,7 @@ struct TouchAnimationView: View {
             ripples.append(Ripple(kind: .single, origin: orbOrigin))
         }
         .onChange(of: state.doubleClickPulse) { _, _ in
-            pulse(scale: 0.76)
+            pulse(scale: 0.74)
             ripples.append(Ripple(kind: .double, origin: orbOrigin))
         }
         .onChange(of: state.points) { _, points in
@@ -28,23 +28,27 @@ struct TouchAnimationView: View {
             for point in points.prefix(4) {
                 trail.append(TrailDot(point: point, energy: hypot(state.velocity.width, state.velocity.height)))
             }
-            if trail.count > 28 { trail.removeFirst(trail.count - 28) }
+            if trail.count > 24 { trail.removeFirst(trail.count - 24) }
         }
         .allowsHitTesting(false)
     }
 
     @ViewBuilder
     private func canvas(at time: TimeInterval) -> some View {
-        let breathe = reduceMotion ? 0 : sin(time * 1.15) * 0.5 + 0.5
+        let breathe = reduceMotion ? 0 : sin(time * 1.2) * 0.5 + 0.5
         ZStack {
             ambientField(at: time, breathe: breathe)
-            ForEach(trail) { dot in
-                Circle()
-                    .fill(.white.opacity(0.10))
-                    .frame(width: 10, height: 10)
-                    .blur(radius: 6)
-                    .position(dot.point)
+
+            if reduceMotion == false {
+                ForEach(trail) { dot in
+                    Circle()
+                        .fill(.white.opacity(0.08))
+                        .frame(width: 8, height: 8)
+                        .blur(radius: 5)
+                        .position(dot.point)
+                }
             }
+
             GlassEffectContainer(spacing: 72) {
                 if state.isConnected {
                     connectedOrbs(at: time)
@@ -52,8 +56,8 @@ struct TouchAnimationView: View {
                     searchingConstellation(at: time)
                 }
             }
-            .animation(.interactiveSpring(response: 0.16, dampingFraction: 0.72), value: state.points)
-            .animation(.spring(response: 0.5, dampingFraction: 0.78), value: state.isConnected)
+            .animation(.interactiveSpring(response: 0.15, dampingFraction: 0.75), value: state.fingers)
+            .animation(.spring(response: 0.45, dampingFraction: 0.8), value: state.isConnected)
 
             ForEach(ripples) { ripple in
                 RippleView(ripple: ripple) {
@@ -67,13 +71,13 @@ struct TouchAnimationView: View {
 
     private func ambientField(at time: TimeInterval, breathe: Double) -> some View {
         let connected = state.isConnected
-        let radius = min(state.trackpadSize.width, state.trackpadSize.height) * (connected ? 0.42 : 0.28)
+        let radius = min(state.trackpadSize.width, state.trackpadSize.height) * (connected ? 0.45 : 0.3)
         return ZStack {
             Circle()
                 .fill(
                     RadialGradient(
                         colors: [
-                            Color(red: 0.35, green: 0.55, blue: 0.95).opacity(connected ? 0.22 + breathe * 0.10 : 0.08),
+                            Color(red: 0.35, green: 0.55, blue: 0.95).opacity(connected ? 0.20 + breathe * 0.08 : 0.07),
                             Color.clear
                         ],
                         center: .center,
@@ -83,11 +87,12 @@ struct TouchAnimationView: View {
                 )
                 .frame(width: radius * 2, height: radius * 2)
                 .position(center)
-                .blur(radius: 18)
+                .blur(radius: 20)
+
             if connected && reduceMotion == false {
                 Circle()
-                    .stroke(.white.opacity(0.08 + breathe * 0.06), lineWidth: 1.2)
-                    .frame(width: 120 + breathe * 18, height: 120 + breathe * 18)
+                    .stroke(.white.opacity(0.06 + breathe * 0.05), lineWidth: 1.0)
+                    .frame(width: 120 + breathe * 16, height: 120 + breathe * 16)
                     .position(center)
             }
         }
@@ -95,28 +100,43 @@ struct TouchAnimationView: View {
 
     @ViewBuilder
     private func connectedOrbs(at time: TimeInterval) -> some View {
-        let points = Array(state.points.prefix(4))
-        if state.isFingerDown, points.isEmpty == false {
-            if points.count >= 2 {
-                glassBridge(from: points[0], to: points[1], pinch: state.modeName.contains("pinch") || state.modeName.contains("scroll"))
+        let fingers = Array(state.fingers.prefix(4))
+        if state.isFingerDown, fingers.isEmpty == false {
+            // Two-finger interactive glass metaball bridge
+            if fingers.count == 2 {
+                glassBridge(from: fingers[0].point, to: fingers[1].point, isScrolling: state.modeName == "scrolling", isPinching: state.modeName == "pinching")
             }
-            ForEach(Array(points.enumerated()), id: \.offset) { index, point in
+
+            // Three-finger group aura / directional shear feedback
+            if fingers.count == 3 {
+                threeFingerGroupAura(fingers: fingers)
+            }
+
+            // Four-finger group aura
+            if fingers.count >= 4 {
+                fourFingerGroupAura(fingers: fingers)
+            }
+
+            // Individual stable contact orbs
+            ForEach(fingers) { finger in
+                let index = fingers.firstIndex(of: finger) ?? 0
                 orb(
-                    id: "finger-\(index)",
-                    size: orbSize(index: index, count: points.count),
-                    stretch: index == 0 && points.count == 1 ? stretchAmount : groupStretch,
+                    id: "finger-\(finger.id)",
+                    size: orbSize(count: fingers.count),
+                    stretch: fingers.count == 1 ? stretchAmount : groupStretch,
                     pressed: true
                 )
-                .scaleEffect(index == 0 && points.count == 1 ? clickScale : 1)
-                .rotationEffect(groupRotation)
-                .position(point)
+                .scaleEffect(fingers.count == 1 ? clickScale : 1)
+                .rotationEffect(fingers.count == 1 ? stretchAngle : groupRotation)
+                .position(finger.point)
             }
         } else {
-            let float = reduceMotion ? 0.0 : sin(time * 0.65) * 10
+            // Idle breathing floating glass orb
+            let float = reduceMotion ? 0.0 : sin(time * 0.7) * 8
             orb(
                 id: "idle",
-                size: 88 + (state.isPrecision ? -10 : 8),
-                stretch: 0.06,
+                size: 84 + (state.isPrecision ? -10 : 6),
+                stretch: 0.04,
                 pressed: false
             )
             .scaleEffect(clickScale)
@@ -124,49 +144,116 @@ struct TouchAnimationView: View {
         }
     }
 
-    private func glassBridge(from a: CGPoint, to b: CGPoint, pinch: Bool) -> some View {
+    private func glassBridge(from a: CGPoint, to b: CGPoint, isScrolling: Bool, isPinching: Bool) -> some View {
         let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
         let length = hypot(b.x - a.x, b.y - a.y)
         let angle = atan2(b.y - a.y, b.x - a.x)
-        return Capsule()
-            .fill(.clear)
-            .frame(width: max(length - 36, 12), height: pinch ? 22 : 16)
-            .glassEffect(.regular.tint(.white.opacity(0.10)), in: .capsule)
-            .rotationEffect(.radians(angle))
-            .position(mid)
-            .opacity(reduceMotion ? 0.35 : 0.7)
+        let tension = max(0.2, 1.0 - min(length / 280.0, 0.8))
+
+        return ZStack {
+            Capsule()
+                .fill(.clear)
+                .frame(width: max(length - 28, 14), height: isScrolling ? 24 : (isPinching ? 28 : 18))
+                .glassEffect(.regular.tint(.white.opacity(0.12 * tension)), in: .capsule)
+                .rotationEffect(.radians(angle))
+                .position(mid)
+                .opacity(reduceMotion ? 0.4 : 0.75 * tension)
+
+            if isScrolling && reduceMotion == false {
+                // Subtle directional flow streak during scrolling
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [.clear, .cyan.opacity(0.35), .clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 8, height: 36)
+                    .position(mid)
+                    .blur(radius: 3)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func threeFingerGroupAura(fingers: [TouchAnimationFinger]) -> some View {
+        let pts = fingers.map(\.point)
+        let midX = pts.reduce(0) { $0 + $1.x } / CGFloat(pts.count)
+        let midY = pts.reduce(0) { $0 + $1.y } / CGFloat(pts.count)
+        let shiftX = state.gestureProgress.width * 0.3
+        let shiftY = state.gestureProgress.height * 0.3
+
+        return Circle()
+            .fill(
+                RadialGradient(
+                    colors: [
+                        Color.cyan.opacity(state.modeName == "threeFingerSwipe" ? 0.28 : 0.12),
+                        Color.clear
+                    ],
+                    center: .center,
+                    startRadius: 10,
+                    endRadius: 90
+                )
+            )
+            .frame(width: 180, height: 180)
+            .position(x: midX + shiftX, y: midY + shiftY)
+            .blur(radius: 12)
             .allowsHitTesting(false)
     }
 
-    private func orbSize(index: Int, count: Int) -> CGFloat {
-        if count == 1 { return state.isDragging ? 108 : 92 }
-        if count == 2 { return 70 }
-        return 54
+    private func fourFingerGroupAura(fingers: [TouchAnimationFinger]) -> some View {
+        let pts = fingers.map(\.point)
+        let midX = pts.reduce(0) { $0 + $1.x } / CGFloat(pts.count)
+        let midY = pts.reduce(0) { $0 + $1.y } / CGFloat(pts.count)
+
+        return Circle()
+            .fill(
+                RadialGradient(
+                    colors: [
+                        Color(red: 0.45, green: 0.65, blue: 1.0).opacity(0.25),
+                        Color.clear
+                    ],
+                    center: .center,
+                    startRadius: 15,
+                    endRadius: 110
+                )
+            )
+            .frame(width: 220, height: 220)
+            .position(x: midX, y: midY)
+            .blur(radius: 16)
+            .allowsHitTesting(false)
+    }
+
+    private func orbSize(count: Int) -> CGFloat {
+        if count == 1 { return state.isDragging ? 104 : 88 }
+        if count == 2 { return 68 }
+        if count == 3 { return 56 }
+        return 48
     }
 
     private var groupStretch: CGFloat {
         guard state.fingerCount >= 3, state.isFingerDown else { return 0.04 }
-        return min(hypot(state.velocity.width, state.velocity.height) / 900, 0.22)
+        return min(hypot(state.gestureProgress.width, state.gestureProgress.height) / 400, 0.25)
     }
 
     private var groupRotation: Angle {
         guard state.fingerCount >= 3 else {
             return state.fingerCount == 1 ? stretchAngle : .zero
         }
-        return stretchAngle
+        return Angle(radians: atan2(state.gestureProgress.height, state.gestureProgress.width))
     }
-
 
     private func searchingConstellation(at time: TimeInterval) -> some View {
         let count = 8
         return ZStack {
             ForEach(0..<count, id: \.self) { index in
-                let ring = index < 4 ? 42.0 : 68.0
-                let speed = index < 4 ? 0.55 : -0.32
+                let ring = index < 4 ? 40.0 : 64.0
+                let speed = index < 4 ? 0.5 : -0.3
                 let angle = (Double(index % 4) / 4.0) * .pi * 2 + time * speed
                 Circle()
                     .fill(.clear)
-                    .frame(width: index < 4 ? 20 : 14, height: index < 4 ? 20 : 14)
+                    .frame(width: index < 4 ? 18 : 12, height: index < 4 ? 18 : 12)
                     .glassEffect(.regular, in: .circle)
                     .glassEffectID("search-\(index)", in: glassSpace)
                     .position(
@@ -174,23 +261,23 @@ struct TouchAnimationView: View {
                         y: center.y + CGFloat(sin(angle)) * ring
                     )
             }
-            orb(id: "search-core", size: 36, stretch: 0.04, pressed: false)
+            orb(id: "search-core", size: 34, stretch: 0.03, pressed: false)
                 .position(center)
         }
     }
 
     private func orb(id: String, size: CGFloat, stretch: CGFloat, pressed: Bool) -> some View {
         let width = size * (1 + stretch)
-        let height = size * (1 - stretch * 0.46)
+        let height = size * (1 - stretch * 0.45)
         let material: Glass = pressed
-            ? .regular.tint(.white.opacity(state.isDragging ? 0.46 : 0.22))
-            : .regular.tint(Color(red: 0.55, green: 0.72, blue: 1.0).opacity(0.16))
+            ? .regular.tint(.white.opacity(state.isDragging ? 0.44 : 0.24))
+            : .regular.tint(Color(red: 0.55, green: 0.72, blue: 1.0).opacity(0.18))
         return Capsule()
             .fill(.clear)
             .frame(width: width, height: height)
             .glassEffect(material, in: .capsule)
             .glassEffectID(id, in: glassSpace)
-            .shadow(color: .white.opacity(pressed ? 0.18 : 0.08), radius: pressed ? 18 : 10)
+            .shadow(color: .white.opacity(pressed ? 0.16 : 0.08), radius: pressed ? 16 : 8)
     }
 
     private var orbOrigin: CGPoint {
@@ -205,7 +292,7 @@ struct TouchAnimationView: View {
     private var stretchAmount: CGFloat {
         guard state.isFingerDown else { return 0.04 }
         let speed = hypot(state.velocity.width, state.velocity.height)
-        return min(speed / 860, 0.48)
+        return min(speed / 800, 0.45)
     }
 
     private var stretchAngle: Angle {
@@ -214,7 +301,7 @@ struct TouchAnimationView: View {
 
     private func pulse(scale: CGFloat) {
         clickScale = scale
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.38)) {
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.4)) {
             clickScale = 1
         }
     }
@@ -240,15 +327,15 @@ private struct RippleView: View {
 
     var body: some View {
         ZStack {
-            ring(delay: 0, width: 2.4)
-            ring(delay: 0.06, width: 1.2)
+            ring(delay: 0, width: 2.2)
+            ring(delay: 0.05, width: 1.2)
             if ripple.kind == .double {
-                ring(delay: 0.12, width: 1.6)
+                ring(delay: 0.10, width: 1.5)
             }
         }
         .onAppear {
-            withAnimation(.easeOut(duration: 0.72)) { progress = 1 }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.76, execute: onFinished)
+            withAnimation(.easeOut(duration: 0.68)) { progress = 1 }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.72, execute: onFinished)
         }
         .allowsHitTesting(false)
     }
@@ -257,12 +344,12 @@ private struct RippleView: View {
         Circle()
             .stroke(
                 AngularGradient(
-                    colors: [.white.opacity(0.55), .cyan.opacity(0.25), .white.opacity(0.05)],
+                    colors: [.white.opacity(0.50), .cyan.opacity(0.25), .white.opacity(0.05)],
                     center: .center
                 ),
                 lineWidth: width
             )
-            .frame(width: 54 + progress * 140, height: 54 + progress * 140)
+            .frame(width: 50 + progress * 130, height: 50 + progress * 130)
             .opacity((1 - progress) * (delay == 0 || progress > 0.04 ? 1 : 0))
             .scaleEffect(0.92 + progress * 0.12)
     }

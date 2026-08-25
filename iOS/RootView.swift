@@ -316,19 +316,31 @@ struct TrackpadCanvas: View {
     private var debugHUD: some View {
         let debug = session.engine.debug
         let stats = session.engine.stats
-        return VStack(alignment: .leading, spacing: 2) {
-            Text("Active touches: \(debug.activeCount)")
-            ForEach(Array(debug.points.prefix(5).enumerated()), id: \.offset) { index, point in
-                Text("#\(index + 1) \(Int(point.x))/\(Int(point.y))")
+        let anim = session.engine.animation
+        return VStack(alignment: .leading, spacing: 3) {
+            Text("Active UIKit touches: \(stats.activeFingers)")
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+            Text("Touch IDs:")
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            ForEach(Array(anim.fingers.prefix(4).enumerated()), id: \.element.id) { index, finger in
+                Text("  #\(finger.id)  x: \(Int(finger.point.x))  y: \(Int(finger.point.y))")
+                    .font(.system(size: 10, design: .monospaced))
             }
-            Text("Gesture: \(debug.mode)")
-            Text("Cumulative: x \(Int(debug.cumulativeX))  y \(Int(debug.cumulativeY))")
-            Text("Intent \(debug.scrollIntent)  MOVE \(stats.moveSent)")
+            Text("GestureEngine fingers: \(debug.activeCount)")
+                .font(.system(size: 10, design: .monospaced))
+            Text("Mode: \(debug.mode)")
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(debug.mode.contains("Swipe") ? .cyan : .white)
+            Text("Animation fingers: \(anim.fingerCount)")
+                .font(.system(size: 10, design: .monospaced))
+            Text("Cumulative: dx \(Int(debug.cumulativeX))  dy \(Int(debug.cumulativeY))")
+                .font(.system(size: 10, design: .monospaced))
+            Text("Intent: \(debug.scrollIntent)  MOVE: \(stats.moveSent)  RPS: \(session.telemetry.realtimePacketsPerSecond)")
+                .font(.system(size: 10, design: .monospaced))
         }
-        .font(.system(size: 11, weight: .medium, design: .monospaced))
-        .foregroundStyle(.white.opacity(0.78))
+        .foregroundStyle(.white.opacity(0.85))
         .padding(10)
-        .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(10)
         .accessibilityHidden(true)

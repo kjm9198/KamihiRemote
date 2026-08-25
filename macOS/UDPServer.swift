@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import CryptoKit
 
 final class UDPServer: ObservableObject {
     @Published private(set) var isRunning = false
@@ -21,6 +22,7 @@ final class UDPServer: ObservableObject {
     private var packetsThisSecond = 0
     private var movesThisSecond = 0
     private var activeSessionID: String?
+    private var activeSessionKey: SymmetricKey?
     private var sequenceGate = SequenceGate()
 
     func start(pairingCode: String) {
@@ -49,9 +51,10 @@ final class UDPServer: ObservableObject {
         }
     }
 
-    func updateSession(_ sessionID: String?) {
+    func updateSession(_ sessionID: String?, sessionKey: SymmetricKey? = nil) {
         queue.async {
             self.activeSessionID = sessionID
+            self.activeSessionKey = sessionKey
             self.sequenceGate.reset()
         }
     }
@@ -138,12 +141,14 @@ final class UDPServer: ObservableObject {
         for line in text.split(whereSeparator: \.isNewline) {
             let raw = String(line)
             recordRaw(raw, from: connection)
-            switch RemotePacket.parse(raw) {
+            switch RemotePacket.parse(raw, sessionKey: activeSessionKey) {
             case .failure(let reason):
                 reject(reason, from: connection, raw: raw)
-            case .success(let token, let command, let legacy, let sessionID, let sequence):
+            case .success(let token, let command, let legacy, let sessionID, let sequence, let isEncrypted):
                 let authorized: Bool
-                if let activeSessionID, token == activeSessionID || sessionID == activeSessionID {
+                if isEncrypted {
+                    authorized = (sessionID == activeSessionID || activeSessionID == nil)
+                } else if let activeSessionID, token == activeSessionID || sessionID == activeSessionID {
                     authorized = true
                 } else {
                     authorized = PairingSecret.matches(token, pairingCode)
@@ -169,12 +174,12 @@ final class UDPServer: ObservableObject {
                 }
                 lastPacket = Date()
                 if command.isController { lastController = Date() }
-                accept(command, from: connection, raw: raw, token: token, legacy: legacy)
+                accept(command, from: connection, raw: raw, token: token, legacy: legacy, isEncrypted: isEncrypted)
             }
         }
     }
 
-    private func accept(_ command: RemoteCommand, from connection: NWConnection, raw: String, token: String, legacy: Bool) {
+    private func accept(_ command: RemoteCommand, from connection: NWConnection, raw: String, token: String, legacy: Bool, isEncrypted: Bool) {
         var posted = false
         var dxText = "—"
         var dyText = "—"
@@ -217,7 +222,7 @@ final class UDPServer: ObservableObject {
             posted = InputEngine.apply(command)
         }
 
-        let parsed = parsedSummary(token: token, command: command, name: name, dx: dxText, dy: dyText, legacy: legacy)
+        let parsed = parsedSummary(token: token, command: command, name: name, dx: dxText, dy: dyText, legacy: legacy, isEncrypted: isEncrypted)
         let ip = endpointLabel(connection)
         DispatchQueue.main.async {
             self.clientConnected = true
@@ -265,7 +270,7 @@ final class UDPServer: ObservableObject {
         }
     }
 
-    private func parsedSummary(token: String, command: RemoteCommand, name: String, dx: String, dy: String, legacy: Bool) -> String {
+    private func parsedSummary(token: String, command: RemoteCommand, name: String, dx: String, dy: String, legacy: Bool, isEncrypted: Bool) -> String {
         let extra: String
         switch command {
         case .move, .scroll:
@@ -273,7 +278,8 @@ final class UDPServer: ObservableObject {
         default:
             extra = ""
         }
-        return "Auth: \(token) ✓  Command: \(name) ✓\(extra)\(legacy ? "  (legacy order)" : "")"
+        let encBadge = isEncrypted ? " [AES-GCM] " : " "
+        return "Auth: \(token)\(encBadge)✓  Command: \(name) ✓\(extra)\(legacy ? "  (legacy order)" : "")"
     }
 
     private func noteReceived() {

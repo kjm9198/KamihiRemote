@@ -59,28 +59,30 @@ final class TrackpadUIView: UIView {
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        engine?.handleCancelled(in: bounds.size)
-        identities.removeAll()
+        forward(changed: touches, event: event, phase: .cancelled)
+        for touch in touches { identities[ObjectIdentifier(touch)] = nil }
     }
 
     private func forward(changed: Set<UITouch>, event: UIEvent?, phase: UITouch.Phase) {
-        let all = event?.touches(for: self) ?? changed
-        let live: [UITouch]
+        let allInWindow = event?.allTouches?.filter { $0.view == self || $0.window == self.window } ?? changed
+        let activeTouches: [UITouch]
         if phase == .ended || phase == .cancelled {
-            live = all.filter { touch in
-                touch.phase == .began || touch.phase == .moved || touch.phase == .stationary
+            // Ending touches are excluded from activeTouches
+            activeTouches = allInWindow.filter { touch in
+                !changed.contains(touch) && (touch.phase == .began || touch.phase == .moved || touch.phase == .stationary)
             }
         } else {
-            live = Array(all.filter { $0.phase != .ended && $0.phase != .cancelled })
+            activeTouches = allInWindow.filter { $0.phase != .ended && $0.phase != .cancelled }
         }
+
         let changedSamples = changed.map(sample)
-        let activeSamples = live.map(sample)
+        let activeSamples = activeTouches.map(sample)
         let timestamp = changed.first?.timestamp ?? ProcessInfo.processInfo.systemUptime
         engine?.handle(changed: changedSamples, active: activeSamples, timestamp: timestamp, phase: phase, in: bounds.size)
     }
 
     private func sample(_ touch: UITouch) -> FingerSample {
-        FingerSample(id: identity(for: touch), point: touch.location(in: self))
+        FingerSample(id: identity(for: touch), point: touch.location(in: self), phase: touch.phase)
     }
 
     @discardableResult

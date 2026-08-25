@@ -1,6 +1,8 @@
 import CoreGraphics
 import Foundation
+#if canImport(UIKit)
 import UIKit
+#endif
 
 enum GestureEngineTests {
     private static let size = CGSize(width: 390, height: 640)
@@ -11,10 +13,13 @@ enum GestureEngineTests {
         oneFingerTap()
         doubleClick()
         twoFingerTap()
+        threeFingerTap()
         slowScroll()
         fastScrollMomentum()
+        frameRateIndependence()
         pinchLock()
         fingerCountTransitions()
+        asyncThreeFingerRelease()
         threeFingerCumulative()
         fourFinger()
         animationFingerCounts()
@@ -61,6 +66,18 @@ enum GestureEngineTests {
         precondition(ended.commands.contains(.rightClick), "two finger tap")
     }
 
+    private static func threeFingerTap() {
+        let g = engine()
+        let start = [
+            FingerSample(id: 1, point: CGPoint(x: 80, y: 90)),
+            FingerSample(id: 2, point: CGPoint(x: 130, y: 90)),
+            FingerSample(id: 3, point: CGPoint(x: 180, y: 90))
+        ]
+        _ = g.ingest(samples: start, timestamp: 4.5, phase: .began, in: size)
+        let ended = g.ingest(samples: start, timestamp: 4.58, phase: .ended, in: size)
+        precondition(ended.commands.contains(.shortcut("cmd+ctrl+d")), "three finger tap for Look Up")
+    }
+
     private static func slowScroll() {
         let g = engine()
         let a = [FingerSample(id: 1, point: CGPoint(x: 90, y: 120)), FingerSample(id: 2, point: CGPoint(x: 150, y: 120))]
@@ -87,6 +104,49 @@ enum GestureEngineTests {
         precondition(hasMomentum, "fast scroll momentum")
     }
 
+    private static func frameRateIndependence() {
+        // Test scroll momentum decay rate at simulated 60Hz and 120Hz
+        let scrollEngine60 = ScrollGestureEngine()
+        let scrollEngine120 = ScrollGestureEngine()
+
+        let startPoints = [CGPoint(x: 100, y: 100), CGPoint(x: 150, y: 100)]
+        _ = scrollEngine60.begin(points: startPoints, timestamp: 0)
+        _ = scrollEngine120.begin(points: startPoints, timestamp: 0)
+
+        // Inject initial movement
+        let endPoints = [CGPoint(x: 100, y: 200), CGPoint(x: 150, y: 200)]
+        _ = scrollEngine60.move(points: endPoints, timestamp: 0.05)
+        _ = scrollEngine120.move(points: endPoints, timestamp: 0.05)
+
+        _ = scrollEngine60.end(isTap: false)
+        _ = scrollEngine120.end(isTap: false)
+
+        precondition(scrollEngine60.isMomentumActive, "60Hz momentum began")
+        precondition(scrollEngine120.isMomentumActive, "120Hz momentum began")
+
+        // Tick 60Hz: 60 steps of 1/60s = 1.0s
+        var distance60 = 0.0
+        for _ in 0..<60 {
+            let cmds = scrollEngine60.tickMomentum(dt: 1.0 / 60.0)
+            for cmd in cmds {
+                if case .scroll(_, let dy, _) = cmd { distance60 += abs(dy) }
+            }
+        }
+
+        // Tick 120Hz: 120 steps of 1/120s = 1.0s
+        var distance120 = 0.0
+        for _ in 0..<120 {
+            let cmds = scrollEngine120.tickMomentum(dt: 1.0 / 120.0)
+            for cmd in cmds {
+                if case .scroll(_, let dy, _) = cmd { distance120 += abs(dy) }
+            }
+        }
+
+        // Total scroll distance over 1s must match within 8% between 60Hz and 120Hz
+        let diff = abs(distance60 - distance120) / max(distance60, 1.0)
+        precondition(diff < 0.08, "Frame rate independent physics test failed: 60Hz=\(distance60) vs 120Hz=\(distance120)")
+    }
+
     private static func pinchLock() {
         let g = engine()
         let a = [FingerSample(id: 1, point: CGPoint(x: 140, y: 200)), FingerSample(id: 2, point: CGPoint(x: 180, y: 200))]
@@ -109,6 +169,38 @@ enum GestureEngineTests {
         precondition(g.mode == .twoFingerCandidate || g.mode == .scrolling || g.mode == .pinching)
         _ = g.ingest(samples: [FingerSample(id: 2, point: CGPoint(x: 140, y: 110))], timestamp: 8.06, phase: .ended, in: size)
         precondition(g.mode == .pointer || g.mode == .tapCandidate || g.mode == .dragging)
+    }
+
+    private static func asyncThreeFingerRelease() {
+        // Physical scenario: 3 fingers swipe up, then lift sequentially (3 -> 2 -> 1 -> 0)
+        let g = engine()
+        let start = [
+            FingerSample(id: 1, point: CGPoint(x: 100, y: 200)),
+            FingerSample(id: 2, point: CGPoint(x: 150, y: 200)),
+            FingerSample(id: 3, point: CGPoint(x: 200, y: 200))
+        ]
+        _ = g.handle(changed: start, active: start, timestamp: 8.5, phase: .began, in: size)
+
+        // Move up 40pt
+        let moved = [
+            FingerSample(id: 1, point: CGPoint(x: 100, y: 160)),
+            FingerSample(id: 2, point: CGPoint(x: 150, y: 160)),
+            FingerSample(id: 3, point: CGPoint(x: 200, y: 160))
+        ]
+        _ = g.handle(changed: moved, active: moved, timestamp: 8.58, phase: .moved, in: size)
+        precondition(g.mode == .threeFingerSwipe, "mode must lock into threeFingerSwipe")
+
+        // Finger 1 lifts (remaining active: 2, 3)
+        _ = g.handle(changed: [moved[0]], active: [moved[1], moved[2]], timestamp: 8.60, phase: .ended, in: size)
+        precondition(g.mode == .threeFingerSwipe, "mode must STAY threeFingerSwipe after finger 1 lifts")
+
+        // Finger 2 lifts (remaining active: 3)
+        _ = g.handle(changed: [moved[1]], active: [moved[2]], timestamp: 8.61, phase: .ended, in: size)
+        precondition(g.mode == .threeFingerSwipe, "mode must STAY threeFingerSwipe after finger 2 lifts")
+
+        // Finger 3 lifts (remaining active: [])
+        let end3 = g.handle(changed: [moved[2]], active: [], timestamp: 8.62, phase: .ended, in: size)
+        precondition(end3.commands.contains(.system(.missionControl)), "Mission Control command must be emitted when final finger lifts")
     }
 
     private static func threeFingerCumulative() {

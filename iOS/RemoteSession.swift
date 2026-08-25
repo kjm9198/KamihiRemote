@@ -3,6 +3,7 @@ import Foundation
 import Network
 import SwiftUI
 import UIKit
+import CryptoKit
 
 @MainActor
 final class RemoteSession: ObservableObject, CommandSending {
@@ -32,6 +33,7 @@ final class RemoteSession: ObservableObject, CommandSending {
     @Published var pendingAppName = ""
 
     private var sessionID: String?
+    private var sessionKey: SymmetricKey?
     private var activeHost: HostIdentity?
     private var reconnectAttempt = 0
     private var reconnectWork: DispatchWorkItem?
@@ -180,6 +182,7 @@ final class RemoteSession: ObservableObject, CommandSending {
         tcp.stop()
         udp.stop()
         sessionID = nil
+        sessionKey = nil
         connectionState = .idle
         statusText = reason
         engine.syncConnection(false)
@@ -196,7 +199,7 @@ final class RemoteSession: ObservableObject, CommandSending {
         case .helloAck(let session, let name, let hostID, let realtimePort):
             sessionID = session
             hostName = name
-            udp.updateSession(session)
+            udp.updateSession(session, sessionKey: sessionKey)
             if var host = activeHost {
                 host.hostID = hostID
                 host.displayName = name
@@ -218,13 +221,24 @@ final class RemoteSession: ObservableObject, CommandSending {
         case .pairAck(let ok, let session):
             if ok {
                 sessionID = session
-                udp.updateSession(session)
+                udp.updateSession(session, sessionKey: sessionKey)
                 markConnected()
             } else if isConnected == false {
                 statusText = "Waiting for Mac approval…"
             }
         case .pairDecision(let ok, _, let material):
             if ok {
+                let parts = material.split(separator: ":")
+                if parts.count >= 2 {
+                    let sess = String(parts[0])
+                    let macPubB64 = String(parts[1])
+                    if let macPubData = Data(base64Encoded: macPubB64) {
+                        let derivedKey = try? SessionCrypto.deriveSessionKey(ourPrivate: keys.privateKey, peerPublic: macPubData, salt: Data(sess.utf8))
+                        self.sessionKey = derivedKey
+                        self.sessionID = sess
+                        udp.updateSession(sess, sessionKey: derivedKey)
+                    }
+                }
                 markConnected()
             } else {
                 statusText = "Mac denied pairing"
@@ -279,7 +293,7 @@ final class RemoteSession: ObservableObject, CommandSending {
     private func configureUDP(host: String) {
         guard NetworkEndpoint.looksLikeNumericHost(host) else { return }
         let port = activeHost?.lastPort == 0 || activeHost?.lastPort == nil ? RemoteConstants.defaultUDPPort : activeHost!.lastPort
-        udp.configure(host: host, port: port, pairingCode: pairingCode, sessionID: sessionID)
+        udp.configure(host: host, port: port, pairingCode: pairingCode, sessionID: sessionID, sessionKey: sessionKey)
         if var hostIdentity = activeHost {
             hostIdentity.lastAddress = host
             activeHost = hostIdentity
