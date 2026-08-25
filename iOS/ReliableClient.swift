@@ -22,6 +22,7 @@ final class ReliableClient {
     private var pendingHeartbeat: (UInt64, Date)?
     private var missedHeartbeats = 0
     private var pendingCommands: [RemoteCommand] = []
+    private var writeInFlight = false
     private var generation = 0
 
     func connect(host: String, port: UInt16, pairingCode: String) {
@@ -64,6 +65,7 @@ final class ReliableClient {
                 self.lastFailure = error.localizedDescription
                 if self.isReady {
                     self.isReady = false
+                    self.writeInFlight = false
                     self.onDead?("waiting: \(error.localizedDescription)")
                 }
             case .failed(let error):
@@ -84,13 +86,12 @@ final class ReliableClient {
     func send(_ command: RemoteCommand) {
         queue.async { [weak self] in
             guard let self else { return }
-            if self.isReady {
-                self.write(command)
-            } else if self.pendingCommands.count < RemoteConstants.reliableQueueLimit {
-                self.pendingCommands.append(command)
-            } else {
-                self.onSendFailure?(command, "TCP not ready")
+            guard self.pendingCommands.count < RemoteConstants.reliableQueueLimit else {
+                self.onSendFailure?(command, "Reliable command queue full")
+                return
             }
+            self.pendingCommands.append(command)
+            self.flushPending()
         }
     }
 
@@ -106,6 +107,7 @@ final class ReliableClient {
         connection = nil
         buffer.removeAll()
         pendingHeartbeat = nil
+        writeInFlight = false
         if clearPendingCommands {
             pendingCommands.removeAll()
         }
@@ -122,6 +124,7 @@ final class ReliableClient {
         heartbeat?.cancel()
         heartbeat = nil
         isReady = false
+        writeInFlight = false
         connection?.stateUpdateHandler = nil
         connection?.cancel()
         connection = nil
@@ -131,23 +134,55 @@ final class ReliableClient {
         }
     }
 
+    /// Sends reliable user commands strictly one-at-a-time.
+    ///
+    /// The command stays at the head of `pendingCommands` until Network.framework
+    /// confirms it was processed. If the socket dies while a send is in flight,
+    /// the command remains queued and is retried after the reconnect. This keeps
+    /// deck actions, typing, and shortcuts ordered instead of silently losing the
+    /// command that happened to be crossing the wire when Wi-Fi changed paths.
     private func flushPending() {
-        let queued = pendingCommands
-        pendingCommands.removeAll()
-        queued.forEach(write)
-    }
+        guard isReady,
+              writeInFlight == false,
+              let connection,
+              let command = pendingCommands.first else { return }
 
-    private func write(_ command: RemoteCommand) {
-        guard let connection else {
-            onSendFailure?(command, "TCP socket missing")
-            return
-        }
+        writeInFlight = true
+        let capturedGeneration = generation
         let data = RemotePacket.encodeV1(token: pairingCode, command: command)
         connection.send(content: data, completion: .contentProcessed { [weak self] error in
-            guard let self else { return }
+            guard let self,
+                  self.generation == capturedGeneration,
+                  self.connection != nil else { return }
+
+            self.writeInFlight = false
             if let error {
-                self.onSendFailure?(command, error.localizedDescription)
+                // Keep the command at index 0. `markDead` triggers RemoteSession's
+                // reconnect path, and `.ready` will call `flushPending()` again.
                 self.markDead("send: \(error.localizedDescription)", notify: true)
+                return
+            }
+
+            if self.pendingCommands.first == command {
+                self.pendingCommands.removeFirst()
+            }
+            self.flushPending()
+        })
+    }
+
+    /// Heartbeats are connection-health probes rather than user actions. They are
+    /// intentionally not added to the retry queue so stale probes cannot delay
+    /// real commands after a reconnect.
+    private func writeHeartbeat(_ command: RemoteCommand) {
+        guard let connection else { return }
+        let capturedGeneration = generation
+        let data = RemotePacket.encodeV1(token: pairingCode, command: command)
+        connection.send(content: data, completion: .contentProcessed { [weak self] error in
+            guard let self,
+                  self.generation == capturedGeneration,
+                  self.connection != nil else { return }
+            if let error {
+                self.markDead("heartbeat send: \(error.localizedDescription)", notify: true)
             }
         })
     }
@@ -168,7 +203,7 @@ final class ReliableClient {
             self.heartbeatID += 1
             let id = self.heartbeatID
             self.pendingHeartbeat = (id, Date())
-            self.write(.heartbeat(id: id, timestamp: Date().timeIntervalSince1970))
+            self.writeHeartbeat(.heartbeat(id: id, timestamp: Date().timeIntervalSince1970))
         }
         timer.resume()
         heartbeat = timer
