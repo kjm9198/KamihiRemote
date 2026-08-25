@@ -638,14 +638,21 @@ private struct VoicePulseRings: View {
 }
 
 final class PromptSpeechRecognizer: NSObject, SFSpeechRecognizerDelegate {
-    private let speech = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
-    private let audioEngine = AVAudioEngine()
+    private var speech: SFSpeechRecognizer?
+    private var audioEngine: AVAudioEngine?
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
 
+    override init() {
+        super.init()
+        let locale = SFSpeechRecognizer.supportedLocales().contains(Locale.current) ? Locale.current : Locale(identifier: "en-US")
+        speech = SFSpeechRecognizer(locale: locale) ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+        speech?.delegate = self
+    }
+
     func requestAccess(_ completion: @escaping (Bool) -> Void) {
         SFSpeechRecognizer.requestAuthorization { status in
-            AVAudioApplication.requestRecordPermission { mic in
+            AVAudioSession.sharedInstance().requestRecordPermission { mic in
                 DispatchQueue.main.async {
                     completion(status == .authorized && mic)
                 }
@@ -658,22 +665,35 @@ final class PromptSpeechRecognizer: NSObject, SFSpeechRecognizerDelegate {
         guard let speech, speech.isAvailable else {
             throw NSError(domain: "KamihiSpeech", code: 1, userInfo: [NSLocalizedDescriptionKey: "Speech recognition unavailable"])
         }
+
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .measurement, options: .duckOthers)
+        try session.setCategory(.playAndRecord, mode: .measurement, options: [.duckOthers, .defaultToSpeaker, .allowBluetoothHFP])
         try session.setActive(true, options: .notifyOthersOnDeactivation)
+
+        let engine = AVAudioEngine()
+        self.audioEngine = engine
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
+        if #available(iOS 16.0, *) {
+            request.addsPunctuation = true
+        }
         self.request = request
 
-        let input = audioEngine.inputNode
+        let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
+        guard format.channelCount > 0, format.sampleRate > 0 else {
+            throw NSError(domain: "KamihiSpeech", code: 2, userInfo: [NSLocalizedDescriptionKey: "Microphone hardware unavailable"])
+        }
+
         input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
             request.append(buffer)
         }
-        audioEngine.prepare()
-        try audioEngine.start()
+
+        engine.prepare()
+        try engine.start()
+
         task = speech.recognitionTask(with: request) { result, error in
             if let result {
                 DispatchQueue.main.async {
@@ -691,8 +711,13 @@ final class PromptSpeechRecognizer: NSObject, SFSpeechRecognizerDelegate {
         task = nil
         request?.endAudio()
         request = nil
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
-        try? AVAudioSession.sharedInstance().setActive(false)
+        if let engine = audioEngine {
+            if engine.isRunning {
+                engine.stop()
+                engine.inputNode.removeTap(onBus: 0)
+            }
+            audioEngine = nil
+        }
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 }

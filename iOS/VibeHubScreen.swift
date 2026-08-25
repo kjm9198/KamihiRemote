@@ -1,29 +1,48 @@
 import SwiftUI
 
-/// Vibe Mode Mission Control — Compact developer command HUD + integrated Trackpad.
+/// Vibe Mode Mission Control — Center Vibe Voice Button, Antigravity Project Switching & Integrated Trackpad.
 struct VibeHubScreen: View {
     @EnvironmentObject private var session: RemoteSession
-    @State private var commandInput = ""
-    @State private var showsDictateSheet = false
+
+    @AppStorage("voiceAgentDestination") private var destinationRaw = VoiceAgentDestination.antigravity.rawValue
+    @AppStorage("voiceAgentProjectID") private var selectedProjectID = "kamihi-remote"
+    @AppStorage("voiceAgentAutoSend") private var autoSend = true
+
+    @State private var projects: [VoiceProject] = VoiceProjectStore.load()
+    @State private var showsProjectManager = false
+    @State private var promptText = ""
+    @State private var isListening = false
+    @State private var isSending = false
+    @State private var vibeStatus = "Tap the mic to vibe code"
+    @State private var recognizer = PromptSpeechRecognizer()
+
     @State private var isDevServerRunning = true
-    @State private var activeProject = "KamihiRemote"
+
+    private var destination: VoiceAgentDestination {
+        VoiceAgentDestination(rawValue: destinationRaw) ?? .antigravity
+    }
+
+    private var selectedProject: VoiceProject? {
+        projects.first(where: { $0.id == selectedProjectID }) ?? projects.first
+    }
 
     var body: some View {
         GeometryReader { geo in
-            let trackpadHeight = max(180, geo.size.height * 0.46)
-            let topHeight = max(180, geo.size.height - trackpadHeight - 12)
+            let trackpadHeight = max(170, geo.size.height * 0.44)
+            let topHeight = max(220, geo.size.height - trackpadHeight - 10)
 
-            VStack(spacing: 8) {
-                // Top Mission Control HUD (Scrollable if needed on smaller screens)
+            VStack(spacing: 6) {
+                // Top Vibe Control Center
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 10) {
+                    VStack(spacing: 8) {
                         heroStatusRow
-                        projectBar
-                        aiCommandBar
-                        quickActionsRow
+                        projectSelectorBar
+                        centerMicrophoneSection
+                        promptInputBar
+                        destinationPills
                     }
                     .padding(.horizontal, KamihiUI.pad)
-                    .padding(.top, 4)
+                    .padding(.top, 2)
                     .padding(.bottom, 2)
                 }
                 .frame(height: topHeight)
@@ -54,10 +73,21 @@ struct VibeHubScreen: View {
                 .frame(height: trackpadHeight)
             }
         }
-        .sheet(isPresented: $showsDictateSheet) {
-            DictatePromptSheet().environmentObject(session)
+        .sheet(isPresented: $showsProjectManager) {
+            VoiceProjectManagerSheet(projects: $projects, selectedProjectID: $selectedProjectID)
+        }
+        .onAppear {
+            projects = VoiceProjectStore.load()
+            if selectedProjectID.isEmpty || !projects.contains(where: { $0.id == selectedProjectID }) {
+                selectedProjectID = projects.first?.id ?? "kamihi-remote"
+            }
+        }
+        .onDisappear {
+            recognizer.stop()
         }
     }
+
+    // MARK: - Subviews
 
     private var heroStatusRow: some View {
         HStack(spacing: 8) {
@@ -95,22 +125,51 @@ struct VibeHubScreen: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
         .glassEffect(.regular, in: .rect(cornerRadius: KamihiUI.radiusMedium))
     }
 
-    private var projectBar: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(isDevServerRunning ? Color.green : Color.red)
-                    .frame(width: 6, height: 6)
-                Text(activeProject)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-                Text(isDevServerRunning ? ":3000" : "off")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(isDevServerRunning ? .green : .red)
+    private var projectSelectorBar: some View {
+        HStack(spacing: 6) {
+            Menu {
+                ForEach(projects) { project in
+                    Button {
+                        selectedProjectID = project.id
+                        VoiceAgentRouter.switchWorkspace(to: project, destination: destination, session: session)
+                        Haptics.touchTap()
+                    } label: {
+                        HStack {
+                            Text(project.name)
+                            if project.id == selectedProjectID {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+
+                Divider()
+
+                Button {
+                    showsProjectManager = true
+                    Haptics.touchTap()
+                } label: {
+                    Label("Manage Projects…", systemImage: "folder.badge.gearshape")
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.cyan)
+                    Text(selectedProject?.name ?? "Select Project")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .glassEffect(.regular.interactive(), in: .capsule)
             }
 
             Spacer()
@@ -122,7 +181,7 @@ struct VibeHubScreen: View {
                 Label("Preview", systemImage: "globe")
                     .font(.system(size: 11, weight: .semibold))
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 5)
             }
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: .capsule)
@@ -145,100 +204,213 @@ struct VibeHubScreen: View {
             .glassEffect(.regular.interactive(), in: .circle)
             .foregroundStyle(isDevServerRunning ? .orange : .green)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
         .glassEffect(.regular, in: .rect(cornerRadius: KamihiUI.radiusMedium))
     }
 
-    private var aiCommandBar: some View {
+    private var centerMicrophoneSection: some View {
+        VStack(spacing: 6) {
+            ZStack {
+                if isListening {
+                    TimelineView(.animation) { context in
+                        let time = context.date.timeIntervalSinceReferenceDate
+                        ZStack {
+                            ForEach(0..<3, id: \.self) { index in
+                                let raw = (time / 1.4) + (Double(index) / 3.0)
+                                let phase = raw - floor(raw)
+                                Circle()
+                                    .stroke(Color.cyan.opacity((1 - phase) * 0.4), lineWidth: 1.5)
+                                    .scaleEffect(0.6 + (phase * 0.5))
+                            }
+                        }
+                    }
+                    .frame(width: 110, height: 110)
+                    .allowsHitTesting(false)
+                }
+
+                Button {
+                    handleMicrophoneTap()
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: isListening
+                                        ? [Color.cyan, Color.blue]
+                                        : [Color.white, Color(white: 0.88)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 64, height: 64)
+                            .shadow(color: (isListening ? Color.cyan : Color.white).opacity(0.35), radius: 14, y: 4)
+
+                        Image(systemName: isListening ? "waveform" : "mic.fill")
+                            .font(.system(size: isListening ? 26 : 24, weight: .bold))
+                            .foregroundStyle(.black)
+                    }
+                }
+                .buttonStyle(.plain)
+                .scaleEffect(isListening ? 1.05 : 1.0)
+                .animation(.snappy(duration: 0.2), value: isListening)
+                .disabled(isSending)
+            }
+            .frame(height: 74)
+
+            Text(isSending ? "Routing to \(destination.title)…" : (isListening ? "Listening… tap to send" : vibeStatus))
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(isListening ? .cyan : .white.opacity(0.6))
+                .multilineTextAlignment(.center)
+                .lineLimit(1)
+        }
+    }
+
+    private var promptInputBar: some View {
         HStack(spacing: 6) {
-            TextField("Ask agent / run command…", text: $commandInput)
+            TextField("Prompt to \(destination.title)…", text: $promptText)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13, design: .rounded))
+                .font(.system(size: 12, design: .rounded))
                 .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                .padding(.vertical, 7)
                 .glassEffect(.regular, in: .rect(cornerRadius: KamihiUI.radiusMedium))
                 .foregroundStyle(.white)
                 .submitLabel(.send)
                 .onSubmit {
-                    executeCommand()
+                    sendCurrentPrompt()
                 }
 
-            Button {
-                showsDictateSheet = true
-                Haptics.touchTap()
-            } label: {
-                Image(systemName: "mic.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .frame(width: 34, height: 34)
-                    .foregroundStyle(.white)
-            }
-            .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: .circle)
-            .accessibilityLabel("Voice prompt")
-
-            if !commandInput.isEmpty {
+            if !promptText.isEmpty {
                 Button {
-                    executeCommand()
+                    sendCurrentPrompt()
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 24, weight: .semibold))
+                        .font(.system(size: 22, weight: .bold))
                         .foregroundStyle(.cyan)
                 }
                 .buttonStyle(.plain)
+                .disabled(isSending)
             }
         }
     }
 
-    private var quickActionsRow: some View {
+    private var destinationPills: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                quickChip("Git Status", icon: "arrow.triangle.branch") {
-                    session.send(.typeText("git status\n"))
-                }
-                quickChip("Git Diff", icon: "doc.text.magnifyingglass") {
-                    session.send(.typeText("git diff\n"))
-                }
-                quickChip("Desktop ←", icon: "arrow.left.square.fill") {
-                    session.send(.system(.previousDesktop))
-                }
-                quickChip("Desktop →", icon: "arrow.right.square.fill") {
-                    session.send(.system(.nextDesktop))
-                }
-                quickChip("Mission", icon: "rectangle.3.group.fill") {
-                    session.send(.system(.missionControl))
-                }
-                quickChip("Screenshot", icon: "camera.viewfinder") {
-                    session.send(.shortcut("cmd+shift+4"))
+            HStack(spacing: 5) {
+                ForEach(VoiceAgentDestination.allCases) { item in
+                    let selected = item == destination
+                    Button {
+                        destinationRaw = item.rawValue
+                        Haptics.touchTap()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: item.symbol)
+                                .font(.system(size: 10, weight: .semibold))
+                            Text(item.title)
+                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .foregroundStyle(selected ? .cyan : .white.opacity(0.6))
+                        .background(selected ? Color.cyan.opacity(0.16) : Color.clear, in: Capsule())
+                        .overlay(
+                            Capsule()
+                                .stroke(selected ? Color.cyan.opacity(0.6) : Color.white.opacity(0.08), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
     }
 
-    private func quickChip(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
-        Button {
-            action()
-            Haptics.touchTap()
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.cyan)
-                Text(title)
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.85))
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 6)
-            .glassEffect(.regular.interactive(), in: .capsule)
+    // MARK: - Voice Actions
+
+    private func handleMicrophoneTap() {
+        guard !isSending else { return }
+        if isListening {
+            stopListeningAndSend()
+        } else {
+            startListening()
         }
-        .buttonStyle(.plain)
     }
 
-    private func executeCommand() {
-        guard !commandInput.isEmpty else { return }
-        session.send(.typeText(commandInput + "\n"))
-        commandInput = ""
+    private func startListening() {
+        recognizer.requestAccess { granted in
+            guard granted else {
+                vibeStatus = "Enable Mic & Speech in Settings"
+                Haptics.rightClick()
+                return
+            }
+
+            promptText = ""
+            do {
+                try recognizer.start { text, isFinal in
+                    promptText = text
+                    if isFinal && autoSend {
+                        stopListeningAndSend()
+                    }
+                }
+                withAnimation(.snappy(duration: 0.2)) {
+                    isListening = true
+                }
+                vibeStatus = "Listening…"
+                Haptics.gesture()
+            } catch {
+                vibeStatus = error.localizedDescription
+                Haptics.rightClick()
+            }
+        }
+    }
+
+    private func stopListeningAndSend() {
+        recognizer.stop()
+        withAnimation(.snappy(duration: 0.2)) {
+            isListening = false
+        }
         Haptics.touchTap()
+
+        let clean = promptText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else {
+            vibeStatus = "No voice heard. Tap to try again."
+            return
+        }
+
+        sendCurrentPrompt()
+    }
+
+    private func sendCurrentPrompt() {
+        let clean = promptText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, !isSending else { return }
+
+        guard session.isConnected else {
+            vibeStatus = "Connect to Mac first"
+            Haptics.rightClick()
+            return
+        }
+
+        recognizer.stop()
+        isListening = false
+        isSending = true
+        vibeStatus = "Sending to \(destination.title)…"
+
+        let targetDest = destination
+        let targetProj = selectedProject
+
+        Task { @MainActor in
+            await VoiceAgentRouter.route(
+                prompt: clean,
+                destination: targetDest,
+                project: targetProj,
+                session: session
+            ) { newStatus in
+                vibeStatus = newStatus
+            }
+
+            promptText = ""
+            isSending = false
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            vibeStatus = "Tap the mic to vibe code"
+        }
     }
 }

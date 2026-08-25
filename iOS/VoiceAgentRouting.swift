@@ -53,12 +53,24 @@ struct VoiceProject: Identifiable, Codable, Equatable, Hashable {
     }
 
     static let defaults: [VoiceProject] = [
-        VoiceProject(id: "kamihi-remote", name: "KamihiRemote", path: "~/KamihiRemote")
+        VoiceProject(id: "kamihi-remote", name: "KamihiRemote", path: "~/KamihiRemote"),
+        VoiceProject(id: "sproutsly", name: "Sproutsly", path: "~/Documents/VSC Projects/Sproutsly"),
+        VoiceProject(id: "bar-hanoi", name: "Bar Ha Noi", path: "~/Documents/Work Websites/Bar Ha Noi"),
+        VoiceProject(id: "bemy-matcha", name: "BeMyMatcha", path: "~/Documents/Work Websites/BeMyMatcha"),
+        VoiceProject(id: "vietnam-quan", name: "Vietnam Quan", path: "~/Documents/Work Websites/Vietnam Quan and Mart"),
+        VoiceProject(id: "yuki", name: "Yuki By WOA", path: "~/Documents/Work Websites/Yuki By WOA"),
+        VoiceProject(id: "kamihi-tracker", name: "Kamihi Studio Tracker", path: "~/Documents/Work Websites/Kamihi Studio Tracker"),
+        VoiceProject(id: "asian-house", name: "Asian House", path: "~/Documents/Work Websites/Asian House"),
+        VoiceProject(id: "hello-vietnam", name: "Hello Vietnam", path: "~/Documents/Work Websites/Hello Vietnam"),
+        VoiceProject(id: "portfolio", name: "Portfolio", path: "~/Documents/VSC Projects/Portfolio"),
+        VoiceProject(id: "calorie-tracking", name: "Calorie Tracking", path: "~/Documents/VSC Projects/Calorie Tracking"),
+        VoiceProject(id: "bubella", name: "Bubella", path: "~/Documents/Work Websites/Bubella"),
+        VoiceProject(id: "kas", name: "Kas", path: "~/Documents/VSC Projects/Kas")
     ]
 }
 
 enum VoiceProjectStore {
-    private static let key = "voiceAgentProjectsV1"
+    private static let key = "voiceAgentProjectsV2"
 
     static func load() -> [VoiceProject] {
         guard let data = UserDefaults.standard.data(forKey: key),
@@ -77,6 +89,13 @@ enum VoiceProjectStore {
 
 @MainActor
 enum VoiceAgentRouter {
+    static func switchWorkspace(to project: VoiceProject, destination: VoiceAgentDestination = .antigravity, session: RemoteSession) {
+        let app = shellQuote(destination.applicationName)
+        let path = shellPath(project.path)
+        session.send(.runCommand("open -a \(app) \(path) || open -a \(shellQuote(destination.applicationName + " IDE")) \(path)"))
+        session.flashAction("Switched to \(project.name)", success: true)
+    }
+
     static func route(
         prompt: String,
         destination: VoiceAgentDestination,
@@ -162,14 +181,14 @@ enum VoiceAgentRouter {
         if let project, project.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
             let app = shellQuote(destination.applicationName)
             let path = shellPath(project.path)
-            session.send(.runCommand("open -a \(app) \(path)"))
+            session.send(.runCommand("open -a \(app) \(path) || open -a \(shellQuote(destination.applicationName + " IDE")) \(path)"))
             return
         }
 
         if let hostApp = bestHostApp(for: destination, in: session.hostApps) {
             session.send(.openApp(bundleID: hostApp.bundleIdentifier))
         } else {
-            session.send(.runCommand("open -a \(shellQuote(destination.applicationName))"))
+            session.send(.runCommand("open -a \(shellQuote(destination.applicationName)) || open -a \(shellQuote(destination.applicationName + " IDE"))"))
         }
     }
 
