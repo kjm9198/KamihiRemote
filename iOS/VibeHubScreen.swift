@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Vibe Mode Mission Control — Center Vibe Voice Button, Antigravity Project Switching & Integrated Trackpad.
+/// Vibe Mode Mission Control — voice + text routing, project switching, reusable prompts and integrated trackpad.
 struct VibeHubScreen: View {
     @EnvironmentObject private var session: RemoteSession
 
@@ -15,6 +15,7 @@ struct VibeHubScreen: View {
     @State private var isSending = false
     @State private var vibeStatus = "Tap the mic to vibe code"
     @State private var recognizer = PromptSpeechRecognizer()
+    @State private var recentPrompts: [VibePromptHistoryEntry] = VibePromptHistoryStore.load()
 
     @State private var isDevServerRunning = true
 
@@ -28,26 +29,25 @@ struct VibeHubScreen: View {
 
     var body: some View {
         GeometryReader { geo in
-            let trackpadHeight = max(170, geo.size.height * 0.44)
-            let topHeight = max(220, geo.size.height - trackpadHeight - 10)
+            let trackpadHeight = max(170, geo.size.height * 0.42)
+            let topHeight = max(240, geo.size.height - trackpadHeight - 10)
 
             VStack(spacing: 6) {
-                // Top Vibe Control Center
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 8) {
                         heroStatusRow
                         projectSelectorBar
                         centerMicrophoneSection
                         promptInputBar
+                        promptShelf
                         destinationPills
                     }
                     .padding(.horizontal, KamihiUI.pad)
                     .padding(.top, 2)
-                    .padding(.bottom, 2)
+                    .padding(.bottom, 4)
                 }
                 .frame(height: topHeight)
 
-                // Bottom Integrated Trackpad Surface
                 VStack(spacing: 4) {
                     HStack {
                         Text("TRACKPAD")
@@ -78,6 +78,7 @@ struct VibeHubScreen: View {
         }
         .onAppear {
             projects = VoiceProjectStore.load()
+            recentPrompts = VibePromptHistoryStore.load()
             if selectedProjectID.isEmpty || !projects.contains(where: { $0.id == selectedProjectID }) {
                 selectedProjectID = projects.first?.id ?? "kamihi-remote"
             }
@@ -87,7 +88,7 @@ struct VibeHubScreen: View {
         }
     }
 
-    // MARK: - Subviews
+    // MARK: - Status + Project
 
     private var heroStatusRow: some View {
         HStack(spacing: 8) {
@@ -209,6 +210,8 @@ struct VibeHubScreen: View {
         .glassEffect(.regular, in: .rect(cornerRadius: KamihiUI.radiusMedium))
     }
 
+    // MARK: - Voice + Prompt Composer
+
     private var centerMicrophoneSection: some View {
         VStack(spacing: 6) {
             ZStack {
@@ -290,7 +293,78 @@ struct VibeHubScreen: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(isSending)
+                .accessibilityLabel("Send prompt")
             }
+        }
+    }
+
+    /// Reusable coding intents + locally persisted prompt history.
+    private var promptShelf: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(VibePromptPreset.defaults) { preset in
+                    Button {
+                        usePrompt(preset.prompt)
+                    } label: {
+                        Label(preset.title, systemImage: preset.symbol)
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.white.opacity(0.82))
+                    .glassEffect(.regular.interactive(), in: .capsule)
+                    .accessibilityLabel("Use \(preset.title) prompt")
+                }
+
+                if let last = recentPrompts.first {
+                    Button {
+                        usePrompt(last.prompt)
+                    } label: {
+                        Label("Repeat last", systemImage: "arrow.counterclockwise")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.cyan)
+                    .glassEffect(.regular.interactive(), in: .capsule)
+                    .accessibilityLabel("Reuse last prompt")
+                }
+
+                if recentPrompts.isEmpty == false {
+                    Menu {
+                        ForEach(recentPrompts.prefix(10)) { entry in
+                            Button {
+                                usePrompt(entry.prompt)
+                            } label: {
+                                VStack(alignment: .leading) {
+                                    Text(entry.shortTitle)
+                                    Text(entry.contextLabel)
+                                }
+                            }
+                        }
+
+                        Divider()
+
+                        Button(role: .destructive) {
+                            VibePromptHistoryStore.clear()
+                            recentPrompts = []
+                            Haptics.touchTap()
+                        } label: {
+                            Label("Clear Prompt History", systemImage: "trash")
+                        }
+                    } label: {
+                        Label("Recent", systemImage: "clock.arrow.circlepath")
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                    }
+                    .foregroundStyle(.white.opacity(0.72))
+                    .glassEffect(.regular.interactive(), in: .capsule)
+                }
+            }
+            .padding(.vertical, 1)
         }
     }
 
@@ -379,6 +453,14 @@ struct VibeHubScreen: View {
         sendCurrentPrompt()
     }
 
+    private func usePrompt(_ prompt: String) {
+        recognizer.stop()
+        isListening = false
+        promptText = prompt
+        vibeStatus = "Prompt ready — edit or send"
+        Haptics.touchTap()
+    }
+
     private func sendCurrentPrompt() {
         let clean = promptText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, !isSending else { return }
@@ -407,10 +489,119 @@ struct VibeHubScreen: View {
                 vibeStatus = newStatus
             }
 
+            VibePromptHistoryStore.record(
+                prompt: clean,
+                destination: targetDest,
+                projectName: targetProj?.name
+            )
+            recentPrompts = VibePromptHistoryStore.load()
             promptText = ""
             isSending = false
             try? await Task.sleep(nanoseconds: 1_200_000_000)
             vibeStatus = "Tap the mic to vibe code"
         }
+    }
+}
+
+private struct VibePromptPreset: Identifiable {
+    let id: String
+    let title: String
+    let symbol: String
+    let prompt: String
+
+    static let defaults: [VibePromptPreset] = [
+        VibePromptPreset(
+            id: "fix",
+            title: "Fix error",
+            symbol: "wrench.and.screwdriver.fill",
+            prompt: "Inspect the current error or failing behavior, find the root cause, implement the fix, run the relevant tests/build, and keep going until it passes."
+        ),
+        VibePromptPreset(
+            id: "continue",
+            title: "Continue",
+            symbol: "forward.fill",
+            prompt: "Continue implementing the current task from the existing project state. Inspect what is unfinished, choose the next logical step, implement it, and verify it."
+        ),
+        VibePromptPreset(
+            id: "test",
+            title: "Test + fix",
+            symbol: "checkmark.seal.fill",
+            prompt: "Run the relevant tests, lint and build. Fix every regression or failure you find, then rerun verification until everything is green."
+        ),
+        VibePromptPreset(
+            id: "polish",
+            title: "Polish UI",
+            symbol: "wand.and.sparkles",
+            prompt: "Review the current UI on mobile and desktop. Improve hierarchy, spacing, animations, accessibility and interaction polish without breaking functionality."
+        ),
+        VibePromptPreset(
+            id: "ship",
+            title: "Verify + ship",
+            symbol: "paperplane.fill",
+            prompt: "Review the current changes, run the relevant verification, fix any issues you find, then commit and push the verified work with a clear commit message."
+        )
+    ]
+}
+
+private struct VibePromptHistoryEntry: Identifiable, Codable, Equatable {
+    let id: UUID
+    let prompt: String
+    let destination: String
+    let projectName: String?
+    let createdAt: Date
+
+    var shortTitle: String {
+        let collapsed = prompt
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard collapsed.count > 54 else { return collapsed }
+        return String(collapsed.prefix(51)) + "…"
+    }
+
+    var contextLabel: String {
+        if let projectName, projectName.isEmpty == false {
+            return "\(projectName) • \(destination)"
+        }
+        return destination
+    }
+}
+
+private enum VibePromptHistoryStore {
+    private static let key = "vibePromptHistoryV1"
+    private static let limit = 20
+
+    static func load() -> [VibePromptHistoryEntry] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let decoded = try? JSONDecoder().decode([VibePromptHistoryEntry].self, from: data) else {
+            return []
+        }
+        return decoded.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    static func record(prompt: String, destination: VoiceAgentDestination, projectName: String?) {
+        let clean = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard clean.isEmpty == false else { return }
+
+        var items = load()
+        items.removeAll {
+            $0.prompt == clean && $0.destination == destination.title && $0.projectName == projectName
+        }
+        items.insert(
+            VibePromptHistoryEntry(
+                id: UUID(),
+                prompt: clean,
+                destination: destination.title,
+                projectName: projectName,
+                createdAt: Date()
+            ),
+            at: 0
+        )
+        items = Array(items.prefix(limit))
+        guard let data = try? JSONEncoder().encode(items) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
+
+    static func clear() {
+        UserDefaults.standard.removeObject(forKey: key)
     }
 }
