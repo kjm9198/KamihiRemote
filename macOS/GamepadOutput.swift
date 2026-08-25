@@ -36,6 +36,7 @@ final class KeyboardGamepadOutput: GamepadOutput {
     /// The physical key is released only after the final owner lets go.
     private var keyOwners: [UInt16: Set<String>] = [:]
     private var leftMouseOwners = Set<String>()
+    private var rightMouseOwners = Set<String>()
 
     private var leftTriggerDown = false
     private var rightTriggerDown = false
@@ -133,6 +134,11 @@ final class KeyboardGamepadOutput: GamepadOutput {
             leftMouseOwners.removeAll()
         }
 
+        if rightMouseOwners.isEmpty == false {
+            postRightMouse(down: false)
+            rightMouseOwners.removeAll()
+        }
+
         for key in keyOwners.keys {
             _ = InputEngine.keyUp(code: key, flags: 0)
         }
@@ -159,9 +165,8 @@ final class KeyboardGamepadOutput: GamepadOutput {
         case .click:
             setLeftMouse(down: down, owner: owner)
         case .rightClick:
-            if down {
-                _ = InputEngine.rightClick()
-            }
+            // Right mouse is a held gaming control (default L2 / aim), not a one-shot context click.
+            setRightMouse(down: down, owner: owner)
         case .system(let sys):
             if down {
                 _ = InputEngine.perform(sys)
@@ -329,6 +334,35 @@ final class KeyboardGamepadOutput: GamepadOutput {
         if leftMouseOwners.isEmpty {
             _ = InputEngine.mouseUp()
         }
+    }
+
+    private func setRightMouse(down: Bool, owner: String) {
+        if down {
+            guard rightMouseOwners.contains(owner) == false else { return }
+            let wasEmpty = rightMouseOwners.isEmpty
+            rightMouseOwners.insert(owner)
+            if wasEmpty {
+                postRightMouse(down: true)
+            }
+            return
+        }
+
+        guard rightMouseOwners.remove(owner) != nil else { return }
+        if rightMouseOwners.isEmpty {
+            postRightMouse(down: false)
+        }
+    }
+
+    private func postRightMouse(down: Bool) {
+        guard InputEngine.canInjectEvents else { return }
+        let point = CGEvent(source: nil)?.location ?? .zero
+        guard let event = CGEvent(
+            mouseEventSource: nil,
+            mouseType: down ? .rightMouseDown : .rightMouseUp,
+            mouseCursorPosition: point,
+            mouseButton: .right
+        ) else { return }
+        event.post(tap: .cghidEventTap)
     }
 }
 
