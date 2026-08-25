@@ -47,25 +47,23 @@ jobs:
 
       - name: Build macOS host
         run: |
-          set -o pipefail
           xcodebuild \
             -project KamihiRemote.xcodeproj \
             -scheme KamihiRemoteHost \
             -configuration Debug \
             -destination 'platform=macOS' \
             CODE_SIGNING_ALLOWED=NO \
-            build | xcbeautify
+            build
 
       - name: Build iOS app for Simulator
         run: |
-          set -o pipefail
           xcodebuild \
             -project KamihiRemote.xcodeproj \
             -scheme KamihiRemote \
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
-            build | xcbeautify
+            build
 
       - name: Simulator UI smoke screenshots
         env:
