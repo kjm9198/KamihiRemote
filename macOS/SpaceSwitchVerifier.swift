@@ -6,7 +6,7 @@ import Foundation
 /// worked when macOS has the corresponding Mission Control shortcut disabled or there
 /// is no adjacent Space to move to.
 enum SpaceSwitchVerifier {
-    static func perform(_ action: SystemAction, completion: @escaping @Sendable (Bool) -> Void) {
+    static func perform(_ action: SystemAction, completion: @escaping (Bool) -> Void) {
         guard action == .previousDesktop || action == .nextDesktop else {
             completion(InputEngine.perform(action))
             return
