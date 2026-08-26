@@ -9,6 +9,7 @@ final class TCPServer {
     private var advertisedService: NWListener.Service?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private var buffers: [ObjectIdentifier: Data] = [:]
+    private var handshakeConnections: Set<ObjectIdentifier> = []
     private let queue = DispatchQueue(label: "kamihi.tcp.server", qos: .userInitiated)
     private(set) var port = RemoteConstants.defaultTCPPort
     private var pairingCode = ""
@@ -72,6 +73,7 @@ final class TCPServer {
         connections.values.forEach { $0.cancel() }
         connections.removeAll()
         buffers.removeAll()
+        handshakeConnections.removeAll()
         InputEngine.releaseAll()
     }
 
@@ -119,6 +121,17 @@ final class TCPServer {
                         NSLog("Kamihi rejected unauthenticated TCP command: %@", command.name)
                         continue
                     }
+
+                    switch command {
+                    case .hello, .pair, .pairRequest:
+                        handshakeConnections.insert(id)
+                    default:
+                        guard handshakeConnections.contains(id) else {
+                            NSLog("Kamihi rejected pre-handshake TCP command: %@", command.name)
+                            continue
+                        }
+                    }
+
                     onCommand?(command, connection)
                 case .failure:
                     break
@@ -133,5 +146,6 @@ final class TCPServer {
         connection.cancel()
         connections[id] = nil
         buffers[id] = nil
+        handshakeConnections.remove(id)
     }
 }
