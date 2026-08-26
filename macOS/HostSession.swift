@@ -215,6 +215,7 @@ final class HostSession: ObservableObject {
 
     @discardableResult
     private func completeHandshake(to connection: NWConnection, deviceName: String, peerPublicKey: Data? = nil) -> String {
+        tcp.markAuthenticated(connection)
         connectedDeviceName = deviceName
         let connectionID = ObjectIdentifier(connection)
 

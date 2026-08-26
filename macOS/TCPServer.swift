@@ -68,6 +68,11 @@ final class TCPServer {
         }
     }
 
+    func markAuthenticated(_ connection: NWConnection) {
+        let id = ObjectIdentifier(connection)
+        handshakeConnections.insert(id)
+    }
+
     func stop() {
         listener?.cancel()
         listener = nil
@@ -134,22 +139,16 @@ final class TCPServer {
             if let line = String(data: lineData, encoding: .utf8) {
                 switch RemotePacket.parse(line) {
                 case .success(let token, let command, _, _, _, _):
-                    guard PairingSecret.matches(token, pairingCode) else {
-                        NSLog("Kamihi rejected unauthenticated TCP command: %@", command.name)
-                        continue
-                    }
-
                     switch command {
                     case .hello, .pair, .pairRequest:
-                        handshakeConnections.insert(id)
+                        onCommand?(command, connection)
                     default:
-                        guard handshakeConnections.contains(id) else {
-                            NSLog("Kamihi rejected pre-handshake TCP command: %@", command.name)
+                        guard handshakeConnections.contains(id) || PairingSecret.matches(token, pairingCode) else {
+                            NSLog("Kamihi rejected unauthenticated TCP command: %@", command.name)
                             continue
                         }
+                        onCommand?(command, connection)
                     }
-
-                    onCommand?(command, connection)
                 case .failure:
                     break
                 }
