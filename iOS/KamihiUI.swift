@@ -1,7 +1,9 @@
 import SwiftUI
 
 enum KamihiUI {
-    static let controlHeight: CGFloat = 44
+    // Keep shared navigation and utility controls comfortably above Apple's 44 pt
+    // minimum touch target so they are easier to hit one-handed and with motor impairments.
+    static let controlHeight: CGFloat = 48
     static let radiusLarge: CGFloat = 22
     static let radiusMedium: CGFloat = 16
     static let radiusSmall: CGFloat = 12
