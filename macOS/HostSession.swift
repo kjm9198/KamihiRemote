@@ -28,6 +28,7 @@ final class HostSession: ObservableObject {
     private let hostID = DeviceIdentity.deviceID
     private let keys = DeviceKeyPair.loadOrCreate(account: "mac-identity")
     private var failedAttempts = 0
+    private var authenticatedSessions: [ObjectIdentifier: String] = [:]
 
     init() {
         let stored = UserDefaults.standard.string(forKey: "pairingCode") ?? ""
@@ -47,9 +48,12 @@ final class HostSession: ObservableObject {
                 self?.handleReliable(command, connection: connection)
             }
         }
-        tcp.onDisconnect = {
-            InputEngine.releaseAll()
-            KeyboardGamepad.shared.reset()
+        tcp.onDisconnect = { [weak self] connection in
+            Task { @MainActor in
+                self?.authenticatedSessions[ObjectIdentifier(connection)] = nil
+                InputEngine.releaseAll()
+                KeyboardGamepad.shared.reset()
+            }
         }
 
         server.onUserAction = { [weak self] in
@@ -59,7 +63,7 @@ final class HostSession: ObservableObject {
         }
 
         server.start(pairingCode: pairingCode)
-        tcp.start()
+        tcp.start(pairingCode: pairingCode)
         advertise()
         accessibility.refresh()
         accessibility.promptIfNeeded()
@@ -108,6 +112,7 @@ final class HostSession: ObservableObject {
         pairingExpiresAt = Date().addingTimeInterval(RemoteConstants.pairingCodeTTL)
         failedAttempts = 0
         server.updatePairingCode(pairingCode)
+        tcp.updatePairingCode(pairingCode)
         refreshQR()
     }
 
@@ -118,9 +123,9 @@ final class HostSession: ObservableObject {
             TrustedPeer(deviceID: pending.deviceID, displayName: pending.deviceName, publicKey: pubData, lastUsed: Date())
         )
         trustedDevices = TrustedPeerStore.load()
-        completeHandshake(to: pending.connection, deviceName: pending.deviceName, peerPublicKey: pubData)
+        let establishedSession = completeHandshake(to: pending.connection, deviceName: pending.deviceName, peerPublicKey: pubData)
         let macPub = keys.publicKeyData.base64EncodedString()
-        tcp.send(.pairDecision(ok: true, deviceID: pending.deviceID, sessionMaterial: "\(sessionID):\(macPub)"), token: pairingCode, to: pending.connection)
+        tcp.send(.pairDecision(ok: true, deviceID: pending.deviceID, sessionMaterial: "\(establishedSession):\(macPub)"), token: pairingCode, to: pending.connection)
         connectedDeviceName = pending.deviceName
         pendingPairing = nil
         pairingExpiresAt = Date()
@@ -167,11 +172,12 @@ final class HostSession: ObservableObject {
             advertiser.stop()
             tcp.stop()
             server.stop()
+            authenticatedSessions.removeAll()
             InputEngine.releaseAll()
         } else {
             refreshAddress()
             server.start(pairingCode: pairingCode)
-            tcp.start()
+            tcp.start(pairingCode: pairingCode)
             advertise()
         }
     }
@@ -197,23 +203,57 @@ final class HostSession: ObservableObject {
         )
     }
 
-    private func completeHandshake(to connection: NWConnection, deviceName: String, peerPublicKey: Data? = nil) {
+    @discardableResult
+    private func completeHandshake(to connection: NWConnection, deviceName: String, peerPublicKey: Data? = nil) -> String {
         connectedDeviceName = deviceName
-        sessionID = UUID().uuidString
+        let connectionID = ObjectIdentifier(connection)
+
+        if let establishedSession = authenticatedSessions[connectionID] {
+            sessionID = establishedSession
+            if let peerPub = peerPublicKey, !peerPub.isEmpty {
+                let upgradedKey = try? SessionCrypto.deriveSessionKey(
+                    ourPrivate: keys.privateKey,
+                    peerPublic: peerPub,
+                    salt: Data(establishedSession.utf8)
+                )
+                server.updateSession(establishedSession, sessionKey: upgradedKey)
+            }
+            return establishedSession
+        }
+
+        let establishedSession = UUID().uuidString
+        sessionID = establishedSession
+        authenticatedSessions[connectionID] = establishedSession
+
         var sessionKey: SymmetricKey?
         if let peerPub = peerPublicKey, !peerPub.isEmpty {
-            sessionKey = try? SessionCrypto.deriveSessionKey(ourPrivate: keys.privateKey, peerPublic: peerPub, salt: Data(sessionID.utf8))
+            sessionKey = try? SessionCrypto.deriveSessionKey(
+                ourPrivate: keys.privateKey,
+                peerPublic: peerPub,
+                salt: Data(establishedSession.utf8)
+            )
         } else if let peer = TrustedPeerStore.load().first(where: { $0.displayName == deviceName }), !peer.publicKey.isEmpty {
-            sessionKey = try? SessionCrypto.deriveSessionKey(ourPrivate: keys.privateKey, peerPublic: peer.publicKey, salt: Data(sessionID.utf8))
+            sessionKey = try? SessionCrypto.deriveSessionKey(
+                ourPrivate: keys.privateKey,
+                peerPublic: peer.publicKey,
+                salt: Data(establishedSession.utf8)
+            )
         }
-        server.updateSession(sessionID, sessionKey: sessionKey)
+
+        server.updateSession(establishedSession, sessionKey: sessionKey)
         tcp.send(
-            .helloAck(sessionID: sessionID, hostName: Host.current().localizedName ?? "Mac", hostID: hostID, realtimePort: RemoteConstants.defaultUDPPort),
+            .helloAck(
+                sessionID: establishedSession,
+                hostName: Host.current().localizedName ?? "Mac",
+                hostID: hostID,
+                realtimePort: RemoteConstants.defaultUDPPort
+            ),
             token: pairingCode,
             to: connection
         )
-        tcp.send(.pairAck(ok: true, sessionID: sessionID), token: pairingCode, to: connection)
+        tcp.send(.pairAck(ok: true, sessionID: establishedSession), token: pairingCode, to: connection)
         broadcastActiveApp(to: connection)
+        return establishedSession
     }
 
     private func handleReliable(_ command: RemoteCommand, connection: NWConnection) {
@@ -222,18 +262,38 @@ final class HostSession: ObservableObject {
             connectedDeviceName = deviceName
             let peerPub = TrustedPeerStore.load().first(where: { $0.deviceID == deviceID })?.publicKey
             completeHandshake(to: connection, deviceName: deviceName, peerPublicKey: peerPub)
+
         case .pair(let code, let deviceID):
+            guard PairingSecret.matches(code, pairingCode) else {
+                failedAttempts += 1
+                tcp.send(.pairAck(ok: false, sessionID: sessionID), token: pairingCode, to: connection)
+                return
+            }
             connectedDeviceName = connectedDeviceName.isEmpty ? "iPhone" : connectedDeviceName
             let peerPub = TrustedPeerStore.load().first(where: { $0.deviceID == deviceID })?.publicKey
             completeHandshake(to: connection, deviceName: connectedDeviceName, peerPublicKey: peerPub)
+
         case .pairRequest(let deviceID, let deviceName, let publicKey, let code):
-            let pubData = Data(base64Encoded: publicKey) ?? Data()
+            guard PairingSecret.matches(code, pairingCode),
+                  let pubData = Data(base64Encoded: publicKey),
+                  pubData.isEmpty == false else {
+                failedAttempts += 1
+                tcp.send(.pairDecision(ok: false, deviceID: deviceID, sessionMaterial: "-"), token: pairingCode, to: connection)
+                return
+            }
+
             TrustedPeerStore.upsert(
                 TrustedPeer(deviceID: deviceID, displayName: deviceName, publicKey: pubData, lastUsed: Date())
             )
-            completeHandshake(to: connection, deviceName: deviceName, peerPublicKey: pubData)
+            trustedDevices = TrustedPeerStore.load()
+            let establishedSession = completeHandshake(to: connection, deviceName: deviceName, peerPublicKey: pubData)
             let macPub = keys.publicKeyData.base64EncodedString()
-            tcp.send(.pairDecision(ok: true, deviceID: deviceID, sessionMaterial: "\(sessionID):\(macPub)"), token: pairingCode, to: connection)
+            tcp.send(
+                .pairDecision(ok: true, deviceID: deviceID, sessionMaterial: "\(establishedSession):\(macPub)"),
+                token: pairingCode,
+                to: connection
+            )
+
         case .requestAppList:
             let apps = AppCatalog.launchableApplications()
             tcp.send(.appListBegin(count: apps.count), token: pairingCode, to: connection)
@@ -241,23 +301,31 @@ final class HostSession: ObservableObject {
                 tcp.send(.appEntry(name: app.displayName, bundleID: app.bundleIdentifier), token: pairingCode, to: connection)
             }
             tcp.send(.appListEnd, token: pairingCode, to: connection)
+
         case .requestActiveApp:
             broadcastActiveApp(to: connection)
+
         case .heartbeat(let id, let timestamp):
             tcp.send(.heartbeatAck(id: id, timestamp: timestamp), token: pairingCode, to: connection)
+
         case .releaseAll:
             InputEngine.releaseAll()
+
         case .revokeDevice(let deviceID):
             revokeDevice(deviceID)
+
         case .syncControllerMapping(let mapping):
             KeyboardGamepad.shared.mapping = mapping
             NSLog("Kamihi updated controller mapping profile: %@", mapping.profile.rawValue)
+
         case .requestFocusedText:
             sendFocusedText(to: connection)
+
         case .action(let id, let inner):
             Task { @MainActor in
                 await self.executeAcknowledged(id: id, command: inner, connection: connection)
             }
+
         default:
             if command.shouldAcknowledge {
                 Task { @MainActor in
