@@ -461,7 +461,18 @@ indirect enum RemoteCommand: Equatable, Sendable {
     }
 
     private func quoted(_ value: String) -> String {
-        let escaped = value.replacingOccurrences(of: "\"", with: "'").replacingOccurrences(of: "\n", with: " ")
-        return "\"\(escaped)\""
+    var escaped = ""
+    escaped.reserveCapacity(value.utf8.count)
+    for character in value {
+        switch character {
+        case "\\": escaped += "\\\\"
+        case "\"": escaped += "\\\""
+        case "\n": escaped += "\\n"
+        case "\r": escaped += "\\r"
+        case "\t": escaped += "\\t"
+        default: escaped.append(character)
+        }
     }
+    return "\"\(escaped)\""
+}
 }

@@ -96,6 +96,9 @@ enum RemotePacket {
         expectSuccess("163158 ACTION_ACK 9c7 FAIL \"Desktop did not change\"", token: "163158", .actionAck(id: "9c7", success: false, message: "Desktop did not change"))
         expectSuccess("163158 REQUEST_FOCUSED_TEXT", token: "163158", .requestFocusedText)
         expectSuccess("163158 FOCUSED_TEXT value Hello", token: "163158", .focusedText(status: .value, value: "Hello"))
+        let exactText = "let json = {\"message\": \"xin chào / cześć\"}\n\tprint(\"\\path\\to\\file 😀\")\r\n"
+    expectSuccess(String(decoding: encodeV1(token: "163158", command: .typeText(exactText)), as: UTF8.self), token: "163158", .typeText(exactText))
+    expectSuccess(String(decoding: encodeV1(token: "163158", command: .focusedText(status: .value, value: exactText)), as: UTF8.self), token: "163158", .focusedText(status: .value, value: exactText))
         expectSuccess("163158 ACTIVE_APP com.microsoft.VSCode \"Visual Studio Code\"", token: "163158", .activeApp(bundleID: "com.microsoft.VSCode", name: "Visual Studio Code"))
         expectSuccess("163158 REQUEST_ACTIVE_APP", token: "163158", .requestActiveApp)
         expectSuccess("163158 RUN_COMMAND \"git status\"", token: "163158", .runCommand("git status"))
@@ -429,33 +432,59 @@ enum RemotePacket {
     }
 
     private static func tokenize(_ line: String) -> [String] {
-        var parts: [String] = []
-        var current = ""
-        var inQuote = false
-        for character in line {
-            if character == "\"" {
-                inQuote.toggle()
-                continue
-            }
-            if character.isWhitespace, !inQuote {
-                if !current.isEmpty {
-                    parts.append(current)
-                    current.removeAll(keepingCapacity: true)
+    var parts: [String] = []
+    var current = ""
+    var inQuote = false
+    var isEscaping = false
+
+    for character in line {
+        if isEscaping {
+            if inQuote {
+                switch character {
+                case "n": current.append("\n")
+                case "r": current.append("\r")
+                case "t": current.append("\t")
+                case "\"": current.append("\"")
+                case "\\": current.append("\\")
+                default:
+                    current.append("\\")
+                    current.append(character)
                 }
             } else {
+                current.append("\\")
                 current.append(character)
             }
+            isEscaping = false
+            continue
         }
-        if !current.isEmpty { parts.append(current) }
-        return parts
+
+        if character == "\\", inQuote {
+            isEscaping = true
+            continue
+        }
+        if character == "\"" {
+            inQuote.toggle()
+            continue
+        }
+        if character.isWhitespace, !inQuote {
+            if !current.isEmpty {
+                parts.append(current)
+                current.removeAll(keepingCapacity: true)
+            }
+        } else {
+            current.append(character)
+        }
     }
+    if isEscaping { current.append("\\") }
+    if !current.isEmpty { parts.append(current) }
+    return parts
+}
 
     private static func unquote(_ value: String) -> String {
-        var text = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.hasPrefix("\"") { text.removeFirst() }
-        if text.hasSuffix("\"") { text.removeLast() }
-        return text
-    }
+    // tokenize(_:) already removes wire quotes and decodes escapes.
+    // Boundary whitespace is meaningful for keyboard and mirrored text.
+    value
+}
 
     private static func looksLikeCommand(_ value: String) -> Bool {
         [
