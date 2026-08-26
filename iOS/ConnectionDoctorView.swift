@@ -1,6 +1,45 @@
 import SwiftUI
 import UIKit
 
+struct KamihiAppShell: View {
+    @EnvironmentObject private var session: RemoteSession
+    @State private var showsConnectionDoctor = false
+
+    var body: some View {
+        KamihiPolishedRootView()
+            .overlay(alignment: .bottomTrailing) {
+                if !session.isConnected || session.preferences.showDeveloperDiagnostics {
+                    Button {
+                        showsConnectionDoctor = true
+                        Haptics.touchTap()
+                    } label: {
+                        Image(systemName: "stethoscope")
+                            .font(.system(size: 16, weight: .bold))
+                            .frame(width: 42, height: 42)
+                            .foregroundStyle(session.isConnected ? .cyan : .orange)
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .padding(.trailing, 12)
+                    .padding(.bottom, 68)
+                    .accessibilityLabel("Connection Doctor")
+                }
+            }
+            .sheet(isPresented: $showsConnectionDoctor) {
+                NavigationStack {
+                    ConnectionDoctorView()
+                        .environmentObject(session)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { showsConnectionDoctor = false }
+                            }
+                        }
+                }
+                .preferredColorScheme(.dark)
+            }
+    }
+}
+
 struct ConnectionDoctorView: View {
     @EnvironmentObject private var session: RemoteSession
     @State private var copied = false
