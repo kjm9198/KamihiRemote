@@ -58,7 +58,8 @@ struct VibeMacroBar: View {
                     Haptics.touchTap()
                 } label: {
                     Label("Add Macro", systemImage: "plus.circle.fill")
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .font(.system(.caption2, design: .rounded, weight: .semibold))
+                        .lineLimit(1)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 5)
                         .frame(minHeight: 44)
@@ -93,7 +94,8 @@ struct VibeMacroBar: View {
                         Text("\(macros.count)")
                             .foregroundStyle(.secondary)
                     }
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(.system(.caption2, design: .rounded, weight: .semibold))
+                    .lineLimit(1)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 5)
                     .frame(minHeight: 44)
@@ -204,7 +206,7 @@ private struct VibeMacroManagerSheet: View {
                                     Haptics.touchTap()
                                 } label: {
                                     Image(systemName: symbol)
-                                        .font(.system(size: 16, weight: .semibold))
+                                        .font(.system(.body, design: .rounded, weight: .semibold))
                                         .foregroundStyle(selectedSymbol == symbol ? .mint : .secondary)
                                         .frame(width: 44, height: 44)
                                         .background(
