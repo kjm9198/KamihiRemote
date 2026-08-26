@@ -189,7 +189,7 @@ struct GameSessionManagerSheet: View {
                     }
                 }
 
-                Section("Save Current Setup") {
+                Section {
                     TextField("Session name, e.g. Minecraft", text: $sessionName)
 
                     Picker("Launch app", selection: $selectedBundleID) {
@@ -211,6 +211,8 @@ struct GameSessionManagerSheet: View {
                         Label("Save Game Session", systemImage: "plus.circle.fill")
                     }
                     .disabled(cleanName.isEmpty)
+                } header: {
+                    Text("Save Current Setup")
                 } footer: {
                     Text("Tune the controller in Settings first, then save that exact mapping, layout and stick feel here. Selecting the session restores everything in one tap and can launch its Mac app.")
                 }
