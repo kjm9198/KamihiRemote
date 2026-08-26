@@ -1,0 +1,32 @@
+name: Apple Integration Smoke
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  simulator-host-smoke:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Run iPhone + Mac integration smoke
+        run: bash scripts/apple-integration-smoke.sh
+
+      - name: Upload smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kamihi-integration-smoke
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/kamihi-smoke/*.png
+            ${{ runner.temp }}/kamihi-smoke/*.log
