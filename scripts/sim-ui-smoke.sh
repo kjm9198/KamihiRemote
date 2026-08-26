@@ -17,15 +17,26 @@ if [[ -z "$SIM" ]]; then
   exit 1
 fi
 
+APP="$DERIVED/Build/Products/Debug-iphonesimulator/KamihiRemote.app"
 echo "Using simulator: $SIM"
-echo "Building KamihiRemote (Debug)…"
-xcodebuild -project "$ROOT/KamihiRemote.xcodeproj" -scheme KamihiRemote \
-  -destination "platform=iOS Simulator,name=$SIM" \
-  -derivedDataPath "$DERIVED" -configuration Debug CODE_SIGNING_ALLOWED=NO build >/dev/null
+
+if [[ "${SKIP_BUILD:-false}" != "true" ]]; then
+  echo "Building KamihiRemote (Debug)…"
+  xcodebuild -project "$ROOT/KamihiRemote.xcodeproj" -scheme KamihiRemote \
+    -destination "platform=iOS Simulator,name=$SIM" \
+    -derivedDataPath "$DERIVED" -configuration Debug CODE_SIGNING_ALLOWED=NO build >/dev/null
+else
+  echo "Reusing existing simulator build from $DERIVED"
+fi
+
+if [[ ! -d "$APP" ]]; then
+  echo "Simulator app not found at $APP" >&2
+  exit 1
+fi
 
 UDID="$(xcrun simctl list devices available | grep "$SIM (" | head -1 | grep -o -E '[0-9A-F-]{36}')"
-APP="$DERIVED/Build/Products/Debug-iphonesimulator/KamihiRemote.app"
 mkdir -p "$OUT"
+rm -f "$OUT"/*.png
 
 xcrun simctl boot "$UDID" 2>/dev/null || true
 xcrun simctl bootstatus "$UDID" -b >/dev/null
@@ -49,9 +60,9 @@ launch --args -KamihiUITestDeckGallery && shot iphone-deck-gallery.png
 launch --args -KamihiUITestKeyboard && shot iphone-keyboard-overlay.png
 launch --args -KamihiUITestTab controller && shot iphone-portrait-controller.png
 
-# Simulator menu automation can block indefinitely on headless CI runners because
-# System Events may wait for GUI automation permission. Keep landscape capture for
-# local audits, but make CI smoke fully non-interactive and deterministic.
+# Simulator menu automation can block on headless CI runners because System Events
+# may wait for GUI automation permission. Keep landscape capture for local audits,
+# while CI stays non-interactive and deterministic.
 if [[ "${CI:-false}" != "true" ]]; then
   osascript <<'OSA' >/dev/null || true
 tell application "Simulator" to activate
