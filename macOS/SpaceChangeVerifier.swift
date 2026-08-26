@@ -22,30 +22,34 @@ final class SpaceChangeObserver: @unchecked Sendable {
     }
 
     deinit {
-        if let observer {
-            center.removeObserver(observer)
+        let observerToRemove = lock.withLock { () -> NSObjectProtocol? in
+            let current = observer
+            observer = nil
+            return current
+        }
+        if let observerToRemove {
+            center.removeObserver(observerToRemove)
         }
     }
 
     func wait(timeout: TimeInterval = 1.0) async -> Bool {
-        lock.lock()
-        if finished {
-            let resolved = result
-            lock.unlock()
+        if let resolved = lock.withLock({ finished ? result : nil }) {
             return resolved
         }
-        lock.unlock()
 
         return await withCheckedContinuation { continuation in
-            lock.lock()
-            if finished {
-                let resolved = result
-                lock.unlock()
+            let resolved = lock.withLock { () -> Bool? in
+                if finished {
+                    return result
+                }
+                self.continuation = continuation
+                return nil
+            }
+
+            if let resolved {
                 continuation.resume(returning: resolved)
                 return
             }
-            self.continuation = continuation
-            lock.unlock()
 
             let nanoseconds = UInt64(max(timeout, 0) * 1_000_000_000)
             Task { [weak self] in
@@ -58,22 +62,18 @@ final class SpaceChangeObserver: @unchecked Sendable {
     }
 
     private func resolve(_ value: Bool) {
-        let continuationToResume: CheckedContinuation<Bool, Never>?
-        let observerToRemove: NSObjectProtocol?
-
-        lock.lock()
-        guard finished == false else {
-            lock.unlock()
-            return
+        let resolution = lock.withLock { () -> (CheckedContinuation<Bool, Never>?, NSObjectProtocol?)? in
+            guard finished == false else { return nil }
+            finished = true
+            result = value
+            let continuationToResume = continuation
+            continuation = nil
+            let observerToRemove = observer
+            observer = nil
+            return (continuationToResume, observerToRemove)
         }
-        finished = true
-        result = value
-        continuationToResume = continuation
-        continuation = nil
-        observerToRemove = observer
-        observer = nil
-        lock.unlock()
 
+        guard let (continuationToResume, observerToRemove) = resolution else { return }
         if let observerToRemove {
             center.removeObserver(observerToRemove)
         }
