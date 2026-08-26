@@ -13,6 +13,8 @@ final class ReliableClient {
     private(set) var lastHeartbeatAck = Date.distantPast
     private(set) var lastFailure = ""
 
+    private static let maxInboundFrameBytes = 64 * 1024
+
     private var connection: NWConnection?
     private let queue = DispatchQueue(label: "kamihi.tcp.client", qos: .userInitiated)
     private var buffer = Data()
@@ -215,6 +217,11 @@ final class ReliableClient {
             if let data, !data.isEmpty {
                 self.buffer.append(data)
                 self.drain()
+                if self.buffer.count > Self.maxInboundFrameBytes {
+                    self.buffer.removeAll(keepingCapacity: false)
+                    self.markDead("receive frame exceeded \(Self.maxInboundFrameBytes) bytes", notify: true)
+                    return
+                }
             }
             if let error {
                 self.markDead("receive: \(error.localizedDescription)", notify: true)
@@ -234,6 +241,11 @@ final class ReliableClient {
         while let range = buffer.firstRange(of: Data("\n".utf8)) {
             let lineData = buffer.subdata(in: buffer.startIndex..<range.lowerBound)
             buffer.removeSubrange(buffer.startIndex..<range.upperBound)
+            guard lineData.count <= Self.maxInboundFrameBytes else {
+                buffer.removeAll(keepingCapacity: false)
+                markDead("receive frame exceeded \(Self.maxInboundFrameBytes) bytes", notify: true)
+                return
+            }
             guard let line = String(data: lineData, encoding: .utf8) else { continue }
             switch RemotePacket.parse(line) {
             case .success(let token, let command, _, _, _, _):
