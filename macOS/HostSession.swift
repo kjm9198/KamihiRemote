@@ -39,7 +39,9 @@ final class HostSession: ObservableObject {
         server.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                self?.objectWillChange.send()
+                Task { @MainActor [weak self] in
+                    self?.objectWillChange.send()
+                }
             }
             .store(in: &cancellables)
 
@@ -57,7 +59,9 @@ final class HostSession: ObservableObject {
         }
 
         server.onUserAction = { [weak self] in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(80))
+                guard Task.isCancelled == false else { return }
                 self?.checkAndBroadcastFocusedText()
             }
         }
@@ -72,14 +76,20 @@ final class HostSession: ObservableObject {
         RemotePacket.runSelfChecks()
         _ = SessionCrypto.runSelfChecks()
         NotificationCenter.default.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { _ in
-            InputEngine.releaseAll()
+            Task { @MainActor in
+                InputEngine.releaseAll()
+            }
         }
         NotificationCenter.default.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.advertise()
+            Task { @MainActor [weak self] in
+                self?.advertise()
+            }
         }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.broadcastActiveApp()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            Task { @MainActor [weak self] in
+                self?.broadcastActiveApp()
+                try? await Task.sleep(for: .milliseconds(100))
+                guard Task.isCancelled == false else { return }
                 self?.checkAndBroadcastFocusedText()
             }
         }
