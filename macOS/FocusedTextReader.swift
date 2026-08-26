@@ -2,6 +2,12 @@ import ApplicationServices
 import Foundation
 
 enum FocusedTextReader {
+    // Keep focused-text responses comfortably below the 64 KiB reliable-frame limit.
+    // RemoteCommand quoting can roughly double ASCII-heavy text (slashes/newlines), so
+    // cap the raw UTF-8 payload at 24 KiB and preserve the document suffix. CodeKey's
+    // current live-edit model is end-focused, making the suffix the most useful slice.
+    private static let maxSnapshotBytes = 24 * 1024
+
     static func snapshot() -> (status: FocusedTextStatus, value: String) {
         let system = AXUIElementCreateSystemWide()
         var focused: CFTypeRef?
@@ -25,7 +31,7 @@ enum FocusedTextReader {
         let valueStatus = AXUIElementCopyAttributeValue(ui, kAXValueAttribute as CFString, &value)
         if valueStatus == .success, let raw = value, CFGetTypeID(raw) == CFStringGetTypeID() {
             let text = raw as! String
-            return (.value, text)
+            return (.value, boundedSnapshot(text))
         }
 
         if isTextEditable(roleName: roleName, settable: settable.boolValue) {
@@ -33,6 +39,28 @@ enum FocusedTextReader {
         }
 
         return (.unavailable, "Live text unavailable here")
+    }
+
+    private static func boundedSnapshot(_ text: String) -> String {
+        guard text.utf8.count > maxSnapshotBytes else { return text }
+
+        var start = text.endIndex
+        var bytes = 0
+        while start > text.startIndex {
+            let previous = text.index(before: start)
+            let characterBytes = text[previous..<start].utf8.count
+            guard bytes + characterBytes <= maxSnapshotBytes else { break }
+            bytes += characterBytes
+            start = previous
+        }
+
+        let suffix = String(text[start...])
+        NSLog(
+            "Kamihi focused text truncated from %d to %d UTF-8 bytes",
+            text.utf8.count,
+            suffix.utf8.count
+        )
+        return suffix
     }
 
     private static func isTextEditable(roleName: String, settable: Bool) -> Bool {
