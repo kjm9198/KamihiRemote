@@ -163,7 +163,7 @@ final class RemoteSession: ObservableObject, CommandSending {
     var isConnected: Bool { connectionState == .connected }
 
     func send(_ command: RemoteCommand) {
-        if case .system(let action) = command {
+        if case .system = command {
             flashGesture(label(for: command))
         } else if case .rightClick = command {
             flashGesture("Options / Right Click")
@@ -498,7 +498,6 @@ final class RemoteSession: ObservableObject, CommandSending {
         tcp.send(.hello(deviceID: DeviceIdentity.deviceID, deviceName: UIDevice.current.name, capabilities: "trackpad,keyboard,media,deck,controller,ble"))
         let pub = keys.publicKeyData.base64EncodedString()
         if PairingSecret.isValid(pairingCode) {
-            tcp.send(.pair(code: pairingCode, deviceID: DeviceIdentity.deviceID))
             tcp.send(.pairRequest(deviceID: DeviceIdentity.deviceID, deviceName: UIDevice.current.name, publicKey: pub, code: pairingCode))
         } else {
             statusText = "Open Settings to enter the pairing code from your Mac"
@@ -521,16 +520,19 @@ final class RemoteSession: ObservableObject, CommandSending {
     }
 
     private func markConnected() {
+        let isFirstConnectionTransition = connectionState != .connected
         reconnectAttempt = 0
         handlingTransportDeath = false
         connectionState = .connected
         statusText = "connected"
         engine.syncConnection(true)
-        Haptics.connect()
         telemetry.quality = .excellent
         telemetry.transport = transport.active.title
         telemetry.tcpReady = tcp.isReady
         browser.stopIfNeeded()
+
+        guard isFirstConnectionTransition else { return }
+        Haptics.connect()
         syncControllerConfig()
         send(.requestActiveApp)
     }
