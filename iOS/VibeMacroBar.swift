@@ -159,7 +159,7 @@ private struct VibeMacroManagerSheet: View {
                     }
                 }
 
-                Section(editingID == nil ? "New Macro" : "Edit Macro") {
+                Section {
                     TextField("Short name, e.g. Mobile polish", text: $title)
 
                     TextField(
@@ -208,6 +208,8 @@ private struct VibeMacroManagerSheet: View {
                             resetEditor()
                         }
                     }
+                } header: {
+                    Text(editingID == nil ? "New Macro" : "Edit Macro")
                 } footer: {
                     Text("Macros are stored only on this iPhone. Tapping one fills the Vibe composer so you can review or modify it before sending.")
                 }
