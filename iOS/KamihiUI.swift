@@ -9,7 +9,9 @@ enum KamihiUI {
     static let gap: CGFloat = 10
     static let labelTracking: CGFloat = 1.6
 
-    static var titleFont: Font { .system(size: 13, weight: .semibold, design: .rounded) }
-    static var bodyFont: Font { .system(size: 15, weight: .semibold, design: .rounded) }
-    static var captionFont: Font { .system(size: 12, weight: .medium, design: .rounded) }
+    // Use semantic text styles so shared UI typography participates in Dynamic Type
+    // instead of remaining locked to fixed point sizes.
+    static var titleFont: Font { .system(.subheadline, design: .rounded, weight: .semibold) }
+    static var bodyFont: Font { .system(.body, design: .rounded, weight: .semibold) }
+    static var captionFont: Font { .system(.caption, design: .rounded, weight: .medium) }
 }
