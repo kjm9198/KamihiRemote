@@ -50,6 +50,7 @@ final class UDPClient: ObservableObject {
         queue.async {
             self.sessionID = sessionID
             self.sessionKey = sessionKey
+            self.sequence = 0
         }
     }
 
@@ -92,6 +93,7 @@ final class UDPClient: ObservableObject {
         connection = nil
         sessionID = nil
         sessionKey = nil
+        sequence = 0
         hasPendingMove = false
         hasPendingScroll = false
         isConfigured = false
@@ -145,22 +147,31 @@ final class UDPClient: ObservableObject {
     private func write(_ command: RemoteCommand) {
         guard let connection else { return }
         let data: Data
-        // Prefer the proven pairing-code path for realtime input so MOVE/SCROLL keep
-        // working even when session-key negotiation is incomplete or mismatched.
-        // K3 remains available once both sides share a verified session key AND no
-        // pairing code is present (future trusted-only links).
-        if PairingSecret.isValid(pairingCode) {
-            data = RemotePacket.encodeV1(token: pairingCode, command: command)
-        } else if let sessionID, let sessionKey,
-                  let encrypted = try? RemotePacket.encodeK3(sessionID: sessionID, sequence: sequence + 1, command: command, key: sessionKey) {
+
+        // Once X25519 session-key negotiation succeeds, realtime input is always
+        // encrypted and authenticated with AES-GCM. Never fall back to the pairing
+        // code or an unauthenticated session packet while a session key exists.
+        if let sessionID, let sessionKey,
+           let encrypted = try? RemotePacket.encodeK3(
+               sessionID: sessionID,
+               sequence: sequence + 1,
+               command: command,
+               key: sessionKey
+           ) {
             sequence += 1
             data = encrypted
-        } else if let sessionID {
-            sequence += 1
-            data = RemotePacket.encodeV2(sessionID: sessionID, sequence: sequence, command: command)
+        } else if sessionKey != nil || sessionID != nil {
+            // A partially established cryptographic session fails closed instead
+            // of silently downgrading to plaintext.
+            return
+        } else if PairingSecret.isValid(pairingCode) {
+            // Temporary compatibility path used only before a cryptographic
+            // session has been established.
+            data = RemotePacket.encodeV1(token: pairingCode, command: command)
         } else {
             return
         }
+
         connection.send(content: data, completion: .idempotent)
         sentCount += 1
         if case .move = command {
