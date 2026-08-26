@@ -99,7 +99,7 @@ struct VibeHubScreen: View {
                         .lineLimit(1)
                 }
                 .padding(.horizontal, 9)
-                .frame(minHeight: 38)
+                .frame(minHeight: 44)
             }
             .buttonStyle(.plain)
             .foregroundStyle(session.isConnected ? .green : .orange)
@@ -167,7 +167,7 @@ struct VibeHubScreen: View {
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 9)
-            .frame(maxWidth: .infinity, minHeight: 38)
+            .frame(maxWidth: .infinity, minHeight: 44)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.white)
@@ -194,7 +194,7 @@ struct VibeHubScreen: View {
                     .lineLimit(1)
             }
             .padding(.horizontal, 8)
-            .frame(minHeight: 38)
+            .frame(minHeight: 44)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.cyan)
@@ -263,7 +263,7 @@ struct VibeHubScreen: View {
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 14, weight: .bold))
-                .frame(width: 38, height: 38)
+                .frame(width: 44, height: 44)
         }
         .buttonStyle(.plain)
         .foregroundStyle(.white.opacity(0.82))
