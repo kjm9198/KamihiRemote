@@ -81,16 +81,16 @@ final class RemoteSession: ObservableObject, CommandSending {
         }.store(in: &cancellables)
         // Do NOT forward UDP packet publishes into the shell — that rebuilt Deck/Settings at 120 Hz.
         tcp.onCommand = { [weak self] command in
-            Task { @MainActor in self?.handleIncoming(command) }
+            Task { @MainActor [weak self] in self?.handleIncoming(command) }
         }
         tcp.onState = { [weak self] state in
-            Task { @MainActor in self?.handleTCP(state) }
+            Task { @MainActor [weak self] in self?.handleTCP(state) }
         }
         tcp.onDead = { [weak self] reason in
-            Task { @MainActor in self?.handleTCPDeath(reason) }
+            Task { @MainActor [weak self] in self?.handleTCPDeath(reason) }
         }
         tcp.onSendFailure = { [weak self] command, reason in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.flashAction("\(command.name)\n\(reason)", success: false)
                 self?.deckTrace.message = reason
                 self?.deckTrace.success = false
@@ -98,7 +98,7 @@ final class RemoteSession: ObservableObject, CommandSending {
             }
         }
         tcp.onRTT = { [weak self] ms in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.telemetry.rttMilliseconds = ms
                 self.telemetry.quality = ms > 80 ? .unstable : (ms > 25 ? .good : .excellent)
@@ -108,17 +108,21 @@ final class RemoteSession: ObservableObject, CommandSending {
             }
         }
         tcp.onPathResolved = { [weak self] address in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.resolvedAddress = address
                 self?.configureUDP(host: address)
             }
         }
         NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.send(.releaseAll)
-            self?.sendController(.neutral)
+            Task { @MainActor [weak self] in
+                self?.send(.releaseAll)
+                self?.sendController(.neutral)
+            }
         }
         NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.connectIfPossible()
+            Task { @MainActor [weak self] in
+                self?.connectIfPossible()
+            }
         }
         browser.start()
         if preferences.autoConnect {
@@ -556,7 +560,7 @@ final class RemoteSession: ObservableObject, CommandSending {
 
     private func startTelemetryClock() {
         let timer = Timer(timeInterval: 1.0 / RemoteConstants.telemetryHz, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.telemetry.realtimePacketsPerSecond = self.udp.realtimePacketsPerSecond
                 self.telemetry.tcpReady = self.tcp.isReady
