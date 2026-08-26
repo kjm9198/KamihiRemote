@@ -79,6 +79,12 @@ final class TCPServer {
     }
 
     private func accept(_ connection: NWConnection) {
+        guard LocalNetworkPolicy.allows(connection) else {
+            NSLog("Kamihi rejected non-local TCP connection: %@", String(describing: connection.endpoint))
+            connection.cancel()
+            return
+        }
+
         let id = ObjectIdentifier(connection)
         connections[id] = connection
         buffers[id] = Data()
