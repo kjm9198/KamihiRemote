@@ -315,24 +315,8 @@
 				CURRENT_PROJECT_VERSION = 10;
 				DEVELOPMENT_TEAM = QBAGFXM25Q;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Kamihi;
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSBonjourServices = "_kamihiremote._tcp,_kamihiremote._udp";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Kamihi Remote uses your Wi-Fi to move the cursor on your Mac.";
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Kamihi Remote can use Bluetooth as a nearby fallback when Wi-Fi is weak.";
-				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Kamihi Remote can use Bluetooth as a nearby fallback when Wi-Fi is weak.";
-				INFOPLIST_KEY_NSMotionUsageDescription = "Kamihi Remote uses Motion only for the optional Air Mouse.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Kamihi uses speech recognition so you can dictate prompts to Cursor or ChatGPT on your Mac.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Kamihi uses the microphone so you can dictate prompts to agents on your Mac.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UIStatusBarHidden = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UIUserInterfaceStyle = Dark;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Config/KamihiRemote-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -362,24 +346,8 @@
 				CURRENT_PROJECT_VERSION = 12;
 				DEVELOPMENT_TEAM = QBAGFXM25Q;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Kamihi;
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSBonjourServices = "_kamihiremote._tcp,_kamihiremote._udp";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Kamihi Remote uses your Wi-Fi to move the cursor on your Mac.";
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Kamihi Remote can use Bluetooth as a nearby fallback when Wi-Fi is weak.";
-				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Kamihi Remote can use Bluetooth as a nearby fallback when Wi-Fi is weak.";
-				INFOPLIST_KEY_NSMotionUsageDescription = "Kamihi Remote uses Motion only for the optional Air Mouse.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Kamihi uses speech recognition so you can dictate prompts to Cursor or ChatGPT on your Mac.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Kamihi uses the microphone so you can dictate prompts to agents on your Mac.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UIStatusBarHidden = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UIUserInterfaceStyle = Dark;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Config/KamihiRemote-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -419,7 +387,10 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Kamihi Remote Host";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = NO;
-				INFOPLIST_KEY_NSBonjourServices = "_kamihiremote._tcp,_kamihiremote._udp";
+				INFOPLIST_KEY_NSBonjourServices = (
+					"_kamihiremote._tcp",
+					"_kamihiremote._udp",
+				);
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Kamihi Remote Host uses your Wi-Fi so the iPhone can control this Mac.";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Kamihi Remote Host can use Bluetooth as a nearby fallback when Wi-Fi is weak.";
@@ -458,7 +429,10 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Kamihi Remote Host";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = NO;
-				INFOPLIST_KEY_NSBonjourServices = "_kamihiremote._tcp,_kamihiremote._udp";
+				INFOPLIST_KEY_NSBonjourServices = (
+					"_kamihiremote._tcp",
+					"_kamihiremote._udp",
+				);
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Kamihi Remote Host uses your Wi-Fi so the iPhone can control this Mac.";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Kamihi Remote Host can use Bluetooth as a nearby fallback when Wi-Fi is weak.";

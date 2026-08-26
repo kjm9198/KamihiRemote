@@ -580,6 +580,7 @@ final class RemoteSession: ObservableObject, CommandSending {
         UserDefaults.standard.set(pairingCode, forKey: "pairingCode")
         UserDefaults.standard.set(manualAddress, forKey: "hostAddress")
         UserDefaults.standard.set(manualPort, forKey: "hostPort")
+        tcp.updatePairingCode(pairingCode)
         engine.preferences = preferences
         preferences.save()
         DeckButton.save(deck)

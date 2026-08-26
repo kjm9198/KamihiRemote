@@ -97,6 +97,12 @@ final class ReliableClient {
         }
     }
 
+    func updatePairingCode(_ code: String) {
+        queue.async { [weak self] in
+            self?.pairingCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
     func stop() {
         stop(notify: false, clearPendingCommands: true)
     }
@@ -249,9 +255,16 @@ final class ReliableClient {
             guard let line = String(data: lineData, encoding: .utf8) else { continue }
             switch RemotePacket.parse(line) {
             case .success(let token, let command, _, _, _, _):
-                guard PairingSecret.matches(token, pairingCode) else {
-                    lastFailure = "Rejected unauthenticated reliable response"
-                    continue
+                switch command {
+                case .helloAck, .pairAck, .pairDecision, .pong:
+                    if PairingSecret.isValid(token) {
+                        self.pairingCode = token
+                    }
+                default:
+                    guard pairingCode.isEmpty || PairingSecret.matches(token, pairingCode) else {
+                        lastFailure = "Rejected unauthenticated reliable response"
+                        continue
+                    }
                 }
                 if case .heartbeatAck(let id, _) = command, pendingHeartbeat?.0 == id {
                     let ms = Int(Date().timeIntervalSince(pendingHeartbeat?.1 ?? Date()) * 1000)
