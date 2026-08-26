@@ -40,6 +40,7 @@ final class RemoteSession: ObservableObject, CommandSending {
     @Published var focusedTextValue = ""
     @Published var activeAppBundleID: String = ""
     @Published var activeAppName: String = ""
+    @Published var showsQuickConnect = false
     #if DEBUG
     @Published var uiTestShowDeckGallery = false
     #endif
@@ -281,6 +282,48 @@ final class RemoteSession: ObservableObject, CommandSending {
     func leaveController(to tab: RemoteTab) {
         sendController(.neutral)
         selectedTab = tab
+    }
+
+    func pairWithCode(_ code: String, manualIP: String? = nil) {
+        let cleanCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        pairingCode = cleanCode
+        if let manualIP, !manualIP.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            manualAddress = manualIP.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        persist()
+
+        if let host = browser.hosts.first(where: { $0.isResolved }) ?? browser.hosts.first {
+            connect(to: host)
+            return
+        }
+
+        let targetIP = manualAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !targetIP.isEmpty {
+            connectDirect(ip: targetIP, port: UInt16(manualPort) != 0 ? UInt16(manualPort) : RemoteConstants.defaultTCPPort, code: cleanCode)
+            return
+        }
+
+        connectIfPossible()
+    }
+
+    func connectDirect(ip: String, port: UInt16 = RemoteConstants.defaultTCPPort, code: String) {
+        let cleanIP = ip.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        pairingCode = cleanCode
+        manualAddress = cleanIP
+        manualPort = Int(port)
+        persist()
+
+        let identity = HostIdentity(
+            hostID: cleanIP,
+            displayName: cleanIP.isEmpty ? "Mac" : cleanIP,
+            pairingSecret: cleanCode,
+            lastAddress: cleanIP,
+            lastPort: RemoteConstants.defaultUDPPort,
+            lastTCPPort: port,
+            lastConnected: nil
+        )
+        connect(to: identity)
     }
 
     func connectIfPossible() {

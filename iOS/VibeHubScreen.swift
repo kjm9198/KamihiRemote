@@ -103,43 +103,57 @@ struct VibeHubScreen: View {
     // MARK: - Status + Project
 
     private var heroStatusRow: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(session.isConnected ? Color.green : Color.orange)
-                    .frame(width: 7, height: 7)
-                Text(session.hostName.isEmpty ? "Mac" : session.hostName)
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-            }
-
-            Spacer()
-
-            if !session.activeAppName.isEmpty {
-                HStack(spacing: 4) {
-                    Image(systemName: "macwindow")
-                        .font(.system(size: 10, weight: .semibold))
-                    Text(session.activeAppName)
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+        Button {
+            session.showsQuickConnect = true
+        } label: {
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(session.isConnected ? Color.green : Color.orange)
+                        .frame(width: 8, height: 8)
+                    Text(session.isConnected ? (session.hostName.isEmpty ? "Mac" : session.hostName) : "Pair with Mac (PIN)")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Color.white.opacity(0.08), in: Capsule())
-                .foregroundStyle(.white.opacity(0.85))
-            }
 
-            if session.telemetry.rttMilliseconds > 0 {
-                Text("\(session.telemetry.rttMilliseconds)ms")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.cyan.opacity(0.18), in: Capsule())
-                    .foregroundStyle(.cyan)
+                Spacer()
+
+                if session.isConnected {
+                    if !session.activeAppName.isEmpty {
+                        HStack(spacing: 4) {
+                            Image(systemName: "macwindow")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text(session.activeAppName)
+                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.white.opacity(0.08), in: Capsule())
+                        .foregroundStyle(.white.opacity(0.85))
+                    }
+
+                    if session.telemetry.rttMilliseconds > 0 {
+                        Text("\(session.telemetry.rttMilliseconds)ms")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.cyan.opacity(0.18), in: Capsule())
+                            .foregroundStyle(.cyan)
+                    }
+                } else {
+                    Text("Connect")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 3)
+                        .background(Color.cyan.opacity(0.25), in: Capsule())
+                        .foregroundStyle(.cyan)
+                }
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: KamihiUI.radiusMedium))
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .glassEffect(.regular, in: .rect(cornerRadius: KamihiUI.radiusMedium))
+        .buttonStyle(.plain)
     }
 
     private var projectSelectorBar: some View {

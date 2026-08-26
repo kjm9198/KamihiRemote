@@ -19,6 +19,9 @@ struct RootView: View {
         .sheet(isPresented: $session.showsSettings) {
             SettingsSheet().environmentObject(session)
         }
+        .sheet(isPresented: $session.showsQuickConnect) {
+            QuickConnectView().environmentObject(session)
+        }
         .sheet(isPresented: $session.showsMedia) {
             NavigationStack {
                 MediaScreen()
@@ -411,15 +414,19 @@ struct ConnectionStatusChip: View {
 
     var body: some View {
         Button {
-            expanded.toggle()
+            if session.isConnected {
+                expanded.toggle()
+            } else {
+                session.showsQuickConnect = true
+            }
         } label: {
             HStack(spacing: 6) {
                 Circle()
-                    .fill(session.isConnected ? Color.green.opacity(0.9) : Color.white.opacity(0.28))
+                    .fill(session.isConnected ? Color.green.opacity(0.9) : Color.orange)
                     .frame(width: 8, height: 8)
                 Text(session.isConnected
                      ? (session.hostName.isEmpty ? "Mac" : session.hostName)
-                     : session.statusText)
+                     : "Pair with Mac")
                     .font(KamihiUI.captionFont)
                     .lineLimit(1)
             }
@@ -429,16 +436,19 @@ struct ConnectionStatusChip: View {
         .buttonStyle(.plain)
         .foregroundStyle(.white)
         .glassEffect(.regular.interactive(), in: .capsule)
-        .accessibilityLabel(session.isConnected ? "Connected" : session.statusText)
+        .accessibilityLabel(session.isConnected ? "Connected" : "Pair with Mac")
         .popover(isPresented: $expanded) {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(session.hostName.isEmpty ? "Mac" : session.hostName).font(.headline)
                 Text(session.telemetry.transport)
                 if session.telemetry.rttMilliseconds > 0 {
                     Text("\(session.telemetry.rttMilliseconds) ms")
                 }
-                Text(session.telemetry.quality == .offline ? "Reconnecting" : "Stable")
-                    .foregroundStyle(.secondary)
+                Button("Connection Details") {
+                    expanded = false
+                    session.showsQuickConnect = true
+                }
+                .font(.footnote)
             }
             .padding(14)
             .presentationCompactAdaptation(.popover)

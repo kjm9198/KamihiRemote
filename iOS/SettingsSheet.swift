@@ -7,8 +7,49 @@ struct SettingsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Connection") {
-                    if session.browser.hosts.isEmpty {
+                Section("Quick Connect") {
+                    Button {
+                        dismiss()
+                        session.showsQuickConnect = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "number.square.fill")
+                                .font(.system(size: 20))
+                                .foregroundStyle(.cyan)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Pair with 6-Digit PIN")
+                                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                                Text("Enter code from Mac menu bar")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+
+                    TextField("Pairing PIN", text: $session.pairingCode)
+                        .keyboardType(.numberPad)
+                        .font(.body.monospacedDigit())
+                        .onChange(of: session.pairingCode) { _, newValue in
+                            if newValue.count == 6 {
+                                session.pairWithCode(newValue)
+                            }
+                        }
+
+                    if !session.pairingCode.isEmpty {
+                        Button("Connect with Code") {
+                            session.pairWithCode(session.pairingCode)
+                            dismiss()
+                        }
+                        .bold()
+                    }
+                }
+
+                Section("Discovered & Paired Hosts") {
+                    if session.browser.hosts.isEmpty && PairedHostStore.load().isEmpty {
                         Text("Searching on this Wi-Fi…").foregroundStyle(.secondary)
                     }
                     ForEach(session.browser.hosts) { host in
@@ -32,9 +73,6 @@ struct SettingsSheet: View {
                             Button("Forget", role: .destructive) { session.forget(host.hostID) }
                         }
                     }
-                    TextField("Temporary pairing code", text: $session.pairingCode)
-                        .keyboardType(.numberPad)
-                        .font(.body.monospacedDigit())
                     Toggle("Automatic", isOn: $session.preferences.automaticTransport)
                     Picker("Preferred transport", selection: $session.preferences.preferredTransport) {
                         ForEach(TransportKind.allCases) { kind in
@@ -156,6 +194,7 @@ struct SettingsSheet: View {
 
                 Section("Advanced") {
                     Toggle("Developer diagnostics", isOn: $session.preferences.showDeveloperDiagnostics)
+                    LabeledContent("App Version", value: "0.5.1 (Build 13)")
                     LabeledContent("Protocol", value: "v\(RemoteConstants.protocolVersionString)")
                     LabeledContent("RTT", value: session.telemetry.rttMilliseconds == 0 ? "—" : "\(session.telemetry.rttMilliseconds) ms")
                     LabeledContent("Reconnects", value: "\(session.telemetry.reconnects)")
