@@ -21,15 +21,12 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           command_path = Path('Shared/RemoteCommand.swift')
           command = command_path.read_text()
-          old = '''    private func quoted(_ value: String) -> String {
-              let escaped = value.replacingOccurrences(of: "\\\"", with: "'").replacingOccurrences(of: "\\n", with: " ")
-              return "\\\"\\(escaped)\\\""
-          }
-          '''
-          new = '''    private func quoted(_ value: String) -> String {
+          quoted_pattern = re.compile(r'    private func quoted\(_ value: String\) -> String \{\n(?:        .*\n)+?    \}\n')
+          quoted_replacement = '''    private func quoted(_ value: String) -> String {
               var escaped = ""
               escaped.reserveCapacity(value.utf8.count)
               for character in value {
@@ -45,35 +42,15 @@ jobs:
               return "\\\"\\(escaped)\\\""
           }
           '''
-          if old not in command:
-              raise SystemExit('RemoteCommand quoted() source did not match expected main')
-          command_path.write_text(command.replace(old, new, 1))
+          command, count = quoted_pattern.subn(lambda _: quoted_replacement, command, count=1)
+          if count != 1:
+              raise SystemExit(f'expected one quoted() replacement, got {count}')
+          command_path.write_text(command)
 
           packet_path = Path('Shared/RemotePacket.swift')
           packet = packet_path.read_text()
-          old_tokenize = '''    private static func tokenize(_ line: String) -> [String] {
-              var parts: [String] = []
-              var current = ""
-              var inQuote = false
-              for character in line {
-                  if character == "\\\"" {
-                      inQuote.toggle()
-                      continue
-                  }
-                  if character.isWhitespace, !inQuote {
-                      if !current.isEmpty {
-                          parts.append(current)
-                          current.removeAll(keepingCapacity: true)
-                      }
-                  } else {
-                      current.append(character)
-                  }
-              }
-              if !current.isEmpty { parts.append(current) }
-              return parts
-          }
-          '''
-          new_tokenize = '''    private static func tokenize(_ line: String) -> [String] {
+          tokenize_pattern = re.compile(r'    private static func tokenize\(_ line: String\) -> \[String\] \{\n.*?^    \}\n', re.S | re.M)
+          tokenize_replacement = '''    private static func tokenize(_ line: String) -> [String] {
               var parts: [String] = []
               var current = ""
               var inQuote = false
@@ -122,19 +99,17 @@ jobs:
               return parts
           }
           '''
-          if old_tokenize not in packet:
-              raise SystemExit('RemotePacket tokenize() source did not match expected main')
-          packet = packet.replace(old_tokenize, new_tokenize, 1)
+          packet, count = tokenize_pattern.subn(lambda _: tokenize_replacement, packet, count=1)
+          if count != 1:
+              raise SystemExit(f'expected one tokenize() replacement, got {count}')
 
-          anchor = '''        expectSuccess("163158 FOCUSED_TEXT value Hello", token: "163158", .focusedText(status: .value, value: "Hello"))
-          '''
-          tests = '''        expectSuccess("163158 FOCUSED_TEXT value Hello", token: "163158", .focusedText(status: .value, value: "Hello"))
-              let exactText = "let json = {\\\"message\\\": \\\"xin chào / cześć\\\"}\\n\\tprint(\\\"\\\\path\\\\to\\\\file 😀\\\")\\r\\n"
+          anchor = '        expectSuccess("163158 FOCUSED_TEXT value Hello", token: "163158", .focusedText(status: .value, value: "Hello"))\n'
+          tests = anchor + '''        let exactText = "let json = {\\\"message\\\": \\\"xin chào / cześć\\\"}\\n\\tprint(\\\"\\\\path\\\\to\\\\file 😀\\\")\\r\\n"
               expectSuccess(String(decoding: encodeV1(token: "163158", command: .typeText(exactText)), as: UTF8.self), token: "163158", .typeText(exactText))
               expectSuccess(String(decoding: encodeV1(token: "163158", command: .focusedText(status: .value, value: exactText)), as: UTF8.self), token: "163158", .focusedText(status: .value, value: exactText))
           '''
-          if anchor not in packet:
-              raise SystemExit('RemotePacket self-check anchor missing')
+          if packet.count(anchor) != 1:
+              raise SystemExit(f'expected one self-check anchor, got {packet.count(anchor)}')
           packet_path.write_text(packet.replace(anchor, tests, 1))
           PY
 
