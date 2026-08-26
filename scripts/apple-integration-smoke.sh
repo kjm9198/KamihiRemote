@@ -10,6 +10,7 @@ DERIVED_MAC="${RUNNER_TEMP:-/tmp}/kamihi-mac-derived"
 SMOKE_DIR="${RUNNER_TEMP:-/tmp}/kamihi-smoke"
 HOST_LOG="$SMOKE_DIR/host.log"
 SIM_LOG="$SMOKE_DIR/simulator-launch.log"
+AUTH_RESPONSE="$SMOKE_DIR/unauthenticated-response.txt"
 
 mkdir -p "$SMOKE_DIR"
 rm -rf "$DERIVED_IOS" "$DERIVED_MAC"
@@ -87,14 +88,33 @@ for _ in $(seq 1 40); do
 done
 nc -z 127.0.0.1 "$TCP_PORT" || { echo "Mac host never opened TCP $TCP_PORT"; cat "$HOST_LOG" || true; exit 1; }
 
+echo "==> Probing reliable-channel authentication"
+: > "$AUTH_RESPONSE"
+printf '000000 REQUEST_ACTIVE_APP\n' | nc -w 1 127.0.0.1 "$TCP_PORT" >"$AUTH_RESPONSE" 2>/dev/null || true
+for _ in $(seq 1 20); do
+  if grep -q "Kamihi rejected unauthenticated TCP command: REQUEST_ACTIVE_APP" "$HOST_LOG"; then break; fi
+  sleep 0.1
+done
+if [[ -s "$AUTH_RESPONSE" ]]; then
+  echo "Mac responded to an unauthenticated reliable command"
+  cat "$AUTH_RESPONSE" || true
+  exit 1
+fi
+grep -q "Kamihi rejected unauthenticated TCP command: REQUEST_ACTIVE_APP" "$HOST_LOG" || {
+  echo "Mac did not record rejection of the unauthenticated TCP probe"
+  cat "$HOST_LOG" || true
+  exit 1
+}
+echo "==> Unauthenticated reliable command rejected PASS"
+
 echo "==> Installing and launching real iPhone app"
 xcrun simctl install "$UDID" "$IOS_APP"
 xcrun simctl privacy "$UDID" grant local-network com.kamihi.remote >/dev/null 2>&1 || true
 xcrun simctl launch "$UDID" com.kamihi.remote | tee "$SIM_LOG"
 
-# A connected iPhone always syncs its controller mapping after helloAck. The
-# host logs that sync, making this a real app-to-app handshake assertion rather
-# than a simple process-liveness check.
+# A connected iPhone syncs its controller mapping exactly once when the session
+# transitions to connected. The host log is therefore both a handshake sentinel
+# and a regression check against duplicate hello/pair acknowledgements.
 HANDSHAKE_OK=0
 for _ in $(seq 1 60); do
   if grep -q "Kamihi updated controller mapping profile" "$HOST_LOG"; then
@@ -118,7 +138,16 @@ if [[ "$HANDSHAKE_OK" -ne 1 ]]; then
   exit 1
 fi
 
-echo "==> End-to-end handshake PASS"
+sleep 1
+INITIAL_SYNC_COUNT="$(grep -c "Kamihi updated controller mapping profile" "$HOST_LOG" || true)"
+echo "$INITIAL_SYNC_COUNT" > "$SMOKE_DIR/initial-controller-sync-count.txt"
+if [[ "$INITIAL_SYNC_COUNT" -ne 1 ]]; then
+  echo "Expected exactly one controller-config sync during initial handshake, got $INITIAL_SYNC_COUNT"
+  cat "$HOST_LOG" || true
+  exit 1
+fi
+
+echo "==> End-to-end authenticated handshake PASS"
 xcrun simctl io "$UDID" screenshot "$SMOKE_DIR/connected-trackpad.png"
 
 # Smoke the two interaction-heavy workspaces independently so layout/startup
