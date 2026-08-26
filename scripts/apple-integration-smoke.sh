@@ -150,13 +150,19 @@ fi
 echo "==> End-to-end authenticated handshake PASS"
 xcrun simctl io "$UDID" screenshot "$SMOKE_DIR/connected-trackpad.png"
 
-# Smoke the two interaction-heavy workspaces independently so layout/startup
+# Smoke the interaction-heavy workspaces independently so layout/startup
 # regressions are caught even when the default trackpad screen is healthy.
 echo "==> Controller workspace smoke"
 xcrun simctl terminate "$UDID" com.kamihi.remote >/dev/null 2>&1 || true
 xcrun simctl launch "$UDID" com.kamihi.remote -KamihiUITestTab controller | tee -a "$SIM_LOG"
 sleep 3
 xcrun simctl io "$UDID" screenshot "$SMOKE_DIR/controller.png"
+
+echo "==> Game Sessions manager smoke"
+xcrun simctl terminate "$UDID" com.kamihi.remote >/dev/null 2>&1 || true
+xcrun simctl launch "$UDID" com.kamihi.remote -KamihiUITestTab controller -KamihiUITestGameSessions | tee -a "$SIM_LOG"
+sleep 3
+xcrun simctl io "$UDID" screenshot "$SMOKE_DIR/game-sessions.png"
 
 echo "==> Deck gallery smoke"
 xcrun simctl terminate "$UDID" com.kamihi.remote >/dev/null 2>&1 || true

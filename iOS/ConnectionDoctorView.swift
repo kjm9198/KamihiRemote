@@ -4,9 +4,32 @@ import UIKit
 struct KamihiAppShell: View {
     @EnvironmentObject private var session: RemoteSession
     @State private var showsConnectionDoctor = false
+    @State private var showsGameSessions = ProcessInfo.processInfo.arguments.contains("-KamihiUITestGameSessions")
+    @State private var gameSessions: [GameSessionProfile] = GameSessionStore.load()
+    @AppStorage("selectedGameSessionID") private var selectedGameSessionID = ""
 
     var body: some View {
         KamihiPolishedRootView()
+            .overlay(alignment: .topTrailing) {
+                if session.selectedTab == .controller {
+                    Button {
+                        session.sendController(.neutral)
+                        gameSessions = GameSessionStore.load()
+                        showsGameSessions = true
+                        Haptics.touchTap()
+                    } label: {
+                        Image(systemName: "gamecontroller.fill")
+                            .font(.system(size: 15, weight: .bold))
+                            .frame(width: 42, height: 42)
+                            .foregroundStyle(selectedGameSessionID.isEmpty ? .white : .cyan)
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .padding(.trailing, 12)
+                    .padding(.top, 58)
+                    .accessibilityLabel("Game Sessions")
+                }
+            }
             .overlay(alignment: .bottomTrailing) {
                 if !session.isConnected || session.preferences.showDeveloperDiagnostics {
                     Button {
@@ -24,6 +47,13 @@ struct KamihiAppShell: View {
                     .padding(.bottom, 68)
                     .accessibilityLabel("Connection Doctor")
                 }
+            }
+            .sheet(isPresented: $showsGameSessions) {
+                GameSessionManagerSheet(
+                    profiles: $gameSessions,
+                    selectedProfileID: $selectedGameSessionID
+                )
+                .environmentObject(session)
             }
             .sheet(isPresented: $showsConnectionDoctor) {
                 NavigationStack {
