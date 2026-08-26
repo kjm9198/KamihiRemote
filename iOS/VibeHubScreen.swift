@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Vibe Mode Mission Control — voice + text routing, project switching, reusable prompts and integrated trackpad.
 struct VibeHubScreen: View {
@@ -318,6 +319,29 @@ struct VibeHubScreen: View {
                     sendCurrentPrompt()
                 }
 
+            Menu {
+                Button {
+                    appendClipboardToPrompt()
+                } label: {
+                    Label("Paste into prompt", systemImage: "doc.on.clipboard")
+                }
+
+                Button {
+                    sendClipboardToMac()
+                } label: {
+                    Label("Type clipboard on Mac", systemImage: "macbook.and.iphone")
+                }
+                .disabled(!session.isConnected)
+            } label: {
+                Image(systemName: "doc.on.clipboard.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .frame(width: 28, height: 28)
+                    .foregroundStyle(.mint)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .circle)
+            .accessibilityLabel("Clipboard handoff")
+
             if !promptText.isEmpty {
                 Button {
                     sendCurrentPrompt()
@@ -494,6 +518,49 @@ struct VibeHubScreen: View {
         promptText = prompt
         vibeStatus = "Prompt ready — edit or send"
         Haptics.touchTap()
+    }
+
+    private func appendClipboardToPrompt() {
+        guard let clipboard = boundedClipboardText() else {
+            vibeStatus = "Clipboard has no text"
+            Haptics.error()
+            return
+        }
+
+        recognizer.stop()
+        isListening = false
+        if promptText.isEmpty {
+            promptText = clipboard
+        } else {
+            promptText += promptText.hasSuffix("\n") ? clipboard : "\n\(clipboard)"
+        }
+        vibeStatus = "Clipboard added — edit or send"
+        Haptics.touchTap()
+    }
+
+    private func sendClipboardToMac() {
+        guard session.isConnected else {
+            vibeStatus = "Connect to Mac first"
+            Haptics.error()
+            return
+        }
+        guard let clipboard = boundedClipboardText() else {
+            vibeStatus = "Clipboard has no text"
+            Haptics.error()
+            return
+        }
+
+        session.send(.typeText(clipboard))
+        session.flashAction("Clipboard\nSent to Mac", success: true)
+        vibeStatus = "Clipboard typed on Mac"
+        Haptics.gesture()
+    }
+
+    private func boundedClipboardText() -> String? {
+        guard let raw = UIPasteboard.general.string, raw.isEmpty == false else { return nil }
+        // Explicit user taps trigger clipboard access. Keep the handoff comfortably below
+        // the reliable transport's 64 KiB frame ceiling even for 4-byte Unicode scalars.
+        return String(raw.prefix(8_000))
     }
 
     private func sendCurrentPrompt() {
