@@ -39,7 +39,7 @@ final class ReliableClient {
         // A reconnect must not discard commands the user issued while the transport
         // was down. Only an explicit stop should clear the queue.
         stop(notify: false, clearPendingCommands: false)
-        self.pairingCode = pairingCode
+        self.pairingCode = pairingCode.trimmingCharacters(in: .whitespacesAndNewlines)
         generation += 1
         let capturedGeneration = generation
         isReady = false
@@ -236,7 +236,11 @@ final class ReliableClient {
             buffer.removeSubrange(buffer.startIndex..<range.upperBound)
             guard let line = String(data: lineData, encoding: .utf8) else { continue }
             switch RemotePacket.parse(line) {
-            case .success(_, let command, _, _, _, _):
+            case .success(let token, let command, _, _, _, _):
+                guard PairingSecret.matches(token, pairingCode) else {
+                    lastFailure = "Rejected unauthenticated reliable response"
+                    continue
+                }
                 if case .heartbeatAck(let id, _) = command, pendingHeartbeat?.0 == id {
                     let ms = Int(Date().timeIntervalSince(pendingHeartbeat?.1 ?? Date()) * 1000)
                     lastHeartbeatAck = Date()
