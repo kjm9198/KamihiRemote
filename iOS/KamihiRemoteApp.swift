@@ -9,7 +9,7 @@ struct KamihiRemoteApp: App {
             KamihiAppShell()
                 .environmentObject(session)
                 .preferredColorScheme(.dark)
-                .statusBarHidden(true)
+                .statusBarHidden(false)
         }
     }
 }
