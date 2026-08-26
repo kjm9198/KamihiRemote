@@ -11,6 +11,7 @@ final class TCPServer {
     private var buffers: [ObjectIdentifier: Data] = [:]
     private var handshakeConnections: Set<ObjectIdentifier> = []
     private let queue = DispatchQueue(label: "kamihi.tcp.server", qos: .userInitiated)
+    private let maximumFrameBytes = 64 * 1024
     private(set) var port = RemoteConstants.defaultTCPPort
     private var pairingCode = ""
 
@@ -86,12 +87,19 @@ final class TCPServer {
     }
 
     private func receive(from connection: NWConnection) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, isComplete, error in
+        connection.receive(minimumIncompleteLength: 1, maximumLength: maximumFrameBytes) { [weak self] data, _, isComplete, error in
             guard let self else { return }
             let id = ObjectIdentifier(connection)
             if let data, !data.isEmpty {
                 self.buffers[id, default: Data()].append(data)
-                self.drain(connection)
+                guard self.drain(connection) else { return }
+
+                if self.buffers[id, default: Data()].count > self.maximumFrameBytes {
+                    NSLog("Kamihi TCP dropped oversized unterminated frame")
+                    self.drop(connection)
+                    self.onDisconnect?(connection)
+                    return
+                }
             }
             if let error {
                 NSLog("Kamihi TCP receive error: %@", error.localizedDescription)
@@ -108,12 +116,21 @@ final class TCPServer {
         }
     }
 
-    private func drain(_ connection: NWConnection) {
+    @discardableResult
+    private func drain(_ connection: NWConnection) -> Bool {
         let id = ObjectIdentifier(connection)
-        guard var buffer = buffers[id] else { return }
+        guard var buffer = buffers[id] else { return false }
         while let range = buffer.firstRange(of: Data("\n".utf8)) {
             let lineData = buffer.subdata(in: buffer.startIndex..<range.lowerBound)
             buffer.removeSubrange(buffer.startIndex..<range.upperBound)
+
+            guard lineData.count <= maximumFrameBytes else {
+                NSLog("Kamihi TCP dropped oversized frame")
+                drop(connection)
+                onDisconnect?(connection)
+                return false
+            }
+
             if let line = String(data: lineData, encoding: .utf8) {
                 switch RemotePacket.parse(line) {
                 case .success(let token, let command, _, _, _, _):
@@ -139,6 +156,7 @@ final class TCPServer {
             }
         }
         buffers[id] = buffer
+        return true
     }
 
     private func drop(_ connection: NWConnection) {
