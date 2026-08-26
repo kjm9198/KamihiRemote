@@ -3,7 +3,7 @@ import Network
 
 final class TCPServer {
     var onCommand: ((RemoteCommand, NWConnection) -> Void)?
-    var onDisconnect: (() -> Void)?
+    var onDisconnect: ((NWConnection) -> Void)?
 
     private var listener: NWListener?
     private var advertisedService: NWListener.Service?
@@ -11,9 +11,11 @@ final class TCPServer {
     private var buffers: [ObjectIdentifier: Data] = [:]
     private let queue = DispatchQueue(label: "kamihi.tcp.server", qos: .userInitiated)
     private(set) var port = RemoteConstants.defaultTCPPort
+    private var pairingCode = ""
 
-    func start() {
+    func start(pairingCode: String) {
         stop()
+        self.pairingCode = pairingCode
         do {
             let parameters = NWParameters.tcp
             parameters.allowLocalEndpointReuse = true
@@ -27,6 +29,12 @@ final class TCPServer {
             self.listener = listener
         } catch {
             NSLog("Kamihi TCP listener failed: %@", error.localizedDescription)
+        }
+    }
+
+    func updatePairingCode(_ code: String) {
+        queue.async { [weak self] in
+            self?.pairingCode = code
         }
     }
 
@@ -86,12 +94,12 @@ final class TCPServer {
             if let error {
                 NSLog("Kamihi TCP receive error: %@", error.localizedDescription)
                 self.drop(connection)
-                self.onDisconnect?()
+                self.onDisconnect?(connection)
                 return
             }
             if isComplete {
                 self.drop(connection)
-                self.onDisconnect?()
+                self.onDisconnect?(connection)
                 return
             }
             self.receive(from: connection)
@@ -106,7 +114,11 @@ final class TCPServer {
             buffer.removeSubrange(buffer.startIndex..<range.upperBound)
             if let line = String(data: lineData, encoding: .utf8) {
                 switch RemotePacket.parse(line) {
-                case .success(_, let command, _, _, _, _):
+                case .success(let token, let command, _, _, _, _):
+                    guard PairingSecret.matches(token, pairingCode) else {
+                        NSLog("Kamihi rejected unauthenticated TCP command: %@", command.name)
+                        continue
+                    }
                     onCommand?(command, connection)
                 case .failure:
                     break
