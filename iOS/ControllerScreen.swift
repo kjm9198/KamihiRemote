@@ -3,6 +3,9 @@ import UIKit
 
 struct ControllerScreen: View {
     @EnvironmentObject private var session: RemoteSession
+    @State private var showsGameSessions = false
+    @State private var gameSessions: [GameSessionProfile] = GameSessionStore.load()
+    @AppStorage("selectedGameSessionID") private var selectedGameSessionID = ""
 
     var body: some View {
         GeometryReader { geo in
@@ -13,6 +16,7 @@ struct ControllerScreen: View {
                     Picker("Profile", selection: Binding(
                         get: { session.preferences.controllerProfile },
                         set: { newProfile in
+                            selectedGameSessionID = ""
                             session.preferences.controllerProfile = newProfile
                             let newMapping = ControllerMapping.defaultFor(profile: newProfile)
                             session.preferences.controllerMapping = newMapping
@@ -28,10 +32,30 @@ struct ControllerScreen: View {
 
                     Spacer(minLength: 4)
 
+                    Button {
+                        session.sendController(.neutral)
+                        gameSessions = GameSessionStore.load()
+                        showsGameSessions = true
+                        Haptics.touchTap()
+                    } label: {
+                        Image(systemName: "gamecontroller.fill")
+                            .font(.system(size: 14, weight: .bold))
+                            .frame(width: 32, height: 32)
+                            .foregroundStyle(selectedGameSessionID.isEmpty ? .white : .cyan)
+                            .glassEffect(.regular.interactive(), in: .circle)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Game Sessions")
+
                     Menu {
                         Button("Remote") { session.leaveController(to: .trackpad) }
                         Button("Deck") { session.leaveController(to: .deck) }
                         Divider()
+                        Button("Game Sessions") {
+                            session.sendController(.neutral)
+                            gameSessions = GameSessionStore.load()
+                            showsGameSessions = true
+                        }
                         Button("Keyboard") {
                             session.sendController(.neutral)
                             session.showsKeyboard = true
@@ -55,6 +79,13 @@ struct ControllerScreen: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .frame(width: geo.size.width, height: geo.size.height)
+        }
+        .sheet(isPresented: $showsGameSessions) {
+            GameSessionManagerSheet(
+                profiles: $gameSessions,
+                selectedProfileID: $selectedGameSessionID
+            )
+            .environmentObject(session)
         }
         .onDisappear {
             session.sendController(.neutral)
