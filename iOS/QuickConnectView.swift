@@ -37,7 +37,7 @@ struct QuickConnectView: View {
 
                             Text(session.isConnected
                                  ? "You can now control your Mac with trackpad, voice, and deck."
-                                 : "Look at the Kamihi icon in the menu bar at the top of your Mac screen and enter the 6-digit PIN.")
+                                 : "On your Mac, open Kamihi Remote Host and enter the 6-digit pairing code shown there. Same Wi‑Fi required.")
                                 .font(.system(size: 13, weight: .regular, design: .rounded))
                                 .foregroundStyle(.white.opacity(0.65))
                                 .multilineTextAlignment(.center)
@@ -291,7 +291,10 @@ struct QuickConnectView: View {
         }
         .onAppear {
             codeInput = session.pairingCode
-            manualIPInput = session.manualAddress.isEmpty ? (LocalIPAddress.primaryIPv4() ?? "192.168.1.43") : session.manualAddress
+            // Prefer last known Mac address — never the phone's own LocalIPAddress.
+            let hint = session.preferredMacAddressHint()
+            manualIPInput = hint
+            showManualIP = hint.isEmpty && session.browser.hosts.isEmpty
             if codeInput.isEmpty {
                 isCodeFocused = true
             }
@@ -308,7 +311,8 @@ struct QuickConnectView: View {
 
     private func triggerPairing(code: String) {
         isConnecting = true
-        session.pairWithCode(code, manualIP: manualIPInput.isEmpty ? nil : manualIPInput)
+        let ip = manualIPInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        session.pairWithCode(code, manualIP: NetworkEndpoint.looksLikeNumericHost(ip) ? ip : nil)
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
             isConnecting = false
         }

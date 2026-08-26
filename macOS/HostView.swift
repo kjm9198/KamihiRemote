@@ -55,7 +55,7 @@ struct HostView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("Kamihi Remote Host")
                         .font(.largeTitle.weight(.semibold))
-                    Text("v0.5.0")
+                    Text("v0.5.1")
                         .font(.system(size: 13, weight: .bold, design: .monospaced))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -73,7 +73,7 @@ struct HostView: View {
                 statusRow(title: "Accessibility", ok: host.accessibility.isTrusted)
                 labeled("This Mac", value: Host.current().localizedName ?? "Mac")
                 labeled("Address", value: host.localAddress) { copy(host.localAddress) }
-                labeled("TCP / UDP", value: "\(RemoteConstants.defaultTCPPort) / \(host.server.port)")
+                labeled("TCP / UDP", value: "\(RemoteConstants.defaultTCPPort) / \(RemoteConstants.defaultUDPPort)")
                 labeled("Device", value: host.server.clientConnected ? (host.connectedDeviceName.isEmpty ? host.server.clientLabel : host.connectedDeviceName) : "Waiting")
 
                 if let error = host.server.lastError {
@@ -110,7 +110,7 @@ struct HostView: View {
                 Button("New Code") { host.rotatePairingCode() }
                     .buttonStyle(.borderless)
             }
-            Text("This code expires in two minutes and is only for first pairing. Approve the iPhone on this Mac.")
+            Text("Enter this code on your iPhone. Prefer Direct IP \(host.localAddress) if Bonjour discovery fails.")
                 .foregroundStyle(.secondary)
             if let image = qrImage {
                 Image(nsImage: image)

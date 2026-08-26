@@ -61,6 +61,9 @@ final class RemoteSession: ObservableObject, CommandSending {
     private var pendingActions: [String: PendingAction] = [:]
     private var telemetryTimer: Timer?
     private var handlingTransportDeath = false
+    private var connectCandidates: [HostIdentity] = []
+    private var connectCandidateIndex = 0
+    private var connectFallbackWork: DispatchWorkItem?
 
     private struct PendingAction {
         var title: String
@@ -76,8 +79,16 @@ final class RemoteSession: ObservableObject, CommandSending {
         browser.objectWillChange.receive(on: RunLoop.main).sink { [weak self] _ in
             guard let self else { return }
             self.objectWillChange.send()
-            if self.connectionState != .connected {
+            // Do not restart TCP mid-handshake on every Bonjour refresh — that was
+            // cancelling in-flight connects. Only auto-start when idle/reconnecting,
+            // or upgrade an unresolved Bonjour attempt once an IP resolves.
+            switch self.connectionState {
+            case .idle, .reconnecting:
                 self.connectIfPossible()
+            case .connecting:
+                self.upgradeConnectingTargetIfResolved()
+            case .connected:
+                break
             }
         }.store(in: &cancellables)
         // Do NOT forward UDP packet publishes into the shell — that rebuilt Deck/Settings at 120 Hz.
@@ -287,42 +298,41 @@ final class RemoteSession: ObservableObject, CommandSending {
     func pairWithCode(_ code: String, manualIP: String? = nil) {
         let cleanCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
         pairingCode = cleanCode
-        if let manualIP, !manualIP.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            manualAddress = manualIP.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let manualIP {
+            let trimmed = manualIP.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Never keep a non-numeric "Mac IP" — Quick Connect used to prefill the phone's own address.
+            if NetworkEndpoint.looksLikeNumericHost(trimmed) {
+                manualAddress = trimmed
+            }
         }
         persist()
-
-        if let host = browser.hosts.first(where: { $0.isResolved }) ?? browser.hosts.first {
-            connect(to: host)
-            return
-        }
-
-        let targetIP = manualAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !targetIP.isEmpty {
-            connectDirect(ip: targetIP, port: UInt16(manualPort) != 0 ? UInt16(manualPort) : RemoteConstants.defaultTCPPort, code: cleanCode)
-            return
-        }
-
-        connectIfPossible()
+        beginCandidateConnect(forceRebuild: true)
     }
 
     func connectDirect(ip: String, port: UInt16 = RemoteConstants.defaultTCPPort, code: String) {
         let cleanIP = ip.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard NetworkEndpoint.looksLikeNumericHost(cleanIP) else {
+            statusText = "Enter a valid Mac IP address"
+            showsQuickConnect = true
+            return
+        }
         pairingCode = cleanCode
         manualAddress = cleanIP
-        manualPort = Int(port)
+        manualPort = Int(port == 0 ? RemoteConstants.defaultTCPPort : port)
         persist()
 
         let identity = HostIdentity(
             hostID: cleanIP,
-            displayName: cleanIP.isEmpty ? "Mac" : cleanIP,
+            displayName: cleanIP,
             pairingSecret: cleanCode,
             lastAddress: cleanIP,
             lastPort: RemoteConstants.defaultUDPPort,
-            lastTCPPort: port,
+            lastTCPPort: port == 0 ? RemoteConstants.defaultTCPPort : port,
             lastConnected: nil
         )
+        connectCandidates = [identity]
+        connectCandidateIndex = 0
         connect(to: identity)
     }
 
@@ -330,33 +340,181 @@ final class RemoteSession: ObservableObject, CommandSending {
         persist()
         engine.preferences = preferences
         Haptics.level = preferences.hapticLevel
-        if let host = browser.hosts.first(where: { $0.isResolved }) ?? browser.hosts.first {
-            connect(to: host)
+        beginCandidateConnect(forceRebuild: connectionState != .connecting)
+    }
+
+    func preferredMacAddressHint() -> String {
+        if NetworkEndpoint.looksLikeNumericHost(manualAddress) {
+            return manualAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if let resolved = browser.hosts.first(where: { $0.isResolved })?.address {
+            return resolved
+        }
+        let paired = PairedHostStore.load()
+        if let last = preferences.lastHostID,
+           let host = paired.first(where: { $0.hostID == last }),
+           NetworkEndpoint.looksLikeNumericHost(host.lastAddress) {
+            return host.lastAddress
+        }
+        if let host = paired.first(where: { NetworkEndpoint.looksLikeNumericHost($0.lastAddress) }) {
+            return host.lastAddress
+        }
+        return ""
+    }
+
+    private func beginCandidateConnect(forceRebuild: Bool) {
+        if forceRebuild || connectCandidates.isEmpty {
+            connectCandidates = buildConnectCandidates()
+            connectCandidateIndex = 0
+        }
+        guard let target = connectCandidates.first else {
+            if PairingSecret.isValid(pairingCode) {
+                statusText = "Looking for nearby Macs — or enter Mac IP"
+            } else {
+                statusText = "Enter the 6-digit code from your Mac"
+            }
             return
         }
-        if let last = preferences.lastHostID, let host = PairedHostStore.load().first(where: { $0.hostID == last }) {
-            connect(to: host)
+        connect(to: target)
+    }
+
+    private func buildConnectCandidates() -> [HostIdentity] {
+        var candidates: [HostIdentity] = []
+        var seen = Set<String>()
+
+        func append(_ host: HostIdentity) {
+            let key: String
+            if NetworkEndpoint.looksLikeNumericHost(host.lastAddress) {
+                key = "ip:\(host.lastAddress):\(host.lastTCPPort == 0 ? RemoteConstants.defaultTCPPort : host.lastTCPPort)"
+            } else {
+                key = "svc:\(host.displayName.isEmpty ? host.lastAddress : host.displayName)"
+            }
+            guard seen.insert(key).inserted else { return }
+            var copy = host
+            if PairingSecret.isValid(pairingCode) {
+                copy.pairingSecret = pairingCode
+            }
+            candidates.append(copy)
+        }
+
+        for discovered in browser.hosts where discovered.isResolved {
+            append(
+                HostIdentity(
+                    hostID: discovered.hostID,
+                    displayName: discovered.name,
+                    pairingSecret: pairingCode,
+                    lastAddress: discovered.address,
+                    lastPort: discovered.port,
+                    lastTCPPort: discovered.tcpPort,
+                    lastConnected: nil
+                )
+            )
+        }
+
+        let paired = PairedHostStore.load()
+        if let last = preferences.lastHostID,
+           let host = paired.first(where: { $0.hostID == last }),
+           NetworkEndpoint.looksLikeNumericHost(host.lastAddress) {
+            append(host)
+        }
+        for host in paired where NetworkEndpoint.looksLikeNumericHost(host.lastAddress) {
+            append(host)
+        }
+
+        let manual = manualAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        if NetworkEndpoint.looksLikeNumericHost(manual) {
+            append(
+                HostIdentity(
+                    hostID: manual,
+                    displayName: manual,
+                    pairingSecret: pairingCode,
+                    lastAddress: manual,
+                    lastPort: RemoteConstants.defaultUDPPort,
+                    lastTCPPort: resolvedManualTCPPort(),
+                    lastConnected: nil
+                )
+            )
+        }
+
+        for discovered in browser.hosts where !discovered.isResolved {
+            append(
+                HostIdentity(
+                    hostID: discovered.hostID,
+                    displayName: discovered.name,
+                    pairingSecret: pairingCode,
+                    lastAddress: discovered.name,
+                    lastPort: discovered.port,
+                    lastTCPPort: discovered.tcpPort,
+                    lastConnected: nil
+                )
+            )
+        }
+
+        if let last = preferences.lastHostID,
+           let host = paired.first(where: { $0.hostID == last }) {
+            append(host)
+        }
+        for host in paired {
+            append(host)
+        }
+
+        return candidates
+    }
+
+    private func resolvedManualTCPPort() -> UInt16 {
+        let port = UInt16(clamping: max(manualPort, 0))
+        if port == 0 || port == RemoteConstants.defaultUDPPort {
+            return RemoteConstants.defaultTCPPort
+        }
+        return port
+    }
+
+    private func upgradeConnectingTargetIfResolved() {
+        guard connectionState == .connecting,
+              let activeHost,
+              !NetworkEndpoint.looksLikeNumericHost(activeHost.lastAddress),
+              let resolved = browser.hosts.first(where: { $0.isResolved })
+        else { return }
+        connect(to: resolved)
+    }
+
+    private func scheduleConnectFallback(reason: String) {
+        connectFallbackWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard self.connectionState == .connecting, self.isConnected == false else { return }
+            self.tryNextConnectCandidate(reason: reason)
+        }
+        connectFallbackWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: work)
+    }
+
+    private func tryNextConnectCandidate(reason: String) {
+        connectCandidateIndex += 1
+        guard connectCandidateIndex < connectCandidates.count else {
+            statusText = reason.isEmpty ? "Couldn’t reach Mac — check Wi‑Fi, Local Network, and PIN" : reason
+            connectionState = .idle
+            showsQuickConnect = true
             return
         }
-        let host = manualAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !host.isEmpty, PairingSecret.isValid(pairingCode) else {
-            statusText = "Looking for nearby Macs"
-            return
-        }
-        connect(to: HostIdentity(hostID: host, displayName: host, pairingSecret: pairingCode, lastAddress: host, lastPort: UInt16(clamping: manualPort), lastTCPPort: RemoteConstants.defaultTCPPort, lastConnected: nil))
+        statusText = "Trying another Mac address…"
+        connect(to: connectCandidates[connectCandidateIndex])
     }
 
     func connect(to host: HostIdentity) {
         reconnectWork?.cancel()
+        connectFallbackWork?.cancel()
         handlingTransportDeath = false
         activeHost = host
         handshakeSent = false
         resolvedAddress = NetworkEndpoint.looksLikeNumericHost(host.lastAddress) ? host.lastAddress : nil
         pairingCode = host.pairingSecret.isEmpty ? pairingCode : host.pairingSecret
         connectionState = .connecting
-        statusText = "Connecting to \(host.displayName)…"
+        let label = NetworkEndpoint.looksLikeNumericHost(host.lastAddress) ? host.lastAddress : host.displayName
+        statusText = "Connecting to \(label.isEmpty ? "Mac" : label)…"
         if NetworkEndpoint.looksLikeNumericHost(host.lastAddress) {
-            tcp.connect(host: host.lastAddress, port: host.lastTCPPort == 0 ? RemoteConstants.defaultTCPPort : host.lastTCPPort, pairingCode: pairingCode)
+            let port = host.lastTCPPort == 0 ? RemoteConstants.defaultTCPPort : host.lastTCPPort
+            tcp.connect(host: host.lastAddress, port: port, pairingCode: pairingCode)
             configureUDP(host: host.lastAddress)
         } else {
             let serviceName = host.displayName.isEmpty ? host.lastAddress : host.displayName
@@ -387,6 +545,8 @@ final class RemoteSession: ObservableObject, CommandSending {
     }
 
     func disconnect(reason: String) {
+        connectFallbackWork?.cancel()
+        reconnectWork?.cancel()
         send(.releaseAll)
         sendController(.neutral)
         tcp.stop()
@@ -509,17 +669,26 @@ final class RemoteSession: ObservableObject, CommandSending {
     private func handleTCP(_ state: NWConnection.State) {
         switch state {
         case .ready:
+            connectFallbackWork?.cancel()
             handlingTransportDeath = false
             telemetry.tcpReady = true
             sendHandshake()
         case .waiting(let error):
             statusText = "Waiting for Mac… \(error.localizedDescription)"
             telemetry.tcpReady = false
-            if connectionState == .connected { beginReconnect() }
+            if connectionState == .connected {
+                beginReconnect()
+            } else if connectionState == .connecting {
+                scheduleConnectFallback(reason: error.localizedDescription)
+            }
         case .failed:
             telemetry.tcpReady = false
             sendController(.neutral)
-            if connectionState != .idle { beginReconnect() }
+            if connectionState == .connecting {
+                tryNextConnectCandidate(reason: "Connection failed — try Mac IP from Host window")
+            } else if connectionState != .idle {
+                beginReconnect()
+            }
         case .cancelled:
             telemetry.tcpReady = false
         default:
@@ -569,9 +738,11 @@ final class RemoteSession: ObservableObject, CommandSending {
     private func markConnected() {
         let isFirstConnectionTransition = connectionState != .connected
         reconnectAttempt = 0
+        connectFallbackWork?.cancel()
         handlingTransportDeath = false
         connectionState = .connected
         statusText = "connected"
+        showsQuickConnect = false
         engine.syncConnection(true)
         telemetry.quality = .excellent
         telemetry.transport = transport.active.title

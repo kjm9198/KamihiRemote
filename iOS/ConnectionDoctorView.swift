@@ -25,6 +25,11 @@ struct KamihiAppShell: View {
                     .accessibilityLabel("Connection Doctor")
                 }
             }
+            .sheet(isPresented: $session.showsQuickConnect) {
+                QuickConnectView()
+                    .environmentObject(session)
+                    .preferredColorScheme(.dark)
+            }
             .sheet(isPresented: $showsConnectionDoctor) {
                 NavigationStack {
                     ConnectionDoctorView()
@@ -36,6 +41,15 @@ struct KamihiAppShell: View {
                         }
                 }
                 .preferredColorScheme(.dark)
+            }
+            .onAppear {
+                // Polished shell previously never presented Quick Connect, so Pair PIN was a no-op.
+                if !session.isConnected {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        guard !session.isConnected, !session.showsQuickConnect else { return }
+                        session.showsQuickConnect = true
+                    }
+                }
             }
     }
 }

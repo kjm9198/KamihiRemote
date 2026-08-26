@@ -13,6 +13,7 @@ enum GestureEngineTests {
             try check("oneFingerMove", oneFingerMove)
             try check("oneFingerTap", oneFingerTap)
             try check("oneFingerTapNeverOptions", oneFingerTapNeverOptions)
+            try check("accidentalSecondFingerDuringOneFingerTap", accidentalSecondFingerDuringOneFingerTap)
             try check("doubleClick", doubleClick)
             try check("twoFingerTap", twoFingerTap)
             try check("threeFingerTap", threeFingerTap)
@@ -386,6 +387,45 @@ enum GestureEngineTests {
         let out = g.ingest(samples: [FingerSample(id: 1, point: CGPoint(x: 151, y: 150))], timestamp: 26.08, phase: .ended, in: size)
         try require(out.commands.contains(.click), "1-finger tap emits click")
         try require(out.commands.contains(.rightClick) == false, "1-finger tap must NEVER emit rightClick (options)")
+    }
+
+    /// Palm/edge grazes a second contact briefly during a 1-finger tap — must stay left click.
+    private static func accidentalSecondFingerDuringOneFingerTap() throws {
+        let g = engine()
+        _ = g.handle(
+            changed: [FingerSample(id: 1, point: CGPoint(x: 150, y: 150))],
+            active: [FingerSample(id: 1, point: CGPoint(x: 150, y: 150))],
+            timestamp: 27.0,
+            phase: .began,
+            in: size
+        )
+        // Ghost 2nd finger for ~20ms (below secondary-click overlap threshold).
+        _ = g.handle(
+            changed: [FingerSample(id: 2, point: CGPoint(x: 170, y: 152))],
+            active: [
+                FingerSample(id: 1, point: CGPoint(x: 150, y: 150)),
+                FingerSample(id: 2, point: CGPoint(x: 170, y: 152))
+            ],
+            timestamp: 27.02,
+            phase: .began,
+            in: size
+        )
+        _ = g.handle(
+            changed: [FingerSample(id: 2, point: CGPoint(x: 170, y: 152))],
+            active: [FingerSample(id: 1, point: CGPoint(x: 151, y: 150))],
+            timestamp: 27.04,
+            phase: .ended,
+            in: size
+        )
+        let out = g.handle(
+            changed: [FingerSample(id: 1, point: CGPoint(x: 151, y: 150))],
+            active: [],
+            timestamp: 27.10,
+            phase: .ended,
+            in: size
+        )
+        try require(out.commands.contains(.click), "accidental 2nd contact still left-clicks")
+        try require(out.commands.contains(.rightClick) == false, "accidental 2nd contact must not open Options")
     }
 
     private static func twoFingerSticky() throws {

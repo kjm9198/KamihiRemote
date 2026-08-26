@@ -10,7 +10,9 @@ struct SettingsSheet: View {
                 Section("Quick Connect") {
                     Button {
                         dismiss()
-                        session.showsQuickConnect = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                            session.showsQuickConnect = true
+                        }
                     } label: {
                         HStack {
                             Image(systemName: "number.square.fill")

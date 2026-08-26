@@ -49,7 +49,11 @@ final class GestureEngine {
     private var peakMovement: CGFloat = 0
     private var maxClusterCount: Int = 0
     private var startFingerCount: Int = 0
-    private var twoFingerHoldStart: TimeInterval?
+    /// Wall-clock overlap while ≥2 fingers are down. Used so a fleeting palm/edge
+    /// contact during a 1-finger tap cannot promote to Options / right-click.
+    private var twoFingerPresentSince: TimeInterval?
+    private var twoFingerOverlap: TimeInterval = 0
+    private static let secondaryClickMinOverlap: TimeInterval = 0.055
     private var swipeAxis: Axis?
     private var committedAction: SystemAction?
     private var didEmitSwipe = false
@@ -147,9 +151,7 @@ final class GestureEngine {
         if startFingerCount == 0 {
             startFingerCount = fingers.count
         }
-        if fingers.count >= 2, twoFingerHoldStart == nil {
-            twoFingerHoldStart = timestamp
-        }
+        noteTwoFingerPresence(at: timestamp)
         startTime = timestamp
         lastTimestamp = timestamp
         peakMovement = 0
@@ -180,6 +182,7 @@ final class GestureEngine {
             return ended(changed: changed, active: [], timestamp: timestamp, size: size)
         }
         maxClusterCount = max(maxClusterCount, fingers.count)
+        noteTwoFingerPresence(at: timestamp)
         let dt = max(timestamp - lastTimestamp, 0.0008)
         let points = currentPoints()
         let center = centroid(points)
@@ -302,6 +305,7 @@ final class GestureEngine {
 
     private func ended(changed: [FingerSample], active: [FingerSample], timestamp: TimeInterval, size: CGSize) -> GestureOutput {
         replaceActive(active)
+        noteTwoFingerPresence(at: timestamp)
         var commands = takeQueued()
         let remaining = fingers.count
         let duration = timestamp - startTime
@@ -361,11 +365,17 @@ final class GestureEngine {
                 }
             case .twoFingerCandidate, .scrolling, .pinching:
                 let scrollEnd = scrollEngine.end(isTap: isTap)
-                // 2-finger tap triggered when 2 fingers tapped
-                if isTap, maxClusterCount == 2, preferences.twoFingerSecondaryClick {
+                let overlap = finalizeTwoFingerOverlap(at: timestamp)
+                // Options / right-click only for a real two-finger tap with stable overlap.
+                // A 1-finger tap that briefly grazes a 2nd contact must stay a left click.
+                let intentionalSecondary = isTap
+                    && maxClusterCount == 2
+                    && overlap >= Self.secondaryClickMinOverlap
+                    && preferences.twoFingerSecondaryClick
+                if intentionalSecondary {
                     commands.append(.rightClick)
                     Haptics.rightClick()
-                } else if isTap, maxClusterCount == 1, preferences.tapToClick {
+                } else if isTap, preferences.tapToClick, (maxClusterCount == 1 || startFingerCount == 1) {
                     let isDouble = timestamp - lastClickTime < 0.35
                     lastClickTime = timestamp
                     clickPulse += 1
@@ -647,8 +657,30 @@ final class GestureEngine {
         peakMovement = 0
         maxClusterCount = 0
         startFingerCount = 0
-        twoFingerHoldStart = nil
+        twoFingerPresentSince = nil
+        twoFingerOverlap = 0
         lastFingerIDs.removeAll()
+    }
+
+    private func noteTwoFingerPresence(at timestamp: TimeInterval) {
+        if fingers.count >= 2 {
+            if twoFingerPresentSince == nil {
+                twoFingerPresentSince = timestamp
+            }
+        } else if let since = twoFingerPresentSince {
+            twoFingerOverlap += max(0, timestamp - since)
+            twoFingerPresentSince = nil
+        }
+    }
+
+    /// Flush any in-progress two-finger window and return total overlap seconds.
+    private func finalizeTwoFingerOverlap(at timestamp: TimeInterval) -> TimeInterval {
+        noteTwoFingerPresence(at: timestamp)
+        if let since = twoFingerPresentSince {
+            twoFingerOverlap += max(0, timestamp - since)
+            twoFingerPresentSince = nil
+        }
+        return twoFingerOverlap
     }
 
     private func snapshotPreviousFingers() {

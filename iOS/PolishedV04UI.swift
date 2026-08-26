@@ -68,7 +68,7 @@ struct KamihiPolishedRootView: View {
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                         .tracking(KamihiUI.labelTracking)
                         .foregroundStyle(.white.opacity(0.85))
-                    Text("v0.5.0")
+                    Text("v0.5.1")
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -102,7 +102,7 @@ struct KamihiPolishedRootView: View {
                         .frame(width: 9, height: 9)
                         .padding(.top, 2)
                         .accessibilityLabel(session.isConnected ? "Connected" : session.statusText)
-                    Text("v0.5.0")
+                    Text("v0.5.1")
                         .font(.system(size: 8, weight: .bold, design: .monospaced))
                         .foregroundStyle(.cyan)
                 }
@@ -132,7 +132,7 @@ struct KamihiPolishedRootView: View {
                         .font(.system(size: 12, weight: .bold, design: .rounded))
                         .tracking(KamihiUI.labelTracking)
                         .foregroundStyle(.white.opacity(0.85))
-                    Text("v0.5.0")
+                    Text("v0.5.1")
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -253,7 +253,10 @@ private struct CompactConnectionLabel: View {
 
     var body: some View {
         Button {
-            if !session.isConnected {
+            if session.isConnected {
+                session.showsQuickConnect = true
+            } else {
+                session.showsQuickConnect = true
                 session.connectIfPossible()
             }
         } label: {
@@ -261,7 +264,7 @@ private struct CompactConnectionLabel: View {
                 Circle()
                     .fill(session.isConnected ? Color.green.opacity(0.9) : (session.connectionState == .connecting ? Color.yellow.opacity(0.9) : Color.white.opacity(0.35)))
                     .frame(width: 8, height: 8)
-                Text(session.isConnected ? (session.hostName.isEmpty ? "Connected" : session.hostName) : (session.connectionState == .connecting ? "Connecting…" : session.statusText))
+                Text(session.isConnected ? (session.hostName.isEmpty ? "Connected" : session.hostName) : (session.connectionState == .connecting ? "Connecting…" : "Tap to pair"))
                     .font(KamihiUI.captionFont)
                     .lineLimit(1)
             }
@@ -272,6 +275,7 @@ private struct CompactConnectionLabel: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(session.isConnected ? "Connected" : "Pair with Mac")
     }
 }
 
