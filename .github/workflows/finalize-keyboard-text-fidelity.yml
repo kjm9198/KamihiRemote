@@ -1,0 +1,76 @@
+name: Finalize keyboard text fidelity patch
+
+on:
+  push:
+    branches: ["automation/keyboard-text-fidelity"]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: automation/keyboard-text-fidelity
+          fetch-depth: 0
+      - name: Preserve boundary whitespace and add encrypted round-trip check
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          packet_path = Path('Shared/RemotePacket.swift')
+          packet = packet_path.read_text()
+
+          unquote_pattern = re.compile(r'    private static func unquote\(_ value: String\) -> String \{\n.*?^    \}\n', re.S | re.M)
+          unquote_replacement = '''    private static func unquote(_ value: String) -> String {
+              // tokenize(_:) removes wire quotes and decodes escapes. Do not trim here:
+              // leading/trailing spaces, tabs, and newlines are meaningful keyboard text.
+              value
+          }
+          '''
+          packet, count = unquote_pattern.subn(lambda _: unquote_replacement, packet, count=1)
+          if count != 1:
+              raise SystemExit(f'expected one unquote() replacement, got {count}')
+
+          anchor = '''            switch parse(rawStr, sessionKey: testKey) {
+              case .success(_, let cmd, _, let sess, let seq, let isEnc):
+                  guard sess == "test-sess", seq == 42, isEnc,
+                        case .move(let dx, let dy) = cmd, coordsMatch(dx, 3.5), coordsMatch(dy, -1.25)
+                  else {
+                      NSLog("Kamihi K3 self-check: decrypted payload mismatch")
+                      break
+                  }
+              case .failure(let err):
+                  NSLog("Kamihi K3 self-check parse failed: %@", err)
+              }
+          '''
+          addition = anchor + '''
+              let textData = try encodeK3(sessionID: "text-sess", sequence: 43, command: .typeText(exactText), key: testKey)
+              guard let textRaw = String(data: textData, encoding: .utf8) else {
+                  preconditionFailure("K3 text self-check produced invalid UTF8")
+              }
+              switch parse(textRaw, sessionKey: testKey) {
+              case .success(_, let cmd, _, let sess, let seq, let isEnc):
+                  precondition(sess == "text-sess" && seq == 43 && isEnc, "K3 text envelope mismatch")
+                  precondition(cmd == .typeText(exactText), "K3 exact text round-trip mismatch")
+              case .failure(let err):
+                  preconditionFailure("K3 exact text parse failed: \\(err)")
+              }
+          '''
+          if packet.count(anchor) != 1:
+              raise SystemExit(f'expected one K3 self-check anchor, got {packet.count(anchor)}')
+          packet_path.write_text(packet.replace(anchor, addition, 1))
+          PY
+      - name: Remove one-shot workflow
+        run: rm .github/workflows/finalize-keyboard-text-fidelity.yml
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Shared/RemotePacket.swift .github/workflows/finalize-keyboard-text-fidelity.yml
+          git commit -m "test: cover exact encrypted text round trips"
+          git push origin HEAD:automation/keyboard-text-fidelity
