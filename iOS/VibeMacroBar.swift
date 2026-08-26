@@ -42,6 +42,7 @@ enum VibeMacroStore {
 }
 
 /// User-owned prompt shortcuts. A macro only fills the composer; it never sends automatically.
+/// Keep the primary Vibe surface quiet: saved macros live behind one compact, accessible menu.
 struct VibeMacroBar: View {
     @Binding var promptText: String
     @Binding var vibeStatus: String
@@ -50,41 +51,61 @@ struct VibeMacroBar: View {
     @State private var showsManager = false
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(macros) { macro in
-                    Button {
-                        promptText = macro.prompt
-                        vibeStatus = "\(macro.title) ready — edit or send"
-                        Haptics.touchTap()
-                    } label: {
-                        Label(macro.title, systemImage: macro.symbol)
-                            .font(.system(size: 10, weight: .semibold, design: .rounded))
-                            .lineLimit(1)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.mint)
-                    .glassEffect(.regular.interactive(), in: .capsule)
-                    .accessibilityLabel("Use personal macro \(macro.title)")
-                }
-
+        HStack(spacing: 6) {
+            if macros.isEmpty {
                 Button {
                     showsManager = true
                     Haptics.touchTap()
                 } label: {
-                    Label(macros.isEmpty ? "Add macro" : "Macros", systemImage: "plus.circle.fill")
+                    Label("Add Macro", systemImage: "plus.circle.fill")
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
                         .padding(.horizontal, 9)
                         .padding(.vertical, 5)
+                        .frame(minHeight: 44)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.white.opacity(0.72))
                 .glassEffect(.regular.interactive(), in: .capsule)
-                .accessibilityLabel("Manage personal Vibe macros")
+                .contentShape(Rectangle())
+                .accessibilityLabel("Add personal Vibe macro")
+            } else {
+                Menu {
+                    ForEach(macros) { macro in
+                        Button {
+                            use(macro)
+                        } label: {
+                            Label(macro.title, systemImage: macro.symbol)
+                        }
+                    }
+
+                    Divider()
+
+                    Button {
+                        showsManager = true
+                        Haptics.touchTap()
+                    } label: {
+                        Label("Manage Macros…", systemImage: "slider.horizontal.3")
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "bolt.fill")
+                        Text("Macros")
+                        Text("\(macros.count)")
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.mint)
+                .glassEffect(.regular.interactive(), in: .capsule)
+                .contentShape(Rectangle())
+                .accessibilityLabel("Personal Vibe macros, \(macros.count) saved")
             }
-            .padding(.vertical, 1)
+
+            Spacer(minLength: 0)
         }
         .sheet(isPresented: $showsManager) {
             VibeMacroManagerSheet(macros: $macros)
@@ -95,6 +116,12 @@ struct VibeMacroBar: View {
         .onChange(of: macros) { _, newValue in
             VibeMacroStore.save(newValue)
         }
+    }
+
+    private func use(_ macro: VibeMacro) {
+        promptText = macro.prompt
+        vibeStatus = "\(macro.title) ready — edit or send"
+        Haptics.touchTap()
     }
 }
 
@@ -179,7 +206,7 @@ private struct VibeMacroManagerSheet: View {
                                     Image(systemName: symbol)
                                         .font(.system(size: 16, weight: .semibold))
                                         .foregroundStyle(selectedSymbol == symbol ? .mint : .secondary)
-                                        .frame(width: 34, height: 34)
+                                        .frame(width: 44, height: 44)
                                         .background(
                                             selectedSymbol == symbol
                                                 ? Color.mint.opacity(0.14)
@@ -211,7 +238,7 @@ private struct VibeMacroManagerSheet: View {
                 } header: {
                     Text(editingID == nil ? "New Macro" : "Edit Macro")
                 } footer: {
-                    Text("Macros are stored only on this iPhone. Tapping one fills the Vibe composer so you can review or modify it before sending.")
+                    Text("Macros are stored only on this iPhone. Choosing one fills the Vibe composer so you can review or modify it before sending.")
                 }
             }
             .environment(\.editMode, .constant(.active))
