@@ -481,11 +481,10 @@ enum RemotePacket {
 }
 
     private static func unquote(_ value: String) -> String {
-        var text = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.hasPrefix("\"") { text.removeFirst() }
-        if text.hasSuffix("\"") { text.removeLast() }
-        return text
-    }
+    // tokenize(_:) already removes wire quotes and decodes escapes.
+    // Boundary whitespace is meaningful for keyboard and mirrored text.
+    value
+}
 
     private static func looksLikeCommand(_ value: String) -> Bool {
         [
