@@ -45,6 +45,7 @@ struct VibeHubScreen: View {
                         centerMicrophoneSection
                         promptInputBar
                         promptShelf
+                        VibeMacroBar(promptText: $promptText, vibeStatus: $vibeStatus)
                         destinationPills
                     }
                     .padding(.horizontal, KamihiUI.pad)
