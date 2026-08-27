@@ -91,11 +91,12 @@ struct VibeHubScreen: View {
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: session.isConnected ? "macbook" : "wifi.slash")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.caption2.weight(.bold))
                     Text(session.isConnected
                          ? (session.hostName.isEmpty ? "Mac" : session.hostName)
                          : "Connect")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .font(.caption2.weight(.semibold))
+                        .fontDesign(.rounded)
                         .lineLimit(1)
                 }
                 .padding(.horizontal, 9)
@@ -156,14 +157,15 @@ struct VibeHubScreen: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: selectedProject == nil ? "macwindow" : "folder.fill")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(.cyan)
                 Text(projectTitle)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(.caption2.weight(.bold))
+                    .fontDesign(.rounded)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 9)
@@ -188,9 +190,10 @@ struct VibeHubScreen: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: destination.symbol)
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.caption2.weight(.bold))
                 Text(destination.title)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(.caption2.weight(.semibold))
+                    .fontDesign(.rounded)
                     .lineLimit(1)
             }
             .padding(.horizontal, 8)
@@ -319,7 +322,7 @@ struct VibeHubScreen: View {
                 Image(systemName: isSending
                       ? "arrow.up.circle.fill"
                       : (isListening ? "waveform" : "mic.fill"))
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.caption2.weight(.bold))
                 Text(isSending ? "Sending to \(destination.title)…" : vibeStatus)
                     .lineLimit(1)
 
@@ -335,7 +338,8 @@ struct VibeHubScreen: View {
                         .monospacedDigit()
                 }
             }
-            .font(.system(size: 10, weight: .medium, design: .rounded))
+            .font(.caption2.weight(.medium))
+            .fontDesign(.rounded)
             .foregroundStyle(isListening ? .cyan : .white.opacity(0.55))
             .padding(.horizontal, 3)
             .accessibilityElement(children: .combine)
