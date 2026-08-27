@@ -300,72 +300,95 @@ struct VibeHubScreen: View {
 
     private var composer: some View {
         VStack(spacing: 4) {
-            HStack(alignment: .bottom, spacing: 6) {
-                TextField(
-                    "Tell \(destination.title) what to change…",
-                    text: $promptText,
-                    axis: .vertical
-                )
-                .textFieldStyle(.plain)
-                .font(.system(.body, design: .rounded))
-                .lineLimit(1...3)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 10)
-                .frame(minHeight: 48)
-                .glassEffect(.regular, in: .rect(cornerRadius: KamihiUI.radiusMedium))
-                .foregroundStyle(.white)
-                .submitLabel(.send)
-                .onSubmit { sendCurrentPrompt() }
-                .accessibilityLabel("Vibe prompt")
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 5) {
+                    promptField
 
-                clipboardMenu
-
-                if promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
-                   isListening == false,
-                   isMicPressed == false {
-                    Button {
-                        sendCurrentPrompt()
-                    } label: {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 16, weight: .bold))
-                            .frame(width: 44, height: 44)
+                    HStack(spacing: 6) {
+                        clipboardMenu
+                        sendPromptButton
+                        Spacer(minLength: 0)
+                        holdToTalkControl
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.black)
-                    .background(.cyan, in: Circle())
-                    .disabled(isSending)
-                    .accessibilityLabel("Send prompt")
                 }
-
-                holdToTalkControl
-            }
-
-            HStack(spacing: 5) {
-                Image(systemName: isSending
-                      ? "arrow.up.circle.fill"
-                      : (isListening ? "waveform" : "mic.fill"))
-                    .font(.caption2.weight(.bold))
-                Text(isSending ? "Sending to \(destination.title)…" : vibeStatus)
-                    .lineLimit(1)
-
-                Spacer(minLength: 6)
-
-                if session.isConnected, session.activeAppName.isEmpty == false {
-                    Text(session.activeAppName)
-                        .lineLimit(1)
-                }
-
-                if session.telemetry.rttMilliseconds > 0 {
-                    Text("\(session.telemetry.rttMilliseconds) ms")
-                        .monospacedDigit()
+            } else {
+                HStack(alignment: .bottom, spacing: 6) {
+                    promptField
+                    clipboardMenu
+                    sendPromptButton
+                    holdToTalkControl
                 }
             }
-            .font(.caption2.weight(.medium))
-            .fontDesign(.rounded)
-            .foregroundStyle(isListening ? .cyan : .white.opacity(0.55))
-            .padding(.horizontal, 3)
-            .accessibilityElement(children: .combine)
+
+            statusRow
         }
+    }
+
+    private var promptField: some View {
+        TextField(
+            "Tell \(destination.title) what to change…",
+            text: $promptText,
+            axis: .vertical
+        )
+        .textFieldStyle(.plain)
+        .font(.system(.body, design: .rounded))
+        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2...5 : 1...3)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, minHeight: 48)
+        .glassEffect(.regular, in: .rect(cornerRadius: KamihiUI.radiusMedium))
+        .foregroundStyle(.white)
+        .submitLabel(.send)
+        .onSubmit { sendCurrentPrompt() }
+        .accessibilityLabel("Vibe prompt")
+    }
+
+    @ViewBuilder
+    private var sendPromptButton: some View {
+        if promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
+           isListening == false,
+           isMicPressed == false {
+            Button {
+                sendCurrentPrompt()
+            } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 16, weight: .bold))
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.black)
+            .background(.cyan, in: Circle())
+            .disabled(isSending)
+            .accessibilityLabel("Send prompt")
+        }
+    }
+
+    private var statusRow: some View {
+        HStack(spacing: 5) {
+            Image(systemName: isSending
+                  ? "arrow.up.circle.fill"
+                  : (isListening ? "waveform" : "mic.fill"))
+                .font(.caption2.weight(.bold))
+            Text(isSending ? "Sending to \(destination.title)…" : vibeStatus)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+
+            Spacer(minLength: 6)
+
+            if session.isConnected, session.activeAppName.isEmpty == false {
+                Text(session.activeAppName)
+                    .lineLimit(1)
+            }
+
+            if session.telemetry.rttMilliseconds > 0 {
+                Text("\(session.telemetry.rttMilliseconds) ms")
+                    .monospacedDigit()
+            }
+        }
+        .font(.caption2.weight(.medium))
+        .fontDesign(.rounded)
+        .foregroundStyle(isListening ? .cyan : .white.opacity(0.55))
+        .padding(.horizontal, 3)
+        .accessibilityElement(children: .combine)
     }
 
     private var clipboardMenu: some View {
