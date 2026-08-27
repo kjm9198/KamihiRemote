@@ -6,6 +6,7 @@ import UIKit
 struct VibeHubScreen: View {
     @EnvironmentObject private var session: RemoteSession
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @AppStorage("voiceAgentDestination") private var destinationRaw = VoiceAgentDestination.antigravity.rawValue
     @AppStorage("voiceAgentProjectID") private var selectedProjectID = "kamihi-remote"
@@ -84,38 +85,59 @@ struct VibeHubScreen: View {
 
     // MARK: - Compact context
 
+    @ViewBuilder
     private var contextBar: some View {
-        HStack(spacing: 5) {
-            Button {
-                session.showsQuickConnect = true
-            } label: {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: 5) {
                 HStack(spacing: 5) {
-                    Image(systemName: session.isConnected ? "macbook" : "wifi.slash")
-                        .font(.caption2.weight(.bold))
-                    Text(session.isConnected
-                         ? (session.hostName.isEmpty ? "Mac" : session.hostName)
-                         : "Connect")
-                        .font(.caption2.weight(.semibold))
-                        .fontDesign(.rounded)
-                        .lineLimit(1)
+                    connectionControl
+                    projectMenu
+                        .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal, 9)
-                .frame(minHeight: 44)
+
+                HStack(spacing: 5) {
+                    destinationMenu
+                    Spacer(minLength: 0)
+                    actionMenu
+                }
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(session.isConnected ? .green : .orange)
-            .glassEffect(.regular.interactive(), in: .capsule)
-            .accessibilityLabel(session.isConnected
-                                ? "Connected to \(session.hostName.isEmpty ? "Mac" : session.hostName)"
-                                : "Not connected. Open connection setup")
+        } else {
+            HStack(spacing: 5) {
+                connectionControl
 
-            projectMenu
-                .frame(maxWidth: .infinity)
+                projectMenu
+                    .frame(maxWidth: .infinity)
 
-            destinationMenu
+                destinationMenu
 
-            actionMenu
+                actionMenu
+            }
         }
+    }
+
+    private var connectionControl: some View {
+        Button {
+            session.showsQuickConnect = true
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: session.isConnected ? "macbook" : "wifi.slash")
+                    .font(.caption2.weight(.bold))
+                Text(session.isConnected
+                     ? (session.hostName.isEmpty ? "Mac" : session.hostName)
+                     : "Connect")
+                    .font(.caption2.weight(.semibold))
+                    .fontDesign(.rounded)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 9)
+            .frame(minHeight: 44)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(session.isConnected ? .green : .orange)
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .accessibilityLabel(session.isConnected
+                            ? "Connected to \(session.hostName.isEmpty ? "Mac" : session.hostName)"
+                            : "Not connected. Open connection setup")
     }
 
     private var projectMenu: some View {
