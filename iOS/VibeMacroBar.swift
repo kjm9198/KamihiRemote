@@ -62,11 +62,11 @@ struct VibeMacroBar: View {
                         .lineLimit(1)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 5)
-                        .frame(minHeight: 44)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.white.opacity(0.72))
                 .glassEffect(.regular.interactive(), in: .capsule)
+                .frame(minHeight: 44, alignment: .leading)
                 .contentShape(Rectangle())
                 .accessibilityLabel("Add personal Vibe macro")
             } else {
@@ -98,11 +98,11 @@ struct VibeMacroBar: View {
                     .lineLimit(1)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 5)
-                    .frame(minHeight: 44)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.mint)
                 .glassEffect(.regular.interactive(), in: .capsule)
+                .frame(minHeight: 44, alignment: .leading)
                 .contentShape(Rectangle())
                 .accessibilityLabel("Personal Vibe macros, \(macros.count) saved")
             }
