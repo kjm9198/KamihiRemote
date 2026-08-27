@@ -127,6 +127,13 @@ struct VibeMacroBar: View {
     }
 }
 
+private struct VibeMacroSymbolOption: Identifiable {
+    let symbol: String
+    let accessibilityName: String
+
+    var id: String { symbol }
+}
+
 private struct VibeMacroManagerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var macros: [VibeMacro]
@@ -136,17 +143,17 @@ private struct VibeMacroManagerSheet: View {
     @State private var prompt = ""
     @State private var selectedSymbol = "bolt.fill"
 
-    private let symbols = [
-        "bolt.fill",
-        "wrench.and.screwdriver.fill",
-        "checkmark.seal.fill",
-        "wand.and.sparkles",
-        "paperplane.fill",
-        "ladybug.fill",
-        "iphone.gen3",
-        "server.rack",
-        "shippingbox.fill",
-        "brain.head.profile"
+    private let symbols: [VibeMacroSymbolOption] = [
+        .init(symbol: "bolt.fill", accessibilityName: "Lightning bolt"),
+        .init(symbol: "wrench.and.screwdriver.fill", accessibilityName: "Tools"),
+        .init(symbol: "checkmark.seal.fill", accessibilityName: "Verified checkmark"),
+        .init(symbol: "wand.and.sparkles", accessibilityName: "Magic wand"),
+        .init(symbol: "paperplane.fill", accessibilityName: "Paper plane"),
+        .init(symbol: "ladybug.fill", accessibilityName: "Bug"),
+        .init(symbol: "iphone.gen3", accessibilityName: "iPhone"),
+        .init(symbol: "server.rack", accessibilityName: "Server"),
+        .init(symbol: "shippingbox.fill", accessibilityName: "Package"),
+        .init(symbol: "brain.head.profile", accessibilityName: "Brain")
     ]
 
     var body: some View {
@@ -200,24 +207,26 @@ private struct VibeMacroManagerSheet: View {
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
-                            ForEach(symbols, id: \.self) { symbol in
+                            ForEach(symbols) { option in
                                 Button {
-                                    selectedSymbol = symbol
+                                    selectedSymbol = option.symbol
                                     Haptics.touchTap()
                                 } label: {
-                                    Image(systemName: symbol)
+                                    Image(systemName: option.symbol)
                                         .font(.system(.body, design: .rounded, weight: .semibold))
-                                        .foregroundStyle(selectedSymbol == symbol ? .mint : .secondary)
+                                        .foregroundStyle(selectedSymbol == option.symbol ? .mint : .secondary)
                                         .frame(width: 44, height: 44)
                                         .background(
-                                            selectedSymbol == symbol
+                                            selectedSymbol == option.symbol
                                                 ? Color.mint.opacity(0.14)
                                                 : Color.clear,
                                             in: Circle()
                                         )
                                 }
                                 .buttonStyle(.plain)
-                                .accessibilityLabel(symbol)
+                                .accessibilityLabel(option.accessibilityName)
+                                .accessibilityValue(selectedSymbol == option.symbol ? "Selected" : "Not selected")
+                                .accessibilityAddTraits(selectedSymbol == option.symbol ? .isSelected : [])
                             }
                         }
                     }
