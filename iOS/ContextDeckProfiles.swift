@@ -2,6 +2,7 @@ import Foundation
 
 enum ContextDeckCategory: String, CaseIterable, Identifiable {
     case auto = "Auto"
+    case vibe = "Vibe"
     case code = "VS Code"
     case xcode = "Xcode"
     case terminal = "Terminal"
@@ -23,6 +24,8 @@ enum ContextDeckProfiles {
     static func items(for category: ContextDeckCategory, activeBundleID: String) -> [ContextDeckItem] {
         let resolved = (category == .auto) ? resolveAutoCategory(bundleID: activeBundleID) : category
         switch resolved {
+        case .vibe:
+            return vibeItems
         case .code:
             return vscodeItems
         case .xcode:
@@ -38,7 +41,10 @@ enum ContextDeckProfiles {
 
     private static func resolveAutoCategory(bundleID: String) -> ContextDeckCategory {
         let lower = bundleID.lowercased()
-        if lower.contains("vscode") || lower.contains("vscodium") || lower.contains("cursor") || lower.contains("sublime") || lower.contains("zed") {
+        if lower.contains("cursor") {
+            return .vibe
+        }
+        if lower.contains("vscode") || lower.contains("vscodium") || lower.contains("sublime") || lower.contains("zed") {
             return .code
         }
         if lower.contains("xcode") {
@@ -52,6 +58,20 @@ enum ContextDeckProfiles {
         }
         return .general
     }
+
+    /// Cursor-focused controls for the fast prompt -> inspect -> run -> verify loop.
+    /// Keeping this profile shortcut-only makes it safe to use without granting any
+    /// new shell execution capability to the phone.
+    static let vibeItems: [ContextDeckItem] = [
+        ContextDeckItem(id: "vibe_agent", title: "Agent", symbol: "sparkles", command: .shortcut("cmd+i")),
+        ContextDeckItem(id: "vibe_palette", title: "Palette", symbol: "command.square.fill", command: .shortcut("cmd+shift+p")),
+        ContextDeckItem(id: "vibe_open", title: "Quick Open", symbol: "magnifyingglass", command: .shortcut("cmd+p")),
+        ContextDeckItem(id: "vibe_terminal", title: "Terminal", symbol: "terminal.fill", command: .shortcut("ctrl+grave")),
+        ContextDeckItem(id: "vibe_design", title: "Design Mode", symbol: "cursorarrow.motionlines", command: .shortcut("cmd+shift+d")),
+        ContextDeckItem(id: "vibe_save", title: "Save", symbol: "square.and.arrow.down.fill", command: .shortcut("cmd+s")),
+        ContextDeckItem(id: "vibe_run", title: "Run / Debug", symbol: "play.circle.fill", command: .shortcut("f5")),
+        ContextDeckItem(id: "vibe_source", title: "Source Control", symbol: "arrow.triangle.branch", command: .shortcut("ctrl+shift+g"))
+    ]
 
     static let vscodeItems: [ContextDeckItem] = [
         ContextDeckItem(id: "vsc_save", title: "Save", symbol: "square.and.arrow.down.fill", command: .shortcut("cmd+s")),
