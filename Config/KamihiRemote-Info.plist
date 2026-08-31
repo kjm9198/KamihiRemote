@@ -37,6 +37,8 @@
 	<string>Kamihi uses speech recognition so you can dictate prompts to Cursor or ChatGPT on your Mac.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Kamihi uses the microphone so you can dictate prompts to agents on your Mac.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Kamihi uses Face ID to unlock your private desktop view on a connected display.</string>
 	<key>UIUserInterfaceStyle</key>
 	<string>Dark</string>
 	<key>UIStatusBarHidden</key>
