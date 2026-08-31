@@ -3,6 +3,9 @@ import SwiftUI
 /// Centralized semantic design tokens for Kamihi Remote & Kamihi Desktop.
 /// Provides consistent typography, spacing, corner radii, materials, colors, and spatial animations.
 public enum KamihiTheme {
+    /// Primary app surface. Kept as a root alias so feature views do not hardcode black/white backgrounds.
+    public static let surface = Colors.surfaceBackground
+
     // MARK: - Spacing
     public enum Spacing {
         public static let xxs: CGFloat = 4
@@ -52,8 +55,8 @@ public enum KamihiTheme {
         public static let groupedBackground = Color(uiColor: .systemGroupedBackground)
 
         public static let separator = Color(uiColor: .separator)
-        public static let subtleBorder = Color.white.opacity(0.12)
-        public static let glow = Color.cyan.opacity(0.35)
+        public static let subtleBorder = Color.primary.opacity(0.12)
+        public static let glow = Color.accentColor.opacity(0.28)
     }
 
     // MARK: - Atmospheric Meshes & Wallpapers
