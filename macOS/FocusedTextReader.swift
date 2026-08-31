@@ -31,6 +31,17 @@ enum FocusedTextReader {
         let valueStatus = AXUIElementCopyAttributeValue(ui, kAXValueAttribute as CFString, &value)
         if valueStatus == .success, let raw = value, CFGetTypeID(raw) == CFStringGetTypeID() {
             let text = raw as! String
+
+            // CodeKey can currently mirror/delete only from the end of the focused value.
+            // If Accessibility tells us the caret or selection is elsewhere, do not send a
+            // misleading baseline to the phone: that could make a phone-side backspace delete
+            // text at the Mac caret while the UI appears to be deleting the document suffix.
+            // Falling back to "unavailable" keeps direct typing usable without pretending the
+            // mirrored value is safely editable. A future selection-aware protocol can lift this.
+            if let selection = selectedTextRange(ui), selectionTouchesEnd(selection, text: text) == false {
+                return (.unavailable, "Move the Mac cursor to the end to edit mirrored text safely")
+            }
+
             return (.value, boundedSnapshot(text))
         }
 
@@ -39,6 +50,33 @@ enum FocusedTextReader {
         }
 
         return (.unavailable, "Live text unavailable here")
+    }
+
+    private static func selectedTextRange(_ element: AXUIElement) -> CFRange? {
+        var rawRange: CFTypeRef?
+        let status = AXUIElementCopyAttributeValue(
+            element,
+            kAXSelectedTextRangeAttribute as CFString,
+            &rawRange
+        )
+        guard status == .success,
+              let rawRange,
+              CFGetTypeID(rawRange) == AXValueGetTypeID() else {
+            return nil
+        }
+
+        let value = unsafeBitCast(rawRange, to: AXValue.self)
+        guard AXValueGetType(value) == .cfRange else { return nil }
+        var range = CFRange()
+        guard AXValueGetValue(value, .cfRange, &range) else { return nil }
+        guard range.location >= 0, range.length >= 0 else { return nil }
+        return range
+    }
+
+    private static func selectionTouchesEnd(_ range: CFRange, text: String) -> Bool {
+        let utf16Length = (text as NSString).length
+        let end = range.location + range.length
+        return end == utf16Length
     }
 
     private static func boundedSnapshot(_ text: String) -> String {
