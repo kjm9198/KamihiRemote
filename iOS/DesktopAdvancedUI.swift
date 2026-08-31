@@ -57,6 +57,7 @@ struct AdvancedPhoneControllerView: View {
     @StateObject private var power = DesktopPowerMonitor.shared
     @StateObject private var focusTimer = DesktopFocusTimer.shared
     @StateObject private var clipboard = DesktopClipboardStore.shared
+    @StateObject private var privacy = DesktopPrivacyAuthenticator.shared
     @State private var showLauncher = false
     @State private var showOverview = false
     @State private var showClipboard = false
@@ -90,6 +91,7 @@ struct AdvancedPhoneControllerView: View {
         }
         .sheet(isPresented: $showClipboard) {
             DesktopClipboardCenterView()
+                .environmentObject(desktop)
         }
         .sheet(isPresented: $showCalculator) {
             DesktopCalculatorView()
@@ -97,6 +99,9 @@ struct AdvancedPhoneControllerView: View {
         .onAppear {
             power.refresh()
             clipboard.captureIfChanged()
+        }
+        .onChange(of: desktop.windows) { _, _ in
+            DesktopFeatureState.shared.saveSession(desktop: desktop)
         }
         .onChange(of: features.uiScale) { _, _ in features.persistPreferences() }
         .onChange(of: features.cursorScale) { _, _ in features.persistPreferences() }
@@ -106,6 +111,22 @@ struct AdvancedPhoneControllerView: View {
 
     private var controlStrip: some View {
         VStack(spacing: 8) {
+            if features.privacyMode {
+                HStack(spacing: 10) {
+                    Label("Desktop locked", systemImage: "lock.shield.fill")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    if let error = privacy.lastError {
+                        Text(error).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Button(privacy.isAuthenticating ? "Unlocking…" : "Unlock") {
+                        Task { _ = await privacy.unlock() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(privacy.isAuthenticating)
+                }
+            }
+
             HStack(spacing: 8) {
                 Button {
                     showLauncher = true
@@ -113,6 +134,7 @@ struct AdvancedPhoneControllerView: View {
                     Label("Apps", systemImage: "square.grid.2x2")
                 }
                 .buttonStyle(.borderedProminent)
+                .keyboardShortcut("a", modifiers: [.command, .shift])
 
                 Button {
                     features.showCommandCenter = true
@@ -120,6 +142,7 @@ struct AdvancedPhoneControllerView: View {
                     Label("Commands", systemImage: "command")
                 }
                 .buttonStyle(.bordered)
+                .keyboardShortcut("k", modifiers: .command)
 
                 Button {
                     showOverview = true
@@ -127,6 +150,7 @@ struct AdvancedPhoneControllerView: View {
                     Label("Windows", systemImage: "rectangle.on.rectangle")
                 }
                 .buttonStyle(.bordered)
+                .keyboardShortcut("w", modifiers: [.command, .shift])
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -165,6 +189,12 @@ struct AdvancedPhoneControllerView: View {
                     Divider()
                     Button("Clipboard", systemImage: "doc.on.clipboard") { showClipboard = true }
                     Button("Calculator", systemImage: "plus.forwardslash.minus") { showCalculator = true }
+                    Divider()
+                    if features.privacyMode {
+                        Button("Unlock Desktop", systemImage: "lock.open") { Task { _ = await privacy.unlock() } }
+                    } else {
+                        Button("Lock Desktop", systemImage: "lock.shield") { privacy.lock() }
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -187,6 +217,7 @@ struct AdvancedPhoneControllerView: View {
                 }
                 .buttonStyle(.bordered)
                 .accessibilityLabel("Save desktop workspace")
+                .keyboardShortcut("s", modifiers: [.command, .shift])
 
                 Button {
                     desktop.cycleWindow()
@@ -203,6 +234,7 @@ struct AdvancedPhoneControllerView: View {
                 }
                 .buttonStyle(.bordered)
                 .accessibilityLabel("Desktop quick settings")
+                .keyboardShortcut(",", modifiers: .command)
             }
         }
         .padding(.horizontal, 10)
@@ -282,9 +314,9 @@ struct AdvancedDesktopView: View {
         VStack(spacing: 14) {
             Image(systemName: "lock.shield.fill")
                 .font(.system(size: 52))
-            Text("Kamihi Desktop Hidden")
+            Text("Kamihi Desktop Locked")
                 .font(.title2.bold())
-            Text("Turn off Privacy from the iPhone controller to continue.")
+            Text("Unlock with Face ID or your device passcode from the iPhone controller.")
                 .foregroundStyle(.secondary)
         }
         .padding(32)
@@ -354,6 +386,7 @@ struct DesktopQuickSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var features = DesktopFeatureState.shared
     @StateObject private var power = DesktopPowerMonitor.shared
+    @StateObject private var privacy = DesktopPrivacyAuthenticator.shared
 
     var body: some View {
         NavigationStack {
@@ -383,7 +416,14 @@ struct DesktopQuickSettingsView: View {
                 Section("Workspace") {
                     Button("Save Current Workspace") { features.saveSession(desktop: desktop) }
                     Button("Restore Saved Workspace") { _ = features.restoreSession(desktop: desktop) }
-                    Toggle("Privacy Screen", isOn: $features.privacyMode)
+                    if features.privacyMode {
+                        Button(privacy.isAuthenticating ? "Unlocking Desktop…" : "Unlock Desktop") {
+                            Task { _ = await privacy.unlock() }
+                        }
+                        .disabled(privacy.isAuthenticating)
+                    } else {
+                        Button("Lock Desktop", systemImage: "lock.shield") { privacy.lock() }
+                    }
                     Button("Display Diagnostics") {
                         features.showDisplayDiagnostics = true
                         dismiss()
