@@ -57,6 +57,10 @@ struct AdvancedPhoneControllerView: View {
     @StateObject private var power = DesktopPowerMonitor.shared
     @StateObject private var focusTimer = DesktopFocusTimer.shared
     @StateObject private var clipboard = DesktopClipboardStore.shared
+    @State private var showLauncher = false
+    @State private var showOverview = false
+    @State private var showClipboard = false
+    @State private var showCalculator = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -76,6 +80,20 @@ struct AdvancedPhoneControllerView: View {
         .sheet(isPresented: $features.showDisplayDiagnostics) {
             DesktopDiagnosticsPhoneView()
         }
+        .sheet(isPresented: $showLauncher) {
+            DesktopAppLauncherView()
+                .environmentObject(desktop)
+        }
+        .sheet(isPresented: $showOverview) {
+            DesktopWindowOverviewView()
+                .environmentObject(desktop)
+        }
+        .sheet(isPresented: $showClipboard) {
+            DesktopClipboardCenterView()
+        }
+        .sheet(isPresented: $showCalculator) {
+            DesktopCalculatorView()
+        }
         .onAppear {
             power.refresh()
             clipboard.captureIfChanged()
@@ -88,19 +106,33 @@ struct AdvancedPhoneControllerView: View {
 
     private var controlStrip: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
+                Button {
+                    showLauncher = true
+                } label: {
+                    Label("Apps", systemImage: "square.grid.2x2")
+                }
+                .buttonStyle(.borderedProminent)
+
                 Button {
                     features.showCommandCenter = true
                 } label: {
                     Label("Commands", systemImage: "command")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(DesktopFeatureState.Workspace.allCases) { workspace in
-                            workspaceButton(workspace)
-                        }
+                Button {
+                    showOverview = true
+                } label: {
+                    Label("Windows", systemImage: "rectangle.on.rectangle")
+                }
+                .buttonStyle(.bordered)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(DesktopFeatureState.Workspace.allCases) { workspace in
+                        workspaceButton(workspace)
                     }
                 }
             }
@@ -126,6 +158,19 @@ struct AdvancedPhoneControllerView: View {
 
                 Spacer()
 
+                Menu {
+                    Button("Center Window", systemImage: "dot.scope") { desktop.centerActiveWindow() }
+                    Button("Grow Window", systemImage: "arrow.up.left.and.arrow.down.right") { desktop.resizeActive(widthDelta: 0.06, heightDelta: 0.06) }
+                    Button("Shrink Window", systemImage: "arrow.down.right.and.arrow.up.left") { desktop.resizeActive(widthDelta: -0.06, heightDelta: -0.06) }
+                    Divider()
+                    Button("Clipboard", systemImage: "doc.on.clipboard") { showClipboard = true }
+                    Button("Calculator", systemImage: "plus.forwardslash.minus") { showCalculator = true }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Desktop utilities")
+
                 Button {
                     if focusTimer.isRunning { focusTimer.stop() }
                     else { focusTimer.start(minutes: 25) }
@@ -146,7 +191,7 @@ struct AdvancedPhoneControllerView: View {
                 Button {
                     desktop.cycleWindow()
                 } label: {
-                    Image(systemName: "rectangle.on.rectangle")
+                    Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90")
                 }
                 .buttonStyle(.bordered)
                 .accessibilityLabel("Next desktop window")
@@ -346,6 +391,9 @@ struct DesktopQuickSettingsView: View {
                 }
 
                 Section("Window Layout") {
+                    Button("Center Active Window") { desktop.centerActiveWindow() }
+                    Button("Grow Active Window") { desktop.resizeActive(widthDelta: 0.06, heightDelta: 0.06) }
+                    Button("Shrink Active Window") { desktop.resizeActive(widthDelta: -0.06, heightDelta: -0.06) }
                     Button("Top Left Quarter") { desktop.snapActiveTopLeft() }
                     Button("Top Right Quarter") { desktop.snapActiveTopRight() }
                     Button("Bottom Left Quarter") { desktop.snapActiveBottomLeft() }
@@ -353,6 +401,8 @@ struct DesktopQuickSettingsView: View {
                     Button("Left Third") { desktop.snapActiveThird(0) }
                     Button("Center Third") { desktop.snapActiveThird(1) }
                     Button("Right Third") { desktop.snapActiveThird(2) }
+                    Button("Restore All Windows") { desktop.restoreAllWindows() }
+                    Button("Minimize All Windows") { desktop.minimizeAllWindows() }
                 }
             }
             .navigationTitle("Desktop Settings")
