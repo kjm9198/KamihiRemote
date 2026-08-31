@@ -6,33 +6,33 @@ Status legend: `VERIFIED` = implemented and covered by available automated/CI ev
 
 | # | Feature | Status | Evidence / next requirement |
 |---:|---|---|---|
-| 1 | Instant Desktop Mode on external display | IMPLEMENTED / PHYSICAL TEST | External noninteractive scene + automatic controller switch; verify with RayNeo Air 4 Pro. |
+| 1 | Instant Desktop Mode on external display | IMPLEMENTED / PHYSICAL TEST | External noninteractive scene + automatic controller switch; Apple Build and simulator-host smoke green on `5eca7498`; verify with RayNeo Air 4 Pro. |
 | 2 | Real window manager | PARTIAL | Move, focus, minimize, maximize, close plus controller resizing/centering exist; direct resize handles still TODO. |
-| 3 | Smart snapping 1/2, 1/3, 2/3, 1/4 | PARTIAL | Halves, thirds and quarters implemented; drag-edge snap detection TODO. |
-| 4 | Vibe Coding Workspace | IMPLEMENTED / PHYSICAL TEST | ChatGPT + YouTube + Notes layout exists. |
+| 3 | Smart snapping 1/2, 1/3, 2/3, 1/4 | PARTIAL | Halves, thirds and quarters implemented with deterministic frame checks; drag-edge snap detection/preview TODO. |
+| 4 | Vibe Coding Workspace | IMPLEMENTED / PHYSICAL TEST | ChatGPT + YouTube + Notes layout exists; integration smoke green on `5eca7498`; physical display interaction still required. |
 | 5 | Saved workspace presets | PARTIAL | Vibe/Work/Study/Entertainment/Focus service presets exist; richer editor TODO. |
-| 6 | Workspace restoration | PARTIAL | Window session serialization/restoration + reconnect restoration exist; continuous autosave TODO. |
+| 6 | Workspace restoration | PARTIAL | Window session serialization/restoration + reconnect restoration + continuous autosave exist; recovery snapshot now added and awaiting final-head CI/real interruption validation. |
 | 7 | Desktop taskbar | PARTIAL | Running app/taskbar surface exists; richer status/running indicators TODO. |
-| 8 | Searchable app launcher | IMPLEMENTED | Searchable phone launcher for Desktop apps is wired into the connected controller. |
-| 9 | Command palette | IMPLEMENTED | Searchable command center is live with app, layout, save and resize commands. |
+| 8 | Searchable app launcher | VERIFIED | Searchable phone launcher is wired into the connected controller and compiled/smoked on `5eca7498`. |
+| 9 | Command palette | VERIFIED | Searchable command center is live with app, layout, save and resize commands; Apple Build green on `5eca7498`. |
 | 10 | Dedicated ChatGPT desktop app | IMPLEMENTED / PHYSICAL TEST | Desktop WebKit ChatGPT window; auth/input real-device verification required. |
 | 11 | AI quick panel | TODO | Overlay panel using ChatGPT window/web/API-safe route. |
 | 12 | Voice-to-AI | PARTIAL | Existing KamihiRemote dictation infrastructure exists; route into Desktop active AI window TODO. |
-| 13 | YouTube desktop app | IMPLEMENTED / PHYSICAL TEST | Desktop WebKit YouTube window with inline media. |
+| 13 | YouTube desktop app | IMPLEMENTED / PHYSICAL TEST | Desktop WebKit YouTube window with inline media; physical playback verification required. |
 | 14 | Video Picture-in-Picture | TODO | Use public AVKit/WebKit PiP support where available. |
 | 15 | Native Kamihi Notes | PARTIAL | Local autosaving notes store + desktop view + phone editor exist; desktop keyboard editing TODO. |
-| 16 | AI -> Notes handoff | TODO | Add selected/copied response action. |
+| 16 | AI -> Notes handoff | PARTIAL | Clipboard Center can append selected/copied text directly to Notes; direct response-selection affordance TODO. |
 | 17 | Files app | TODO | Public document picker + security-scoped access only. |
 | 18 | PDF viewer | TODO | PDFKit window. |
 | 19 | Photos window | TODO | PhotoKit with explicit limited/full permission handling. |
 | 20 | Clipboard manager | PARTIAL | 20-item clipboard history service plus phone Clipboard Center exists; persistence/privacy controls TODO. |
 | 21 | Multiple desktop workspaces | PARTIAL | Workspace presets exist; swipeable independent Spaces/state TODO. |
-| 22 | Mission Control / overview | IMPLEMENTED | Phone Window Overview can activate, restore, minimize all and restore all windows. |
+| 22 | Mission Control / overview | VERIFIED | Phone Window Overview can activate, restore, minimize all and restore all windows; deterministic bulk-action check exists and `5eca7498` CI is green. |
 | 23 | Command/Alt-Tab window switching | PARTIAL | Forward/back window cycling logic exists; physical keyboard binding/UI TODO. |
 | 24 | Advanced iPhone trackpad | PARTIAL | Pointer, drag, scrolling, right-click exist; acceleration/natural scroll/drag-lock settings TODO. |
-| 25 | DeX-style context click | IMPLEMENTED / PHYSICAL TEST | Two-finger secondary click forwards contextmenu to web apps. |
+| 25 | DeX-style context click | IMPLEMENTED / PHYSICAL TEST | Two-finger secondary click forwards contextmenu to web apps; real external display validation required. |
 | 26 | Physical mouse support | IOS LIMITATION | Support public indirect pointer events where iOS routes them; cannot take over arbitrary system pointer routing. |
-| 27 | Physical keyboard support | PARTIAL | iOS keyboard support exists in project; desktop focus/shortcut routing TODO. |
+| 27 | Physical keyboard support | PARTIAL | iOS keyboard support and several SwiftUI keyboardShortcut bindings exist; full desktop focus/shortcut routing TODO. |
 | 28 | Phone keyboard mode | PARTIAL | Phone text field forwards text/Enter to active web app; full keyboard surface/modifiers TODO. |
 | 29 | Phone shortcut deck | PARTIAL | ChatGPT/YouTube/Notes/Split/Vibe quick actions exist; customization TODO. |
 | 30 | Phone media controls | TODO | Add public media controls for Kamihi-owned playback/web commands. |
@@ -42,7 +42,7 @@ Status legend: `VERIFIED` = implemented and covered by available automated/CI ev
 | # | Feature | Status | Evidence / next requirement |
 |---:|---|---|---|
 | 31 | Notification center | IOS LIMITATION | Cannot mirror arbitrary iOS notifications; build Kamihi-owned notification center. |
-| 32 | Quick Settings | IMPLEMENTED | UI scale, cursor scale, animation, battery saver, privacy, workspace and window layout controls are surfaced. |
+| 32 | Quick Settings | VERIFIED | UI scale, cursor scale, animation, battery saver, privacy, workspace and window layout controls are surfaced; `5eca7498` Apple Build is green. |
 | 33 | Desktop screenshots | TODO | Capture Kamihi external desktop view using public rendering APIs. |
 | 34 | Screenshot -> ChatGPT | TODO | User-initiated captured image handoff only. |
 | 35 | Focus Mode | PARTIAL | Focus workspace state exists; hide taskbar/extra chrome TODO. |
@@ -68,15 +68,15 @@ Status legend: `VERIFIED` = implemented and covered by available automated/CI ev
 | 55 | Remote Mac/PC window | PARTIAL | Existing KamihiRemote host/secure transport exists; embed as desktop app window TODO. |
 | 56 | Development project launcher | PARTIAL | Existing Vibe/project infrastructure exists; desktop launcher integration TODO. |
 | 57 | Dictated coding changes | PARTIAL | Existing speech workflow exists; active desktop target routing TODO. |
-| 58 | AI clipboard actions | TODO | Explain/Rewrite/Translate/Fix/Add to Notes actions. |
-| 59 | Session history | PARTIAL | Current workspace serialization exists; recent closed/history list TODO. |
-| 60 | Crash recovery | PARTIAL | Persisted window model exists; automatic safe startup restore TODO. |
-| 61 | Offline Notes/Calculator/Files | PARTIAL | Notes and local Calculator now work; document workflows TODO. |
-| 62 | Connection Doctor | PARTIAL | Existing KamihiRemote connection doctor exists; external-display/cable/RayNeo diagnostics TODO. |
+| 58 | AI clipboard actions | PARTIAL | Quick paste and Add to Notes exist; Explain/Rewrite/Translate/Fix actions TODO. |
+| 59 | Session history | PARTIAL | Current workspace serialization and last-known-good recovery snapshot exist; recent closed/history list TODO. |
+| 60 | Crash recovery | PARTIAL | Recovery coordinator now persists last-known-good workspace/window snapshot, tracks clean exit, and restores after an unclean desktop session; final-head CI and abnormal-termination validation pending. |
+| 61 | Offline Notes/Calculator/Files | PARTIAL | Notes and local Calculator work offline; document workflows TODO. |
+| 62 | Connection Doctor | PARTIAL | Existing KamihiRemote connection doctor exists; desktop recovery coordinator now tracks connected/recovered/disconnected state, but cable/RayNeo diagnostics UI integration TODO. |
 | 63 | External display test screen | PARTIAL | Display metrics + RayNeo diagnostic checklist exist; visual calibration patterns TODO. |
 | 64 | Accessibility mode | PARTIAL | Reduce Motion support exists; scale/contrast/VoiceOver/focus navigation audit TODO. |
-| 65 | Privacy screen/lock | PARTIAL | Privacy mode state exists; Face ID/local-auth lock UI TODO. |
-| 66 | Desktop lock screen | TODO | LocalAuthentication-gated restore/reopen. |
+| 65 | Privacy screen/lock | PARTIAL | Privacy blur/lock plus LocalAuthentication Face ID/device-passcode unlock are implemented; real-device authentication verification TODO. |
+| 66 | Desktop lock screen | PARTIAL | LocalAuthentication-gated locked overlay exists; lock-on-background/timeout policy TODO. |
 | 67 | Low-distraction notifications | TODO | Kamihi-owned notification banners only. |
 | 68 | Quick calculations/conversions | PARTIAL | Local calculator is implemented in the controller; unit/currency conversion commands TODO. |
 | 69 | Clock/timer panel | PARTIAL | Clock exists; focus timer service exists; richer panel UI TODO. |
@@ -86,21 +86,21 @@ Status legend: `VERIFIED` = implemented and covered by available automated/CI ev
 
 | # | Feature | Status | Why it matters / next requirement |
 |---:|---|---|---|
-| 71 | Browser back/forward/reload controls | TODO | Makes external WebKit usable without relying on page navigation chrome. |
-| 72 | Desktop browser address/search bar | TODO | Essential for arbitrary browsing from the phone controller. |
+| 71 | Browser back/forward/reload controls | VERIFIED | Active WebKit bridge exposes back/forward/reload/stop controls from the phone controller; Apple Build + simulator-host smoke green on `5eca7498`. |
+| 72 | Desktop browser address/search bar | VERIFIED | Phone controller provides URL/search entry with URL normalization and search fallback; Apple Build + simulator-host smoke green on `5eca7498`. |
 | 73 | Favorites + recent sites | TODO | One-tap workspace startup and faster glasses use. |
 | 74 | Web app pinning | TODO | Pin ChatGPT/GitHub/YouTube/custom sites as Desktop apps. |
-| 75 | Hardware keyboard shortcut layer | TODO | Cmd-K launcher, Cmd-W close, Cmd-Tab cycle, layout shortcuts where public APIs permit. |
+| 75 | Hardware keyboard shortcut layer | PARTIAL | Cmd-K, launcher/settings/save shortcuts are present in controller UI; close/cycle/layout shortcut coverage and focus routing TODO. |
 | 76 | Trackpad tuning | TODO | Pointer sensitivity, acceleration curve, natural scrolling, drag lock and tap-to-click controls. |
 | 77 | Drag-edge snap preview | TODO | Show target rectangle and snap automatically at screen edges/corners. |
-| 78 | Continuous session autosave | TODO | Persist workspace after meaningful window/layout changes rather than only explicit/disconnect saves. |
-| 79 | External-display health banner | TODO | Clear connected/reconnecting/display-lost states with recovery actions. |
+| 78 | Continuous session autosave | VERIFIED | `AdvancedPhoneControllerView` saves on every desktop window-state change; recovery coordinator also refreshes last-known-good snapshots. Prior `5eca7498` CI is green; recovery-specific check added this run. |
+| 79 | External-display health banner | PARTIAL | Recovery coordinator exposes connected/recovered/disconnected health state; visible recovery/health banner still TODO. |
 | 80 | RayNeo safe-area calibration | TODO | User-adjustable overscan/safe margins and saved glasses profile. |
 | 81 | Web app lifecycle sleeping | TODO | Freeze or unload long-idle/minimized WebViews to reduce heat and battery drain. |
 | 82 | Document import center | TODO | Files picker, recent documents and security-scoped access. |
-| 83 | Quick Paste to active app | TODO | Clipboard item -> focused web editor/AI input in one action. |
+| 83 | Quick Paste to active app | IMPLEMENTED / PHYSICAL TEST | Clipboard Center can inject text into the active supported WebKit/AI editor; physical external-display input validation required. |
 | 84 | Desktop capture/share | TODO | User-triggered screenshot and iOS share sheet. |
-| 85 | Recovery snapshot | TODO | Save last known-good window/session configuration and offer restore after abnormal termination. |
+| 85 | Recovery snapshot | PARTIAL | Versioned last-known-good snapshot now stores workspace, timestamp and up to eight window states; deterministic JSON round-trip self-check added, final-head CI pending. |
 | 86 | Connection quality HUD | TODO | Surface display/session health, host latency when remote mode is used, and actionable warnings. |
 | 87 | Workspace template editor | TODO | Let user save custom window/app layouts beyond the built-in five presets. |
 | 88 | Fullscreen app mode | TODO | One-command distraction-free fullscreen with quick return to previous layout. |
@@ -124,12 +124,12 @@ A feature is not `VERIFIED` until all applicable gates pass:
 
 ## Current priority order
 
-1. Make external-display input genuinely reliable: pointer, click, double click, drag, scroll, context click and keyboard focus.
-2. Add browser navigation/address bar and hardware keyboard shortcuts.
-3. Complete resize handles + drag-edge snapping + preview.
-4. Add continuous autosave, reconnect health and recovery snapshot.
-5. Add native Files/PDF, document import and desktop capture/share.
-6. Add browser tabs/bookmarks/downloads/reader mode + WebView sleeping.
-7. Add trackpad tuning, safe-area calibration and accessibility presets.
-8. Integrate existing remote host/dev-project/dictation capabilities into desktop windows.
+1. Complete resize handles + drag-edge snapping + preview while preserving pointer/drag reliability.
+2. Add native Files/PDF/document import and desktop capture/share.
+3. Surface recovery/display-health UI and validate abnormal-termination restore behavior.
+4. Add browser tabs/bookmarks/downloads/reader mode + WebView sleeping.
+5. Add trackpad tuning, safe-area calibration and accessibility presets.
+6. Complete hardware-keyboard close/cycle/layout shortcuts and keyboard command cheat sheet.
+7. Integrate existing remote host/dev-project/dictation capabilities into desktop windows.
+8. Finish AI quick panel, AI clipboard actions, Notes handoff and media controls.
 9. Finish polish, accessibility, RayNeo calibration and physical verification.
