@@ -33,7 +33,9 @@ final class UDPClient: ObservableObject {
         self.sessionKey = sessionKey
         sequence = 0
         let parameters = NWParameters.udp
-        parameters.includePeerToPeer = true
+        if !NetworkEndpoint.looksLikeNumericHost(host) {
+            parameters.includePeerToPeer = true
+        }
         let connection = NWConnection(
             host: NWEndpoint.Host(host),
             port: NWEndpoint.Port(rawValue: port) ?? NWEndpoint.Port(rawValue: RemoteConstants.defaultUDPPort)!,

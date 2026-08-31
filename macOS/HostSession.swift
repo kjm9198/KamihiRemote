@@ -70,7 +70,6 @@ final class HostSession: ObservableObject {
         tcp.start(pairingCode: pairingCode)
         advertise()
         accessibility.refresh()
-        accessibility.promptIfNeeded()
         refreshAddress()
         refreshQR()
         RemotePacket.runSelfChecks()
@@ -100,7 +99,7 @@ final class HostSession: ObservableObject {
         tcp.broadcast(.focusedText(status: snapshot.status, value: snapshot.value), token: pairingCode)
     }
 
-    func broadcastActiveApp(to connection: NWConnection? = nil) {
+    func broadcastActiveApp(to connection: TCPConnection? = nil) {
         guard let frontApp = NSWorkspace.shared.frontmostApplication else { return }
         let bundleID = frontApp.bundleIdentifier ?? "unknown"
         let name = frontApp.localizedName ?? "Unknown"
@@ -206,15 +205,16 @@ final class HostSession: ObservableObject {
     }
 
     private func advertise() {
-        tcp.advertise(
+        advertiser.start(
             name: Host.current().localizedName ?? "Mac",
             hostID: hostID,
+            tcpPort: RemoteConstants.defaultTCPPort,
             udpPort: RemoteConstants.defaultUDPPort
         )
     }
 
     @discardableResult
-    private func completeHandshake(to connection: NWConnection, deviceName: String, peerPublicKey: Data? = nil) -> String {
+    private func completeHandshake(to connection: TCPConnection, deviceName: String, peerPublicKey: Data? = nil) -> String {
         tcp.markAuthenticated(connection)
         connectedDeviceName = deviceName
         let connectionID = ObjectIdentifier(connection)
@@ -267,7 +267,7 @@ final class HostSession: ObservableObject {
         return establishedSession
     }
 
-    private func handleReliable(_ command: RemoteCommand, connection: NWConnection) {
+    private func handleReliable(_ command: RemoteCommand, connection: TCPConnection) {
         switch command {
         case .hello(let deviceID, let deviceName, _):
             connectedDeviceName = deviceName
@@ -327,7 +327,7 @@ final class HostSession: ObservableObject {
 
         case .syncControllerMapping(let mapping):
             KeyboardGamepad.shared.mapping = mapping
-            NSLog("Kamihi updated controller mapping profile: %@", mapping.profile.rawValue)
+            kamihiHostLog("Kamihi updated controller mapping profile: \(mapping.profile.rawValue)")
 
         case .requestFocusedText:
             sendFocusedText(to: connection)
@@ -349,7 +349,7 @@ final class HostSession: ObservableObject {
         }
     }
 
-    private func executeAcknowledged(id: String, command: RemoteCommand, connection: NWConnection) async {
+    private func executeAcknowledged(id: String, command: RemoteCommand, connection: TCPConnection) async {
         if case .requestFocusedText = command {
             sendFocusedText(to: connection)
             tcp.send(.actionAck(id: id, success: true, message: "Requested"), token: pairingCode, to: connection)
@@ -359,7 +359,7 @@ final class HostSession: ObservableObject {
         tcp.send(.actionAck(id: id, success: ok, message: message), token: pairingCode, to: connection)
     }
 
-    private func sendFocusedText(to connection: NWConnection) {
+    private func sendFocusedText(to connection: TCPConnection) {
         let snapshot = FocusedTextReader.snapshot()
         tcp.send(.focusedText(status: snapshot.status, value: snapshot.value), token: pairingCode, to: connection)
     }
@@ -370,5 +370,5 @@ struct PendingPairing {
     var deviceName: String
     var publicKey: String
     var code: String
-    var connection: NWConnection
+    var connection: TCPConnection
 }

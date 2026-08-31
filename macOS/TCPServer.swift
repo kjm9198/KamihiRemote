@@ -1,14 +1,45 @@
 import Foundation
-import Network
+import Darwin
+
+func kamihiHostLog(_ message: String) {
+    let line = message + "\n"
+    line.withCString { ptr in
+        _ = write(STDERR_FILENO, ptr, strlen(ptr))
+    }
+}
+
+public final class TCPConnection: Hashable, Identifiable {
+    public let id = UUID()
+    public let fd: Int32
+    var buffer = Data()
+    var readSource: DispatchSourceRead?
+
+    init(fd: Int32) {
+        self.fd = fd
+    }
+
+    public static func == (lhs: TCPConnection, rhs: TCPConnection) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
+    func closeSocket() {
+        readSource?.cancel()
+        readSource = nil
+        close(fd)
+    }
+}
 
 final class TCPServer {
-    var onCommand: ((RemoteCommand, NWConnection) -> Void)?
-    var onDisconnect: ((NWConnection) -> Void)?
+    var onCommand: ((RemoteCommand, TCPConnection) -> Void)?
+    var onDisconnect: ((TCPConnection) -> Void)?
 
-    private var listener: NWListener?
-    private var advertisedService: NWListener.Service?
-    private var connections: [ObjectIdentifier: NWConnection] = [:]
-    private var buffers: [ObjectIdentifier: Data] = [:]
+    private var serverSock: Int32 = -1
+    private var listenSource: DispatchSourceRead?
+    private var connections: [ObjectIdentifier: TCPConnection] = [:]
     private var handshakeConnections: Set<ObjectIdentifier> = []
     private let queue = DispatchQueue(label: "kamihi.tcp.server", qos: .userInitiated)
     private let maximumFrameBytes = 64 * 1024
@@ -18,19 +49,67 @@ final class TCPServer {
     func start(pairingCode: String) {
         stop()
         self.pairingCode = pairingCode
-        do {
-            let parameters = NWParameters.tcp
-            parameters.allowLocalEndpointReuse = true
-            parameters.includePeerToPeer = true
-            let listener = try NWListener(using: parameters, on: NWEndpoint.Port(rawValue: port)!)
-            listener.service = advertisedService
-            listener.newConnectionHandler = { [weak self] connection in
-                self?.accept(connection)
+        queue.async { [weak self] in
+            guard let self else { return }
+            let sock = socket(AF_INET, SOCK_STREAM, 0)
+            guard sock >= 0 else {
+                kamihiHostLog("Kamihi TCP socket creation failed: errno \(errno)")
+                return
             }
-            listener.start(queue: queue)
-            self.listener = listener
-        } catch {
-            NSLog("Kamihi TCP listener failed: %@", error.localizedDescription)
+            var opt: Int32 = 1
+            setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, socklen_t(MemoryLayout<Int32>.size))
+            setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &opt, socklen_t(MemoryLayout<Int32>.size))
+
+            var nosigpipe: Int32 = 1
+            setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, &nosigpipe, socklen_t(MemoryLayout<Int32>.size))
+
+            var addr = sockaddr_in()
+            addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_port = in_port_t(self.port).bigEndian
+            addr.sin_addr.s_addr = in_addr_t(0)
+
+            let bindRes = withUnsafePointer(to: &addr) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    bind(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            guard bindRes == 0 else {
+                kamihiHostLog("Kamihi TCP socket bind failed: errno \(errno)")
+                close(sock)
+                return
+            }
+
+            guard listen(sock, 32) == 0 else {
+                kamihiHostLog("Kamihi TCP socket listen failed: errno \(errno)")
+                close(sock)
+                return
+            }
+
+            self.serverSock = sock
+            let source = DispatchSource.makeReadSource(fileDescriptor: sock, queue: self.queue)
+            source.setEventHandler { [weak self] in
+                guard let self, self.serverSock >= 0 else { return }
+                var clientAddr = sockaddr_storage()
+                var clientLen = socklen_t(MemoryLayout<sockaddr_storage>.size)
+                let clientFd = withUnsafeMutablePointer(to: &clientAddr) {
+                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                        Darwin.accept(self.serverSock, $0, &clientLen)
+                    }
+                }
+                guard clientFd >= 0 else { return }
+                var clientNosigpipe: Int32 = 1
+                setsockopt(clientFd, SOL_SOCKET, SO_NOSIGPIPE, &clientNosigpipe, socklen_t(MemoryLayout<Int32>.size))
+                self.accept(clientFd)
+            }
+            source.setCancelHandler {
+                if sock >= 0 {
+                    close(sock)
+                }
+            }
+            source.resume()
+            self.listenSource = source
+            kamihiHostLog("Kamihi TCP listener ready on port \(self.port)")
         }
     }
 
@@ -41,93 +120,93 @@ final class TCPServer {
     }
 
     func advertise(name: String, hostID: String, udpPort: UInt16) {
-        let service = NWListener.Service(
-            name: name,
-            type: RemoteConstants.bonjourType,
-            domain: RemoteConstants.bonjourDomain,
-            txtRecord: NWTXTRecord([
-                "id": hostID,
-                "tcp": "\(port)",
-                "udp": "\(udpPort)",
-                "proto": RemoteConstants.protocolVersionString
-            ])
-        )
-        advertisedService = service
-        listener?.service = service
+        // Advertising handled by BonjourAdvertiser
     }
 
-    func send(_ command: RemoteCommand, token: String, to connection: NWConnection) {
-        let data = RemotePacket.encodeV1(token: token, command: command)
-        connection.send(content: data, completion: .contentProcessed { _ in })
+    func send(_ command: RemoteCommand, token: String, to connection: TCPConnection) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            guard self.connections[ObjectIdentifier(connection)] != nil else { return }
+            let data = RemotePacket.encodeV1(token: token, command: command)
+            data.withUnsafeBytes { rawBuffer in
+                guard let base = rawBuffer.baseAddress else { return }
+                _ = write(connection.fd, base, data.count)
+            }
+        }
     }
 
     func broadcast(_ command: RemoteCommand, token: String) {
-        let data = RemotePacket.encodeV1(token: token, command: command)
-        for connection in connections.values {
-            connection.send(content: data, completion: .contentProcessed { _ in })
+        queue.async { [weak self] in
+            guard let self else { return }
+            let data = RemotePacket.encodeV1(token: token, command: command)
+            data.withUnsafeBytes { rawBuffer in
+                guard let base = rawBuffer.baseAddress else { return }
+                for conn in self.connections.values {
+                    _ = write(conn.fd, base, data.count)
+                }
+            }
         }
     }
 
-    func markAuthenticated(_ connection: NWConnection) {
-        let id = ObjectIdentifier(connection)
-        handshakeConnections.insert(id)
+    func markAuthenticated(_ connection: TCPConnection) {
+        queue.async { [weak self] in
+            let id = ObjectIdentifier(connection)
+            self?.handshakeConnections.insert(id)
+        }
     }
 
     func stop() {
-        listener?.cancel()
-        listener = nil
-        connections.values.forEach { $0.cancel() }
-        connections.removeAll()
-        buffers.removeAll()
-        handshakeConnections.removeAll()
-        InputEngine.releaseAll()
-    }
-
-    private func accept(_ connection: NWConnection) {
-        let id = ObjectIdentifier(connection)
-        connections[id] = connection
-        buffers[id] = Data()
-        connection.start(queue: queue)
-        receive(from: connection)
-    }
-
-    private func receive(from connection: NWConnection) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: maximumFrameBytes) { [weak self] data, _, isComplete, error in
-            guard let self else { return }
-            let id = ObjectIdentifier(connection)
-            if let data, !data.isEmpty {
-                self.buffers[id, default: Data()].append(data)
-                guard self.drain(connection) else { return }
-
-                if self.buffers[id, default: Data()].count > self.maximumFrameBytes {
-                    NSLog("Kamihi TCP dropped oversized unterminated frame")
-                    self.drop(connection)
-                    self.onDisconnect?(connection)
-                    return
-                }
+        queue.sync {
+            listenSource?.cancel()
+            listenSource = nil
+            serverSock = -1
+            for conn in connections.values {
+                conn.closeSocket()
+                onDisconnect?(conn)
             }
-            if let error {
-                NSLog("Kamihi TCP receive error: %@", error.localizedDescription)
-                self.drop(connection)
-                self.onDisconnect?(connection)
-                return
-            }
-            if isComplete {
-                self.drop(connection)
-                self.onDisconnect?(connection)
-                return
-            }
-            self.receive(from: connection)
+            connections.removeAll()
+            handshakeConnections.removeAll()
+            InputEngine.releaseAll()
         }
     }
 
+    private func accept(_ clientFd: Int32) {
+        let conn = TCPConnection(fd: clientFd)
+        let id = ObjectIdentifier(conn)
+        connections[id] = conn
+
+        let readSource = DispatchSource.makeReadSource(fileDescriptor: clientFd, queue: queue)
+        conn.readSource = readSource
+        readSource.setEventHandler { [weak self, weak conn] in
+            guard let self, let conn else { return }
+            var buf = [UInt8](repeating: 0, count: 8192)
+            let n = read(conn.fd, &buf, buf.count)
+            if n > 0 {
+                conn.buffer.append(buf, count: n)
+                guard self.drain(conn) else { return }
+
+                if conn.buffer.count > self.maximumFrameBytes {
+                    NSLog("Kamihi TCP dropped oversized unterminated frame")
+                    self.drop(conn)
+                    self.onDisconnect?(conn)
+                }
+            } else {
+                self.drop(conn)
+                self.onDisconnect?(conn)
+            }
+        }
+        readSource.setCancelHandler {
+            close(clientFd)
+        }
+        readSource.resume()
+    }
+
     @discardableResult
-    private func drain(_ connection: NWConnection) -> Bool {
+    private func drain(_ connection: TCPConnection) -> Bool {
         let id = ObjectIdentifier(connection)
-        guard var buffer = buffers[id] else { return false }
-        while let range = buffer.firstRange(of: Data("\n".utf8)) {
-            let lineData = buffer.subdata(in: buffer.startIndex..<range.lowerBound)
-            buffer.removeSubrange(buffer.startIndex..<range.upperBound)
+        while let range = connection.buffer.firstRange(of: Data("\n".utf8)) {
+            let lineData = connection.buffer.subdata(in: connection.buffer.startIndex..<range.lowerBound)
+            connection.buffer.removeSubrange(connection.buffer.startIndex..<range.upperBound)
 
             guard lineData.count <= maximumFrameBytes else {
                 NSLog("Kamihi TCP dropped oversized frame")
@@ -144,7 +223,7 @@ final class TCPServer {
                         onCommand?(command, connection)
                     default:
                         guard handshakeConnections.contains(id) || PairingSecret.matches(token, pairingCode) else {
-                            NSLog("Kamihi rejected unauthenticated TCP command: %@", command.name)
+                            kamihiHostLog("Kamihi rejected unauthenticated TCP command: \(command.name)")
                             continue
                         }
                         onCommand?(command, connection)
@@ -154,15 +233,14 @@ final class TCPServer {
                 }
             }
         }
-        buffers[id] = buffer
         return true
     }
 
-    private func drop(_ connection: NWConnection) {
+    private func drop(_ connection: TCPConnection) {
         let id = ObjectIdentifier(connection)
-        connection.cancel()
+        connection.readSource?.cancel()
+        connection.readSource = nil
         connections[id] = nil
-        buffers[id] = nil
         handshakeConnections.remove(id)
     }
 }

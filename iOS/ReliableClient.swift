@@ -49,7 +49,9 @@ final class ReliableClient {
         pendingHeartbeat = nil
         lastFailure = ""
         let parameters = NWParameters.tcp
-        parameters.includePeerToPeer = true
+        if case .service = endpoint {
+            parameters.includePeerToPeer = true
+        }
         let connection = NWConnection(to: endpoint, using: parameters)
         self.connection = connection
         connection.stateUpdateHandler = { [weak self] state in

@@ -12,6 +12,8 @@ HOST_LOG="$SMOKE_DIR/host.log"
 SIM_LOG="$SMOKE_DIR/simulator-launch.log"
 AUTH_RESPONSE="$SMOKE_DIR/unauthenticated-response.txt"
 
+pkill -9 -f KamihiRemoteHost >/dev/null 2>&1 || true
+
 mkdir -p "$SMOKE_DIR"
 rm -rf "$DERIVED_IOS" "$DERIVED_MAC"
 
@@ -24,6 +26,7 @@ xcodebuild \
   -configuration Debug \
   -sdk macosx \
   -derivedDataPath "$DERIVED_MAC" \
+  ENABLE_PREVIEWS=NO \
   CODE_SIGNING_ALLOWED=NO \
   build
 
@@ -34,6 +37,7 @@ xcodebuild \
   -configuration Debug \
   -destination 'generic/platform=iOS Simulator' \
   -derivedDataPath "$DERIVED_IOS" \
+  ENABLE_PREVIEWS=NO \
   CODE_SIGNING_ALLOWED=NO \
   build
 
@@ -42,6 +46,7 @@ IOS_APP="$DERIVED_IOS/Build/Products/Debug-iphonesimulator/KamihiRemote.app"
 
 [[ -x "$HOST_APP/Contents/MacOS/KamihiRemoteHost" ]] || { echo "Host executable missing"; exit 1; }
 [[ -d "$IOS_APP" ]] || { echo "Simulator app missing"; exit 1; }
+codesign -s - --force --deep "$HOST_APP" >/dev/null 2>&1 || true
 
 UDID="$(xcrun simctl list devices available -j | python3 -c '
 import json, sys
@@ -74,10 +79,12 @@ cleanup() {
 trap cleanup EXIT
 
 echo "==> Launching real macOS host"
+pkill -9 -f KamihiRemoteHost >/dev/null 2>&1 || true
+sleep 1
 "$HOST_APP/Contents/MacOS/KamihiRemoteHost" >"$HOST_LOG" 2>&1 &
 HOST_PID=$!
 
-for _ in $(seq 1 40); do
+for _ in $(seq 1 60); do
   if nc -z 127.0.0.1 "$TCP_PORT"; then break; fi
   if ! kill -0 "$HOST_PID" >/dev/null 2>&1; then
     echo "Mac host exited before opening TCP port"
@@ -110,7 +117,7 @@ echo "==> Unauthenticated reliable command rejected PASS"
 echo "==> Installing and launching real iPhone app"
 xcrun simctl install "$UDID" "$IOS_APP"
 xcrun simctl privacy "$UDID" grant local-network com.kamihi.remote >/dev/null 2>&1 || true
-xcrun simctl launch "$UDID" com.kamihi.remote | tee "$SIM_LOG"
+xcrun simctl launch "$UDID" com.kamihi.remote -pairingCode "$PAIR_CODE" -hostAddress "127.0.0.1" | tee "$SIM_LOG"
 
 # A connected iPhone syncs its controller mapping exactly once when the session
 # transitions to connected. The host log is therefore both a handshake sentinel
