@@ -9,6 +9,7 @@ enum DesktopServicesTests {
             try check("displayMetrics16x9", displayMetrics16x9)
             try check("displayMetricsUltrawide", displayMetricsUltrawide)
             try check("workspacePersistenceShape", workspacePersistenceShape)
+            try check("recoverySnapshotRoundTrip", recoverySnapshotRoundTrip)
             try check("windowThirdFrames", windowThirdFrames)
             try check("windowCycling", windowCycling)
             try check("windowResizeBounds", windowResizeBounds)
@@ -60,6 +61,27 @@ enum DesktopServicesTests {
         let data = try JSONEncoder().encode([item])
         let decoded = try JSONDecoder().decode([DesktopFeatureState.SavedWindow].self, from: data)
         try require(decoded == [item], "saved windows must round-trip")
+    }
+
+    private static func recoverySnapshotRoundTrip() throws {
+        let desktop = DesktopSession.shared
+        desktop.closeAllDesktopWindows()
+        _ = desktop.openProductivityApp(
+            "ChatGPT",
+            frame: CGRect(x: 0.08, y: 0.07, width: 0.84, height: 0.79)
+        )
+        let savedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let snapshot = DesktopRecoveryCoordinator.makeSnapshot(
+            desktop: desktop,
+            workspace: .focus,
+            savedAt: savedAt
+        )
+        let data = try JSONEncoder().encode(snapshot)
+        let decoded = DesktopRecoveryCoordinator.decodeSnapshot(data)
+        try require(decoded == snapshot, "recovery snapshot must round-trip without losing window state")
+        try require(decoded?.workspaceRawValue == DesktopFeatureState.Workspace.focus.rawValue, "recovery snapshot must preserve workspace")
+        try require(decoded?.windows.first?.title == "ChatGPT", "recovery snapshot must preserve app identity")
+        desktop.closeAllDesktopWindows()
     }
 
     private static func windowThirdFrames() throws {
