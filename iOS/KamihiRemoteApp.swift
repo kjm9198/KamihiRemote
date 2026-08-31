@@ -16,7 +16,7 @@ struct KamihiRemoteApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ProductivityDesktopAwareRootView()
+            AdvancedDesktopAwareRootView()
                 .environmentObject(session)
                 .environmentObject(desktop)
                 .preferredColorScheme(.dark)
