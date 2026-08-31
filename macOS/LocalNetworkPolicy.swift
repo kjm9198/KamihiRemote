@@ -6,10 +6,10 @@ enum LocalNetworkPolicy {
         switch connection.endpoint {
         case .hostPort(let host, _):
             return allows(host)
-        case .service:
-            return true
         default:
-            return true
+            // Incoming remote-control traffic must resolve to an address we can
+            // positively classify as local. Unknown endpoint kinds fail closed.
+            return false
         }
     }
 
@@ -20,16 +20,19 @@ enum LocalNetworkPolicy {
         case .ipv6(let address):
             return isLocalIPv6(address)
         case .name(let name, _):
-            if let ipv4 = IPv4Address(name) {
+            let normalized = NetworkEndpoint.sanitizeHost(name).lowercased()
+            if normalized == "localhost" || normalized.hasSuffix(".local") {
+                return true
+            }
+            if let ipv4 = IPv4Address(normalized) {
                 return isLocalIPv4(ipv4)
             }
-            let stripped = NetworkEndpoint.sanitizeHost(name)
-            if let ipv6 = IPv6Address(stripped) {
+            if let ipv6 = IPv6Address(normalized) {
                 return isLocalIPv6(ipv6)
             }
-            return name.lowercased().contains(".local")
+            return false
         @unknown default:
-            return true
+            return false
         }
     }
 
@@ -50,7 +53,21 @@ enum LocalNetworkPolicy {
         if address.isLoopback || address.isLinkLocal { return true }
         let bytes = [UInt8](address.rawValue)
         guard bytes.count == 16 else { return false }
-        if bytes[0] == 0xff { return false }
-        return true
+
+        // fc00::/7 — IPv6 Unique Local Address space. This is the IPv6 analogue
+        // of RFC1918 private addressing and is not globally routed.
+        if (bytes[0] & 0xfe) == 0xfc { return true }
+
+        // Accept IPv4-mapped IPv6 only when the embedded IPv4 address itself is
+        // private, loopback, or link-local.
+        let isIPv4Mapped = bytes[0..<10].allSatisfy { $0 == 0 } && bytes[10] == 0xff && bytes[11] == 0xff
+        if isIPv4Mapped,
+           let mapped = IPv4Address(Data(bytes[12..<16])) {
+            return isLocalIPv4(mapped)
+        }
+
+        // Global unicast, multicast, documentation and every other IPv6 range
+        // are denied by default.
+        return false
     }
 }

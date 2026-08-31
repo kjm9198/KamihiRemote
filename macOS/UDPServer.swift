@@ -87,6 +87,9 @@ final class UDPServer: ObservableObject {
         listener = nil
         connections.values.forEach { $0.cancel() }
         connections.removeAll()
+        activeSessionID = nil
+        activeSessionKey = nil
+        sequenceGate.reset()
         DispatchQueue.main.async {
             self.isRunning = false
             self.clientConnected = false
@@ -109,6 +112,11 @@ final class UDPServer: ObservableObject {
     }
 
     private func accept(_ connection: NWConnection) {
+        guard LocalNetworkPolicy.allows(connection) else {
+            reject("non-local endpoint", from: connection)
+            connection.cancel()
+            return
+        }
         let id = ObjectIdentifier(connection)
         connections[id] = connection
         connection.start(queue: queue)
@@ -148,32 +156,37 @@ final class UDPServer: ObservableObject {
                 reject(reason, from: connection, raw: raw)
             case .success(let token, let command, let legacy, let sessionID, let sequence, let isEncrypted):
                 let authorized: Bool
-                if isEncrypted {
-                    authorized = (sessionID == activeSessionID || activeSessionID == nil)
-                } else if PairingSecret.matches(token, pairingCode) {
-                    // Always accept the temporary pairing code for realtime input.
-                    authorized = true
-                } else if let activeSessionID, token == activeSessionID || sessionID == activeSessionID {
-                    authorized = true
+                let rejectionReason: String
+
+                if let activeSessionKey {
+                    // A negotiated session key permanently upgrades realtime input
+                    // for the life of this session. Plaintext downgrade attempts are
+                    // rejected, and K3 packets must name the exact active session.
+                    authorized = isEncrypted && sessionID == activeSessionID
+                    rejectionReason = isEncrypted ? "wrong encrypted session" : "plaintext downgrade rejected"
+                    _ = activeSessionKey
                 } else {
-                    authorized = false
+                    // Pairing-code packets are a temporary bootstrap path only.
+                    authorized = !isEncrypted && PairingSecret.matches(token, pairingCode)
+                    rejectionReason = token.isEmpty ? "missing pairing code" : "wrong pairing code"
                 }
+
                 guard authorized else {
-                    let reason: String
-                    if token.isEmpty {
-                        reason = "missing pairing code"
-                    } else if !PairingSecret.isValid(token), activeSessionID == nil {
-                        reason = "missing pairing code"
-                    } else {
-                        reason = "wrong pairing code"
+                    reject(rejectionReason, from: connection, raw: raw, parsed: "Auth rejected: \(rejectionReason)")
+                    continue
+                }
+
+                if isEncrypted {
+                    guard let sequence else {
+                        reject("encrypted packet missing sequence", from: connection, raw: raw)
+                        continue
                     }
-                    reject(reason, from: connection, raw: raw, parsed: "Auth: \(token) ✗  \(reason)")
-                    continue
+                    guard sequenceGate.shouldAccept(sequence) else {
+                        DispatchQueue.main.async { self.stats.droppedStale += 1 }
+                        continue
+                    }
                 }
-                if let sequence, sequenceGate.shouldAccept(sequence) == false {
-                    DispatchQueue.main.async { self.stats.droppedStale += 1 }
-                    continue
-                }
+
                 if legacy {
                     NSLog("Kamihi packet used legacy command-first order: %@", raw)
                 }
@@ -286,8 +299,8 @@ final class UDPServer: ObservableObject {
         default:
             extra = ""
         }
-        let encBadge = isEncrypted ? " [AES-GCM] " : " "
-        return "Auth: \(token)\(encBadge)✓  Command: \(name) ✓\(extra)\(legacy ? "  (legacy order)" : "")"
+        let authBadge = isEncrypted ? "Encrypted ✓" : "Pairing bootstrap ✓"
+        return "\(authBadge)  Command: \(name) ✓\(extra)\(legacy ? "  (legacy order)" : "")"
     }
 
     private func noteReceived() {
