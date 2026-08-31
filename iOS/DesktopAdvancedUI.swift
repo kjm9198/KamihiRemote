@@ -111,7 +111,7 @@ struct AdvancedPhoneControllerView: View {
 
                 Text(power.thermalText)
                     .font(.caption)
-                    .foregroundStyle(power.thermalState >= .serious ? .orange : .secondary)
+                    .foregroundStyle(isThermallyConstrained ? .orange : .secondary)
 
                 if features.shouldConserveEnergy {
                     Label("Saver", systemImage: "leaf.fill")
@@ -163,6 +163,10 @@ struct AdvancedPhoneControllerView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(.ultraThinMaterial)
+    }
+
+    private var isThermallyConstrained: Bool {
+        power.thermalState == .serious || power.thermalState == .critical
     }
 
     @ViewBuilder
