@@ -387,13 +387,10 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Kamihi Remote Host";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = NO;
-				INFOPLIST_KEY_NSBonjourServices = (
-					"_kamihiremote._tcp",
-					"_kamihiremote._udp",
-				);
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Kamihi Remote Host can use Bluetooth as a nearby fallback when Wi-Fi is weak.";
+				INFOPLIST_KEY_NSBonjourServices = "_kamihiremote._tcp _kamihiremote._udp";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Kamihi Remote Host uses your Wi-Fi so the iPhone can control this Mac.";
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Kamihi Remote Host can use Bluetooth as a nearby fallback when Wi-Fi is weak.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -429,13 +426,10 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Kamihi Remote Host";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = NO;
-				INFOPLIST_KEY_NSBonjourServices = (
-					"_kamihiremote._tcp",
-					"_kamihiremote._udp",
-				);
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Kamihi Remote Host can use Bluetooth as a nearby fallback when Wi-Fi is weak.";
+				INFOPLIST_KEY_NSBonjourServices = "_kamihiremote._tcp _kamihiremote._udp";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Kamihi Remote Host uses your Wi-Fi so the iPhone can control this Mac.";
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Kamihi Remote Host can use Bluetooth as a nearby fallback when Wi-Fi is weak.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

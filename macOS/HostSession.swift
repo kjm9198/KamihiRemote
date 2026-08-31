@@ -34,7 +34,7 @@ final class HostSession: ObservableObject {
         let stored = UserDefaults.standard.string(forKey: "pairingCode") ?? ""
         pairingCode = PairingSecret.isValid(stored) ? stored : PairingSecret.generate()
         UserDefaults.standard.set(pairingCode, forKey: "pairingCode")
-        launchAtLogin = SMAppService.mainApp.status == .enabled
+        launchAtLogin = (try? SMAppService.mainApp.status == .enabled) ?? false
 
         server.objectWillChange
             .receive(on: RunLoop.main)

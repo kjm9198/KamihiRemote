@@ -7,7 +7,8 @@ enum KeychainStore {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "com.kamihi.remote",
-            kSecAttrAccount as String: account
+            kSecAttrAccount as String: account,
+            kSecUseDataProtectionKeychain as String: true
         ]
         SecItemDelete(query as CFDictionary)
         var add = query
@@ -22,7 +23,8 @@ enum KeychainStore {
             kSecAttrService as String: "com.kamihi.remote",
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecUseDataProtectionKeychain as String: true
         ]
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
@@ -34,7 +36,8 @@ enum KeychainStore {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: "com.kamihi.remote",
-            kSecAttrAccount as String: account
+            kSecAttrAccount as String: account,
+            kSecUseDataProtectionKeychain as String: true
         ]
         SecItemDelete(query as CFDictionary)
     }

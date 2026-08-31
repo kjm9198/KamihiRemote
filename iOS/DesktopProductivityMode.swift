@@ -3,32 +3,6 @@ import UIKit
 import WebKit
 
 @MainActor
-final class DesktopNotesStore: ObservableObject {
-    static let shared = DesktopNotesStore()
-
-    @Published var text: String {
-        didSet { UserDefaults.standard.set(text, forKey: "kamihi.desktop.notes") }
-    }
-
-    private init() {
-        text = UserDefaults.standard.string(forKey: "kamihi.desktop.notes") ?? ""
-    }
-}
-
-@MainActor
-final class DesktopBrowserState: ObservableObject {
-    static let shared = DesktopBrowserState()
-
-    @Published var currentURLText = ""
-    @Published var title = ""
-    @Published var isLoading = false
-    @Published var canGoBack = false
-    @Published var canGoForward = false
-
-    private init() {}
-}
-
-@MainActor
 private final class DesktopWebBridge {
     static let shared = DesktopWebBridge()
 
