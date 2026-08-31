@@ -16,6 +16,19 @@ final class DesktopNotesStore: ObservableObject {
 }
 
 @MainActor
+final class DesktopBrowserState: ObservableObject {
+    static let shared = DesktopBrowserState()
+
+    @Published var currentURLText = ""
+    @Published var title = ""
+    @Published var isLoading = false
+    @Published var canGoBack = false
+    @Published var canGoForward = false
+
+    private init() {}
+}
+
+@MainActor
 private final class DesktopWebBridge {
     static let shared = DesktopWebBridge()
 
@@ -118,6 +131,53 @@ private final class DesktopWebBridge {
         """
         webView.evaluateJavaScript(script)
     }
+
+    func goBack(windowID: UUID) {
+        guard let webView = webViews[windowID]?.value, webView.canGoBack else { return }
+        webView.goBack()
+    }
+
+    func goForward(windowID: UUID) {
+        guard let webView = webViews[windowID]?.value, webView.canGoForward else { return }
+        webView.goForward()
+    }
+
+    func reload(windowID: UUID) {
+        webViews[windowID]?.value?.reload()
+    }
+
+    func stop(windowID: UUID) {
+        webViews[windowID]?.value?.stopLoading()
+    }
+
+    func navigate(windowID: UUID, input: String) {
+        guard let webView = webViews[windowID]?.value else { return }
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let target: URL?
+        if trimmed.contains(" ") || (!trimmed.contains(".") && !trimmed.contains("://")) {
+            let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? trimmed
+            target = URL(string: "https://www.google.com/search?q=\(encoded)")
+        } else if trimmed.contains("://") {
+            target = URL(string: trimmed)
+        } else {
+            target = URL(string: "https://\(trimmed)")
+        }
+
+        guard let target else { return }
+        webView.load(URLRequest(url: target))
+    }
+
+    func syncState(windowID: UUID) {
+        guard let webView = webViews[windowID]?.value else { return }
+        let state = DesktopBrowserState.shared
+        state.currentURLText = webView.url?.absoluteString ?? ""
+        state.title = webView.title ?? ""
+        state.isLoading = webView.isLoading
+        state.canGoBack = webView.canGoBack
+        state.canGoForward = webView.canGoForward
+    }
 }
 
 @MainActor
@@ -208,6 +268,32 @@ extension DesktopSession {
     func pressEnterInActiveWebView() {
         guard let id = activeWindowID else { return }
         DesktopWebBridge.shared.pressEnter(windowID: id)
+    }
+
+    func browserBack() {
+        guard let id = activeWindowID else { return }
+        DesktopWebBridge.shared.goBack(windowID: id)
+    }
+
+    func browserForward() {
+        guard let id = activeWindowID else { return }
+        DesktopWebBridge.shared.goForward(windowID: id)
+    }
+
+    func browserReloadOrStop() {
+        guard let id = activeWindowID else { return }
+        if DesktopBrowserState.shared.isLoading { DesktopWebBridge.shared.stop(windowID: id) }
+        else { DesktopWebBridge.shared.reload(windowID: id) }
+    }
+
+    func browserNavigate(_ input: String) {
+        guard let id = activeWindowID else {
+            openBrowser()
+            guard let id = activeWindowID else { return }
+            DesktopWebBridge.shared.navigate(windowID: id, input: input)
+            return
+        }
+        DesktopWebBridge.shared.navigate(windowID: id, input: input)
     }
 
     private func topProductivityWindow(at point: CGPoint) -> DesktopWindow? {
@@ -357,22 +443,52 @@ private struct ProductivityTrackpadSurface: UIViewRepresentable {
 struct ProductivityPhoneControllerView: View {
     @EnvironmentObject private var desktop: DesktopSession
     @ObservedObject private var notes = DesktopNotesStore.shared
+    @ObservedObject private var browser = DesktopBrowserState.shared
     @State private var typingBuffer = ""
+    @State private var addressBuffer = ""
     @State private var showingNotesEditor = false
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             HStack {
                 Image(systemName: "display")
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Kamihi Desktop").font(.headline)
-                    Text("Desktop controller").font(.caption).foregroundStyle(.secondary)
+                    Text(browser.title.isEmpty ? "Desktop controller" : browser.title)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
                 Spacer()
                 Button("Vibe") { desktop.openVibeWorkspace() }
                     .buttonStyle(.borderedProminent)
             }
             .padding(.horizontal, 16)
+
+            HStack(spacing: 7) {
+                Button { desktop.browserBack() } label: { Image(systemName: "chevron.left") }
+                    .buttonStyle(.bordered)
+                    .disabled(!browser.canGoBack)
+                Button { desktop.browserForward() } label: { Image(systemName: "chevron.right") }
+                    .buttonStyle(.bordered)
+                    .disabled(!browser.canGoForward)
+                Button { desktop.browserReloadOrStop() } label: { Image(systemName: browser.isLoading ? "xmark" : "arrow.clockwise") }
+                    .buttonStyle(.bordered)
+
+                TextField("Search or enter website", text: $addressBuffer)
+                    .textFieldStyle(.roundedBorder)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    .onSubmit { navigateAddress() }
+
+                Button("Go") { navigateAddress() }
+                    .buttonStyle(.borderedProminent)
+            }
+            .padding(.horizontal, 12)
+            .onChange(of: browser.currentURLText) { _, newValue in
+                if !newValue.isEmpty { addressBuffer = newValue }
+            }
 
             HStack(spacing: 8) {
                 quickButton("ChatGPT", "sparkles") { desktop.openChatGPT() }
@@ -390,7 +506,7 @@ struct ProductivityPhoneControllerView: View {
                     .fill(.white.opacity(0.055))
                 VStack(spacing: 6) {
                     Image(systemName: "hand.point.up.left.fill").font(.title2).foregroundStyle(.secondary)
-                    Text("1 finger: pointer • 2 fingers: scroll").font(.caption).foregroundStyle(.secondary)
+                    Text("1 finger: pointer • 2 fingers: scroll/right-click").font(.caption).foregroundStyle(.secondary)
                 }
                 ProductivityTrackpadSurface().environmentObject(desktop)
             }
@@ -410,8 +526,8 @@ struct ProductivityPhoneControllerView: View {
             }
             .padding(.horizontal, 12)
         }
-        .padding(.top, 10)
-        .padding(.bottom, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
         .background(Color.black.ignoresSafeArea())
         .sheet(isPresented: $showingNotesEditor) {
             NavigationStack {
@@ -443,6 +559,12 @@ struct ProductivityPhoneControllerView: View {
         desktop.typeIntoActiveWebView(typingBuffer)
         typingBuffer = ""
         if pressEnter { desktop.pressEnterInActiveWebView() }
+    }
+
+    private func navigateAddress() {
+        let value = addressBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        desktop.browserNavigate(value)
     }
 }
 
@@ -603,14 +725,39 @@ private struct ProductivityWebView: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKUIDelegate, WKNavigationDelegate {
         var loadedURL: URL?
+        let windowID: UUID
+
+        init(windowID: UUID) {
+            self.windowID = windowID
+        }
 
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
             if let target = navigationAction.request.url { webView.load(URLRequest(url: target)) }
             return nil
         }
+
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            Task { @MainActor in DesktopWebBridge.shared.syncState(windowID: self.windowID) }
+        }
+
+        func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            Task { @MainActor in DesktopWebBridge.shared.syncState(windowID: self.windowID) }
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            Task { @MainActor in DesktopWebBridge.shared.syncState(windowID: self.windowID) }
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            Task { @MainActor in DesktopWebBridge.shared.syncState(windowID: self.windowID) }
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            Task { @MainActor in DesktopWebBridge.shared.syncState(windowID: self.windowID) }
+        }
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator { Coordinator(windowID: windowID) }
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -634,9 +781,12 @@ private struct ProductivityWebView: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         DesktopWebBridge.shared.register(webView, for: windowID)
-        if context.coordinator.loadedURL != url {
+        if context.coordinator.loadedURL != url, webView.url == nil {
             webView.load(URLRequest(url: url))
             context.coordinator.loadedURL = url
+        }
+        if windowID == DesktopSession.shared.activeWindowID {
+            DesktopWebBridge.shared.syncState(windowID: windowID)
         }
     }
 }
