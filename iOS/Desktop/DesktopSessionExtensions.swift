@@ -16,7 +16,24 @@ extension DesktopSession {
     }
 
     public func clickAtCursor() {
-        if let topID = topWindow(at: cursor) {
+        if let topID = topWindow(at: cursor),
+           let window = windows.first(where: { $0.id == topID }) {
+            let frame = effectiveFrame(for: window)
+
+            if let action = DesktopWindowChrome.action(at: cursor, in: frame) {
+                activate(topID)
+                primaryClick()
+                switch action {
+                case .minimize:
+                    minimize(topID)
+                case .maximizeRestore:
+                    toggleMaximize(topID)
+                case .close:
+                    close(topID)
+                }
+                return
+            }
+
             activate(topID)
             primaryClick()
             clickWebContentAtCursor()
