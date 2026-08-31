@@ -48,10 +48,6 @@ final class TrackpadEngine: ObservableObject {
 
     init() {}
 
-    deinit {
-        momentumTask?.cancel()
-    }
-
     // MARK: - Complete-touch-set APIs
 
     func handleGestureBegan(_ activeTouches: Set<UITouch>, in view: UIView, desktop: DesktopSession, settings: TrackpadSettings) {
@@ -246,6 +242,11 @@ final class TrackpadEngine: ObservableObject {
         desktop: DesktopSession,
         settings: TrackpadSettings
     ) {
+        // Once a gesture has ever contained 2+ fingers, the remaining finger
+        // after a lift belongs to that multi-touch gesture. It must not suddenly
+        // become pointer input before every finger is lifted and a new gesture starts.
+        guard gestureFingerCount <= 1 else { return }
+
         let distance = hypot(dx, dy)
         guard distance > 0.22 else { return }
 
