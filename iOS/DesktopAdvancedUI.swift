@@ -99,13 +99,7 @@ struct AdvancedPhoneControllerView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         ForEach(DesktopFeatureState.Workspace.allCases) { workspace in
-                            Button {
-                                features.setWorkspace(workspace, desktop: desktop)
-                            } label: {
-                                Label(workspace.rawValue, systemImage: workspace.icon)
-                                    .font(.caption.weight(.semibold))
-                            }
-                            .buttonStyle(features.workspace == workspace ? .borderedProminent : .bordered)
+                            workspaceButton(workspace)
                         }
                     }
                 }
@@ -169,6 +163,27 @@ struct AdvancedPhoneControllerView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(.ultraThinMaterial)
+    }
+
+    @ViewBuilder
+    private func workspaceButton(_ workspace: DesktopFeatureState.Workspace) -> some View {
+        if features.workspace == workspace {
+            Button {
+                features.setWorkspace(workspace, desktop: desktop)
+            } label: {
+                Label(workspace.rawValue, systemImage: workspace.icon)
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.borderedProminent)
+        } else {
+            Button {
+                features.setWorkspace(workspace, desktop: desktop)
+            } label: {
+                Label(workspace.rawValue, systemImage: workspace.icon)
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.bordered)
+        }
     }
 }
 
