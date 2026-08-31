@@ -9,12 +9,22 @@ public final class TrackpadSettings: ObservableObject {
         didSet { UserDefaults.standard.set(pointerSensitivity, forKey: "kamihi.desktop.pointerSensitivity") }
     }
 
+    /// 0 = nearly linear precision movement, 1 = balanced iPad/Mac-like acceleration,
+    /// 2 = aggressive acceleration for large external displays.
+    @Published public var pointerAcceleration: Double {
+        didSet { UserDefaults.standard.set(pointerAcceleration, forKey: "kamihi.desktop.pointerAcceleration") }
+    }
+
     @Published public var scrollSpeed: Double {
         didSet { UserDefaults.standard.set(scrollSpeed, forKey: "kamihi.desktop.scrollSpeed") }
     }
 
     @Published public var naturalScrolling: Bool {
         didSet { UserDefaults.standard.set(naturalScrolling, forKey: "kamihi.desktop.naturalScrolling") }
+    }
+
+    @Published public var scrollMomentum: Bool {
+        didSet { UserDefaults.standard.set(scrollMomentum, forKey: "kamihi.desktop.scrollMomentum") }
     }
 
     @Published public var tapToClick: Bool {
@@ -35,11 +45,13 @@ public final class TrackpadSettings: ObservableObject {
 
     private init() {
         let defaults = UserDefaults.standard
-        self.pointerSensitivity = defaults.object(forKey: "kamihi.desktop.pointerSensitivity") as? Double ?? 1.35
+        self.pointerSensitivity = defaults.object(forKey: "kamihi.desktop.pointerSensitivity") as? Double ?? 1.20
+        self.pointerAcceleration = defaults.object(forKey: "kamihi.desktop.pointerAcceleration") as? Double ?? 1.0
         self.scrollSpeed = defaults.object(forKey: "kamihi.desktop.scrollSpeed") as? Double ?? 1.0
         self.naturalScrolling = defaults.object(forKey: "kamihi.desktop.naturalScrolling") as? Bool ?? true
+        self.scrollMomentum = defaults.object(forKey: "kamihi.desktop.scrollMomentum") as? Bool ?? true
         self.tapToClick = defaults.object(forKey: "kamihi.desktop.tapToClick") as? Bool ?? true
-        self.dragLock = defaults.object(forKey: "kamihi.desktop.dragLock") as? Bool ?? false
+        self.dragLock = defaults.object(forKey: "kamihi.desktop.dragLock") as? Bool ?? true
         self.hapticsEnabled = defaults.object(forKey: "kamihi.desktop.hapticsEnabled") as? Bool ?? true
 
         if let savedStyle = defaults.string(forKey: "kamihi.desktop.cursorStyle"),
