@@ -64,18 +64,22 @@ final class ReliableClient {
                 self.flushPending()
                 self.startHeartbeat()
             case .waiting(let error):
+                // NWConnection.waiting is recoverable in theory, but leaving a remote-control
+                // session parked here can strand initial connects indefinitely and can race
+                // RemoteSession's reconnect timer after a previously-ready path degrades.
+                // Tear this generation down once and let the app's bounded reconnect schedule
+                // create a fresh connection instead.
                 self.lastFailure = error.localizedDescription
-                if self.isReady {
-                    self.isReady = false
-                    self.writeInFlight = false
-                    self.onDead?("waiting: \(error.localizedDescription)")
-                }
+                self.markDead("waiting: \(error.localizedDescription)", notify: true)
+                return
             case .failed(let error):
                 self.markDead("failed: \(error.localizedDescription)", notify: true)
+                return
             case .cancelled:
-                if self.isReady {
-                    self.markDead("cancelled", notify: true)
-                }
+                // Explicit stop() clears the state handler before cancel(), so reaching this
+                // branch means Network.framework cancelled an active generation unexpectedly.
+                self.markDead("cancelled", notify: true)
+                return
             default:
                 break
             }

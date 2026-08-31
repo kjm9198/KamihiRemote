@@ -29,6 +29,7 @@ jobs:
             -scheme KamihiRemote \
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath /tmp/KamihiDerivedAudit \
             CODE_SIGNING_ALLOWED=NO \
             build
 
@@ -41,3 +42,17 @@ jobs:
             -sdk macosx \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+      - name: Run iOS simulator UI smoke
+        env:
+          SKIP_BUILD: "true"
+          DERIVED: /tmp/KamihiDerivedAudit
+        run: bash scripts/sim-ui-smoke.sh
+
+      - name: Upload simulator smoke screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kamihi-ui-smoke
+          path: /tmp/kamihi-ui-shots
+          if-no-files-found: warn
