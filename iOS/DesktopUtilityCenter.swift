@@ -35,13 +35,12 @@ final class DesktopCalculatorStore: ObservableObject {
             result = "Error"
             return
         }
-        let value = NSExpression(format: normalized).expressionValue(with: nil, context: nil)
-        if let number = value as? NSNumber {
-            let double = number.doubleValue
-            result = double.rounded() == double ? String(Int(double)) : String(format: "%.8g", double)
-        } else {
+        var parser = ArithmeticParser(normalized)
+        guard let value = parser.parse(), value.isFinite else {
             result = "Error"
+            return
         }
+        result = value.rounded() == value ? String(Int(value)) : String(format: "%.8g", value)
     }
 
     private func evaluatePreview() {
@@ -55,6 +54,69 @@ final class DesktopCalculatorStore: ObservableObject {
     private func isSafe(_ value: String) -> Bool {
         let allowed = CharacterSet(charactersIn: "0123456789.+-*/() ")
         return !value.isEmpty && value.unicodeScalars.allSatisfy { allowed.contains($0) }
+    }
+
+    private struct ArithmeticParser {
+        private let characters: [Character]
+        private var index = 0
+
+        init(_ expression: String) {
+            characters = Array(expression.filter { !$0.isWhitespace })
+        }
+
+        mutating func parse() -> Double? {
+            guard let value = parseExpression(), index == characters.count else { return nil }
+            return value
+        }
+
+        private mutating func parseExpression() -> Double? {
+            guard var value = parseTerm() else { return nil }
+            while let token = current, token == "+" || token == "-" {
+                index += 1
+                guard let rhs = parseTerm() else { return nil }
+                value = token == "+" ? value + rhs : value - rhs
+            }
+            return value
+        }
+
+        private mutating func parseTerm() -> Double? {
+            guard var value = parseFactor() else { return nil }
+            while let token = current, token == "*" || token == "/" {
+                index += 1
+                guard let rhs = parseFactor() else { return nil }
+                if token == "/" && rhs == 0 { return nil }
+                value = token == "*" ? value * rhs : value / rhs
+            }
+            return value
+        }
+
+        private mutating func parseFactor() -> Double? {
+            if current == "+" { index += 1; return parseFactor() }
+            if current == "-" { index += 1; return parseFactor().map { -$0 } }
+            if current == "(" {
+                index += 1
+                guard let value = parseExpression(), current == ")" else { return nil }
+                index += 1
+                return value
+            }
+            return parseNumber()
+        }
+
+        private mutating func parseNumber() -> Double? {
+            let start = index
+            var dotCount = 0
+            while let token = current, token.isNumber || token == "." {
+                if token == "." { dotCount += 1 }
+                if dotCount > 1 { return nil }
+                index += 1
+            }
+            guard index > start else { return nil }
+            return Double(String(characters[start..<index]))
+        }
+
+        private var current: Character? {
+            index < characters.count ? characters[index] : nil
+        }
     }
 }
 
@@ -221,24 +283,50 @@ struct DesktopWindowOverviewView: View {
 }
 
 struct DesktopClipboardCenterView: View {
+    @EnvironmentObject private var desktop: DesktopSession
     @ObservedObject private var clipboard = DesktopClipboardStore.shared
+    @ObservedObject private var notes = DesktopNotesStore.shared
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             List {
                 if clipboard.items.isEmpty {
-                    ContentUnavailableView("Clipboard Empty", systemImage: "doc.on.clipboard", description: Text("Copy text on the iPhone, then reopen this panel."))
+                    ContentUnavailableView("Clipboard Empty", systemImage: "doc.on.clipboard", description: Text("Copy text on the iPhone, then tap Refresh."))
                 } else {
                     ForEach(Array(clipboard.items.enumerated()), id: \.offset) { _, item in
-                        Button {
-                            clipboard.copy(item)
-                            dismiss()
-                        } label: {
+                        VStack(alignment: .leading, spacing: 10) {
                             Text(item)
-                                .lineLimit(3)
-                                .foregroundStyle(.primary)
+                                .lineLimit(4)
+                                .textSelection(.enabled)
+                            HStack(spacing: 10) {
+                                Button("Paste", systemImage: "arrow.down.doc") {
+                                    desktop.typeIntoActiveWebView(item)
+                                    dismiss()
+                                }
+                                .buttonStyle(.borderedProminent)
+
+                                Button("Copy", systemImage: "doc.on.doc") {
+                                    clipboard.copy(item)
+                                }
+                                .buttonStyle(.bordered)
+
+                                Button("Notes", systemImage: "note.text.badge.plus") {
+                                    if !notes.text.isEmpty { notes.text += "\n\n" }
+                                    notes.text += item
+                                    desktop.openNotes()
+                                }
+                                .buttonStyle(.bordered)
+
+                                ShareLink(item: item) {
+                                    Image(systemName: "square.and.arrow.up")
+                                }
+                                .buttonStyle(.bordered)
+                                .accessibilityLabel("Share clipboard item")
+                            }
+                            .font(.caption)
                         }
+                        .padding(.vertical, 4)
                     }
                 }
             }
