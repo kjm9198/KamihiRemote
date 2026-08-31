@@ -8,31 +8,51 @@ extension DesktopSession {
     }
 
     public var isDraggingWindow: Bool {
-        topWindow(at: cursor) != nil
+        hasActiveWindowDrag
+    }
+
+    public var isResizingWindow: Bool {
+        hasActiveWindowResize
     }
 
     public func clickAtCursor() {
         if let topID = topWindow(at: cursor) {
             activate(topID)
+            primaryClick()
             clickWebContentAtCursor()
         } else if cursor.y > 0.88 {
-            // Clicked on dock area
-            openBrowser()
+            primaryClick()
         }
     }
 
-    public func beginWindowDrag() {
-        beginPrimaryDrag()
+    @discardableResult
+    public func beginWindowDrag() -> Bool {
+        beginPrimaryDragIfPossible()
+    }
+
+    public func updateWindowDrag(delta: CGSize) {
+        updatePrimaryDrag(delta: delta)
     }
 
     public func endWindowDrag() {
-        if let target = WindowSnapEngine.evaluateSnapIntent(cursor: cursor),
-           let activeID = activeWindowID,
-           let index = windows.firstIndex(where: { $0.id == activeID }) {
-            windows[index].isMaximized = (target == .maximize)
-            windows[index].normalizedFrame = WindowSnapEngine.frame(for: target)
-        }
         endPrimaryDrag()
+    }
+
+    @discardableResult
+    public func beginPointerResize() -> Bool {
+        beginWindowResizeIfPossible()
+    }
+
+    public func updatePointerResize(delta: CGSize) {
+        updateWindowResize(delta: delta)
+    }
+
+    public func endPointerResize() {
+        endWindowResize()
+    }
+
+    public func cancelPointerManipulation() {
+        cancelWindowManipulation()
     }
 
     public func scrollActiveWindow(deltaY: CGFloat) {
