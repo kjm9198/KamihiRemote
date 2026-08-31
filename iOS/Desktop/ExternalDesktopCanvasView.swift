@@ -6,12 +6,18 @@ struct ExternalDesktopCanvasView: View {
     @StateObject private var settings = TrackpadSettings.shared
     @State private var showLauncher = false
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         ZStack {
-            // Desktop Wallpaper
             KamihiTheme.AtmosphericBackground()
 
-            // Desktop Windows Layer
+            if let target = desktop.snapPreviewTarget {
+                snapPreview(for: target)
+                    .transition(.opacity)
+                    .zIndex(1)
+            }
+
             ForEach(desktop.windows) { window in
                 DesktopWindowView(
                     window: window,
@@ -19,26 +25,28 @@ struct ExternalDesktopCanvasView: View {
                 ) {
                     windowContent(for: window.title)
                 }
+                .zIndex(desktop.activeWindowID == window.id ? 4 : 2)
             }
 
-            // Bottom Dock
             VStack {
                 Spacer()
                 DesktopDockView(onOpenLauncher: { showLauncher.toggle() })
                     .padding(.bottom, 12)
             }
+            .zIndex(6)
 
-            // Software Cursor
             DesktopCursorView(
                 cursorPosition: desktop.cursor,
                 cursorStyle: settings.cursorStyle,
-                interactionState: desktop.isDraggingWindow ? .dragging : .defaultState
+                interactionState: desktop.cursorInteractionState
             )
+            .zIndex(20)
         }
+        .animation(reduceMotion ? nil : KamihiTheme.Animation.fast, value: desktop.snapPreviewTarget)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay {
             if showLauncher {
-                Color.black.opacity(0.4)
+                Color.black.opacity(0.32)
                     .ignoresSafeArea()
                     .onTapGesture { showLauncher = false }
 
@@ -46,8 +54,30 @@ struct ExternalDesktopCanvasView: View {
                     .environmentObject(desktop)
                     .frame(maxWidth: 600, maxHeight: 420)
                     .clipShape(RoundedRectangle(cornerRadius: KamihiTheme.Radius.lg, style: .continuous))
-                    .shadow(radius: 24)
+                    .shadow(color: .black.opacity(0.35), radius: 24, y: 12)
             }
+        }
+    }
+
+    private func snapPreview(for target: WindowSnapEngine.SnapTarget) -> some View {
+        GeometryReader { geo in
+            let normalized = WindowSnapEngine.frame(for: target)
+            let frame = CGRect(
+                x: normalized.minX * geo.size.width,
+                y: normalized.minY * geo.size.height,
+                width: normalized.width * geo.size.width,
+                height: normalized.height * geo.size.height
+            )
+
+            RoundedRectangle(cornerRadius: KamihiTheme.Radius.lg, style: .continuous)
+                .fill(.white.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: KamihiTheme.Radius.lg, style: .continuous)
+                        .strokeBorder(.white.opacity(0.34), lineWidth: 1.5)
+                )
+                .frame(width: frame.width, height: frame.height)
+                .position(x: frame.midX, y: frame.midY)
+                .allowsHitTesting(false)
         }
     }
 
