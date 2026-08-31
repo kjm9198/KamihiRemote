@@ -56,7 +56,8 @@ final class DesktopFeatureState: ObservableObject {
     }
 
     var shouldConserveEnergy: Bool {
-        batterySaverOverride || ProcessInfo.processInfo.isLowPowerModeEnabled || DesktopPowerMonitor.shared.thermalState >= .serious
+        let thermal = DesktopPowerMonitor.shared.thermalState
+        return batterySaverOverride || ProcessInfo.processInfo.isLowPowerModeEnabled || thermal == .serious || thermal == .critical
     }
 
     func setWorkspace(_ workspace: Workspace, desktop: DesktopSession) {
@@ -322,7 +323,10 @@ enum DesktopCommandCatalog {
             DesktopCommand(id: "split-right", title: "Snap Right", subtitle: "Move active window to right half", icon: "rectangle.righthalf.inset.filled", keywords: ["window", "split"]) { $0.snapActiveRight() },
             DesktopCommand(id: "cycle", title: "Next Window", subtitle: "Cycle active window", icon: "rectangle.on.rectangle", keywords: ["switch", "tab"]) { $0.cycleWindow() },
             DesktopCommand(id: "focus", title: "Focus Workspace", subtitle: "One distraction-free ChatGPT window", icon: "scope", keywords: ["focus", "clean"]) { DesktopFeatureState.shared.setWorkspace(.focus, desktop: $0) },
-            DesktopCommand(id: "save", title: "Save Workspace", subtitle: "Remember window positions", icon: "square.and.arrow.down", keywords: ["restore", "session"]) { DesktopFeatureState.shared.saveSession(desktop: $0) }
+            DesktopCommand(id: "save", title: "Save Workspace", subtitle: "Remember window positions", icon: "square.and.arrow.down", keywords: ["restore", "session"]) { DesktopFeatureState.shared.saveSession(desktop: $0) },
+            DesktopCommand(id: "center", title: "Center Window", subtitle: "Center the active desktop window", icon: "dot.scope", keywords: ["window", "position"]) { $0.centerActiveWindow() },
+            DesktopCommand(id: "grow", title: "Grow Window", subtitle: "Increase active window size", icon: "arrow.up.left.and.arrow.down.right", keywords: ["resize", "window"]) { $0.resizeActive(widthDelta: 0.06, heightDelta: 0.06) },
+            DesktopCommand(id: "shrink", title: "Shrink Window", subtitle: "Decrease active window size", icon: "arrow.down.right.and.arrow.up.left", keywords: ["resize", "window"]) { $0.resizeActive(widthDelta: -0.06, heightDelta: -0.06) }
         ]
     }
 }
