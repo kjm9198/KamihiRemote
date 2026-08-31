@@ -11,6 +11,8 @@ enum DesktopServicesTests {
             try check("workspacePersistenceShape", workspacePersistenceShape)
             try check("windowThirdFrames", windowThirdFrames)
             try check("windowCycling", windowCycling)
+            try check("windowResizeBounds", windowResizeBounds)
+            try check("windowOverviewBulkActions", windowOverviewBulkActions)
             NSLog("Kamihi desktop services self-checks passed")
             return true
         } catch {
@@ -82,6 +84,41 @@ enum DesktopServicesTests {
         desktop.activate(first)
         desktop.cycleWindow()
         try require(desktop.activeWindowID == second, "cycling forward should activate next visible window")
+        desktop.closeAllDesktopWindows()
+    }
+
+    private static func windowResizeBounds() throws {
+        let desktop = DesktopSession.shared
+        desktop.closeAllDesktopWindows()
+        let id = desktop.openProductivityApp("Resize", frame: CGRect(x: 0.20, y: 0.12, width: 0.50, height: 0.50))
+        desktop.activate(id)
+        desktop.resizeActive(widthDelta: 5, heightDelta: 5)
+        var frame = desktop.windows.first(where: { $0.id == id })!.normalizedFrame
+        try require(frame.maxX <= 0.9761, "resized window must remain inside right desktop boundary")
+        try require(frame.maxY <= 0.8901, "resized window must remain above taskbar boundary")
+
+        desktop.resizeActive(widthDelta: -5, heightDelta: -5)
+        frame = desktop.windows.first(where: { $0.id == id })!.normalizedFrame
+        try require(frame.width >= 0.279, "window width must respect minimum")
+        try require(frame.height >= 0.239, "window height must respect minimum")
+
+        desktop.centerActiveWindow()
+        frame = desktop.windows.first(where: { $0.id == id })!.normalizedFrame
+        try require(abs(frame.midX - 0.5) < 0.02, "center action must horizontally center active window")
+        desktop.closeAllDesktopWindows()
+    }
+
+    private static func windowOverviewBulkActions() throws {
+        let desktop = DesktopSession.shared
+        desktop.closeAllDesktopWindows()
+        _ = desktop.openProductivityApp("One")
+        _ = desktop.openProductivityApp("Two")
+        desktop.minimizeAllWindows()
+        try require(desktop.windows.allSatisfy(\.isMinimized), "minimize all must minimize every window")
+        try require(desktop.activeWindowID == nil, "minimize all should clear active window")
+        desktop.restoreAllWindows()
+        try require(desktop.windows.allSatisfy { !$0.isMinimized }, "restore all must restore every window")
+        try require(desktop.activeWindowID != nil, "restore all should activate a window")
         desktop.closeAllDesktopWindows()
     }
 }
