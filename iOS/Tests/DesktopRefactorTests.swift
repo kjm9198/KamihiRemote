@@ -85,6 +85,77 @@ public enum DesktopRefactorTests {
             results.append(TestResult(name: "DesktopNotesStore Persistence", passed: false, message: error.localizedDescription))
         }
 
+        // Test 5: Pointer physics must preserve precision while accelerating fast sweeps.
+        do {
+            let slow = TrackpadEngine.physicsDelta(
+                dx: 1,
+                dy: 0,
+                dt: 1.0 / 60.0,
+                sensitivity: 1.0,
+                acceleration: 1.0,
+                precisionMode: false
+            )
+            let fast = TrackpadEngine.physicsDelta(
+                dx: 12,
+                dy: 0,
+                dt: 1.0 / 120.0,
+                sensitivity: 1.0,
+                acceleration: 1.0,
+                precisionMode: false
+            )
+            let precise = TrackpadEngine.physicsDelta(
+                dx: 12,
+                dy: 0,
+                dt: 1.0 / 120.0,
+                sensitivity: 1.0,
+                acceleration: 1.0,
+                precisionMode: true
+            )
+            let zero = TrackpadEngine.physicsDelta(
+                dx: 0,
+                dy: 0,
+                dt: 1.0 / 60.0,
+                sensitivity: 1.0,
+                acceleration: 1.0,
+                precisionMode: false
+            )
+
+            guard slow.width > 0,
+                  fast.width > 12,
+                  precise.width > 0,
+                  precise.width < fast.width,
+                  zero == .zero else {
+                throw NSError(domain: "Test", code: 9, userInfo: [NSLocalizedDescriptionKey: "Pointer acceleration/precision invariants failed"])
+            }
+            results.append(TestResult(name: "Trackpad Pointer Physics", passed: true, message: "OK"))
+        } catch {
+            results.append(TestResult(name: "Trackpad Pointer Physics", passed: false, message: error.localizedDescription))
+        }
+
+        // Test 6: Software pointer must be able to operate external-display window chrome.
+        do {
+            let frame = CGRect(x: 0.12, y: 0.10, width: 0.66, height: 0.68)
+            let titleHeight = DesktopWindowChrome.titleBarHeight(for: frame)
+            let y = frame.minY + titleHeight / 2
+            let extent = min(max(frame.width * 0.066, 0.020), 0.030)
+            let gap = min(max(frame.width * 0.012, 0.004), 0.008)
+            let trailing = min(max(frame.width * 0.018, 0.006), 0.012)
+
+            let closeX = frame.maxX - trailing - extent / 2
+            let maximizeX = closeX - extent - gap
+            let minimizeX = maximizeX - extent - gap
+
+            guard DesktopWindowChrome.action(at: CGPoint(x: closeX, y: y), in: frame) == .close,
+                  DesktopWindowChrome.action(at: CGPoint(x: maximizeX, y: y), in: frame) == .maximizeRestore,
+                  DesktopWindowChrome.action(at: CGPoint(x: minimizeX, y: y), in: frame) == .minimize,
+                  DesktopWindowChrome.action(at: CGPoint(x: frame.midX, y: frame.midY), in: frame) == nil else {
+                throw NSError(domain: "Test", code: 10, userInfo: [NSLocalizedDescriptionKey: "Window chrome pointer hit testing failed"])
+            }
+            results.append(TestResult(name: "Desktop Window Chrome Hit Testing", passed: true, message: "OK"))
+        } catch {
+            results.append(TestResult(name: "Desktop Window Chrome Hit Testing", passed: false, message: error.localizedDescription))
+        }
+
         return results
     }
 }
