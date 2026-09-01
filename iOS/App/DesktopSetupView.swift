@@ -20,9 +20,28 @@ struct DesktopSetupView: View {
     @StateObject private var trackpad = TrackpadSettings.shared
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var systemTypeSize
     @AccessibilityFocusState private var headingFocused: Bool
 
     private let progress = DesktopSetupProgress()
+
+    private var contentTypeSize: DynamicTypeSize {
+        #if DEBUG
+        if !persistsProgress && ProcessInfo.processInfo.arguments.contains("-KamihiSetupLargeText") {
+            return .accessibility5
+        }
+        #endif
+        return systemTypeSize
+    }
+
+    private var contentColorScheme: ColorScheme? {
+        #if DEBUG
+        if !persistsProgress && ProcessInfo.processInfo.arguments.contains("-KamihiSetupDark") {
+            return .dark
+        }
+        #endif
+        return appearance.preferredColorScheme
+    }
 
     var body: some View {
         NavigationStack {
@@ -48,6 +67,8 @@ struct DesktopSetupView: View {
                 .frame(maxWidth: .infinity)
                 .padding(24)
             }
+            // A new step starts at its heading even after the previous page was scrolled.
+            .id(step)
             .background(Color(uiColor: .systemGroupedBackground))
             .safeAreaInset(edge: .bottom) { navigationControls }
             .toolbar {
@@ -59,7 +80,8 @@ struct DesktopSetupView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
         }
-        .preferredColorScheme(appearance.preferredColorScheme)
+        .preferredColorScheme(contentColorScheme)
+        .environment(\.dynamicTypeSize, contentTypeSize)
         .onAppear {
             step = initialStep ?? progress.step
             refreshAccessories()
@@ -224,9 +246,12 @@ struct DesktopSetupView: View {
                     .frame(minWidth: 64, minHeight: 48)
                     .accessibilityIdentifier("setup.back")
             }
-            Button(step == .ready ? "Open my desktop" : "Continue") {
+            Button {
                 if step == .ready { leaveSetup(finished: true) }
                 else { navigate(forward: true) }
+            } label: {
+                Text(step == .ready ? "Open my desktop" : "Continue")
+                    .frame(maxWidth: .infinity, minHeight: 28)
             }
             .buttonStyle(.borderedProminent)
             .frame(maxWidth: .infinity, minHeight: 48)
