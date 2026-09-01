@@ -10,9 +10,17 @@ struct KamihiRemoteApp: App {
     init() {
         #if DEBUG
         Task { @MainActor in
-            _ = GestureEngineTests.runSelfChecks()
-            _ = DesktopServicesTests.runSelfChecks()
-            _ = DesktopRefactorTests.runSelfChecks()
+            let gesturePassed = GestureEngineTests.runSelfChecks()
+            let servicesPassed = DesktopServicesTests.runSelfChecks()
+            let refactor = DesktopRefactorTests.runSelfChecks()
+            print("=== KAMIHI ON-DEVICE RUNTIME SELF-CHECKS ===")
+            print("Gesture checks: \(gesturePassed ? "PASSED ✓" : "FAILED ✗")")
+            print("Desktop service checks: \(servicesPassed ? "PASSED ✓" : "FAILED ✗")")
+            print("Refactor architecture checks: \(refactor.filter { $0.passed }.count)/\(refactor.count) passed")
+            for r in refactor {
+                print("  [\(r.passed ? "PASS" : "FAIL")] \(r.name): \(r.message)")
+            }
+            print("============================================")
         }
         #endif
     }
