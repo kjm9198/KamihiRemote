@@ -60,6 +60,12 @@ struct PhoneTakeoverView: View {
             }
         }
         .interactiveDismissDisabled(isLoading)
+        .onDisappear {
+            // A swipe-to-dismiss after loading is a valid way to leave this sheet.
+            // Synchronize the final URL on every dismissal path so OAuth redirects
+            // are not lost merely because the user did not tap the Return button.
+            synchronizeBrowserURL()
+        }
     }
 
     private var securityBanner: some View {
@@ -155,18 +161,19 @@ struct PhoneTakeoverView: View {
         }
     }
 
-    private func finishTakeover() {
-        guard let window = desktop.windows.first(where: { $0.id == windowID }) else {
-            dismiss()
-            return
-        }
+    private func synchronizeBrowserURL() {
+        guard let window = desktop.windows.first(where: { $0.id == windowID }),
+              window.title == "Browser",
+              let currentURL else { return }
 
         // Website cookies/session data already live in WKWebsiteDataStore.default().
-        // For the full Browser, also carry the final phone URL back to the active
-        // desktop tab so OAuth redirects/form completion resume at the same page.
-        if window.title == "Browser", let currentURL {
-            DesktopBrowserState.shared.navigateActiveTab(to: currentURL)
-        }
+        // Only the final navigation URL is synchronized; Kamihi never extracts form
+        // values, passwords, passkeys, tokens or other page credentials.
+        DesktopBrowserState.shared.navigateActiveTab(to: currentURL)
+    }
+
+    private func finishTakeover() {
+        synchronizeBrowserURL()
         dismiss()
     }
 }
