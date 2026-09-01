@@ -213,7 +213,9 @@ Then repeat with the highest-impact unfinished issue in each category without du
 ## Rotation evidence
 
 - **2026-09-01 — Focus 1: RayNeo display fidelity.** Added persisted horizontal/vertical safe-area calibration, applied those margins consistently to the desktop coordinate space, refreshed native metrics on external display mode changes, prevented duplicate connect/disconnect session notifications, surfaced native resolution + negotiated maximum refresh on the iPhone controller, and added a RayNeo calibration/settings sheet. Exact feature head: `5b07ad3`. Apple build and Apple Integration Smoke both passed on the first attempt for that head. Physical Air 4 Pro resolution, actual refresh, overscan/readability, pointer latency, and USB-C reconnect remain `NEEDS PHYSICAL TEST`.
-- **Next rotation focus: 2 — iPadOS shell, themes and design system.**
+- **2026-09-01 — Focus 2: iPadOS shell, themes and design system.** Added persistent System / Light / Dark desktop appearance, adaptive Kamihi wallpaper, theme-aware external-display/Desktop Lab surfaces, semantic snap/safe-area overlays, an appearance-aware translucent dock, and appearance controls in Desktop & Display settings. Feature head: `6ae2808`; successor evidence head `c6c81f3` completed Apple Build, deploy, and Apple Integration Smoke successfully, with Integration Smoke passing on attempt 1.
+- **2026-09-01 — Focus 3: Trackpad and pointer.** Added adaptive one-sample pointer stabilization that increases precision at low speed without adding visible fast-sweep lag, bounded extreme acceleration gain for 1080p desktop control, kept drag/resize movement direct rather than smoothed, fixed drag-lock so a clean one-finger tap drops without leaking a click to the underlying app, hardened manipulation cleanup, and lengthened bounded momentum scrolling while preserving immediate cancellation on the next touch. Exact feature head: `f000e5b`. Apple Build and Apple Integration Smoke both passed on attempt 1.
+- **Next rotation focus: 4 — Windowing and spatial animations.**
 
 ## Physical-only checks
 
