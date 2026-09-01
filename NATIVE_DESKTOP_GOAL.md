@@ -210,6 +210,11 @@ Each hourly improvement run must focus on a different area from the previous run
 
 Then repeat with the highest-impact unfinished issue in each category without duplicating prior work.
 
+## Rotation evidence
+
+- **2026-09-01 — Focus 1: RayNeo display fidelity.** Added persisted horizontal/vertical safe-area calibration, applied those margins consistently to the desktop coordinate space, refreshed native metrics on external display mode changes, prevented duplicate connect/disconnect session notifications, surfaced native resolution + negotiated maximum refresh on the iPhone controller, and added a RayNeo calibration/settings sheet. Exact feature head: `5b07ad3`. Apple build and Apple Integration Smoke both passed on the first attempt for that head. Physical Air 4 Pro resolution, actual refresh, overscan/readability, pointer latency, and USB-C reconnect remain `NEEDS PHYSICAL TEST`.
+- **Next rotation focus: 2 — iPadOS shell, themes and design system.**
+
 ## Physical-only checks
 
 Do not mark these verified based only on CI/Simulator:
