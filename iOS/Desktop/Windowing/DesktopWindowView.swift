@@ -1,11 +1,44 @@
 import SwiftUI
 
+/// Centralized render policy for desktop window contents.
+///
+/// Minimized windows should not keep expensive WebKit/media surfaces alive behind
+/// a fully transparent window. Under explicit battery saving, iOS Low Power Mode,
+/// or serious/critical thermal pressure, inactive web-backed windows are also
+/// released until the user activates them again. Their URLs/session metadata and
+/// WebKit website data remain persisted by the owning app/state stores.
+enum DesktopWindowEnergyPolicy {
+    static func shouldRenderContent(
+        isMinimized: Bool,
+        isActive: Bool,
+        isWebBacked: Bool,
+        shouldConserveEnergy: Bool
+    ) -> Bool {
+        guard !isMinimized else { return false }
+        if shouldConserveEnergy && isWebBacked && !isActive {
+            return false
+        }
+        return true
+    }
+
+    static func isWebBackedApp(_ title: String) -> Bool {
+        switch title {
+        case "Browser", "ChatGPT", "YouTube":
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 /// Renders an iPadOS-inspired Kamihi desktop window on the external screen.
 /// Window buttons remain directly tappable in Desktop Lab, while physical
 /// external-display use routes the same actions through DesktopWindowChrome.
 struct DesktopWindowView<Content: View>: View {
     @EnvironmentObject private var desktop: DesktopSession
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @StateObject private var features = DesktopFeatureState.shared
+    @StateObject private var power = DesktopPowerMonitor.shared
 
     let window: DesktopSession.DesktopWindow
     let isActive: Bool
@@ -20,9 +53,18 @@ struct DesktopWindowView<Content: View>: View {
                     .frame(height: 38)
                     .background(.ultraThinMaterial)
 
-                content()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(KamihiTheme.Colors.surfaceBackground)
+                Group {
+                    if shouldRenderContent {
+                        content()
+                    } else {
+                        // Intentionally lightweight: do not retain a hidden WKWebView,
+                        // media pipeline, or app-specific timer while this window sleeps.
+                        Color.clear
+                            .accessibilityHidden(true)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(KamihiTheme.Colors.surfaceBackground)
             }
             .clipShape(RoundedRectangle(cornerRadius: windowCornerRadius, style: .continuous))
             .overlay {
@@ -55,6 +97,21 @@ struct DesktopWindowView<Content: View>: View {
             .animation(reduceMotion ? nil : KamihiTheme.Animation.spatial, value: window.isMaximized)
             .animation(reduceMotion ? nil : KamihiTheme.Animation.spatial, value: window.normalizedFrame)
         }
+    }
+
+    private var shouldRenderContent: Bool {
+        // Observing `power` makes the body re-evaluate immediately when iOS reports
+        // Low Power Mode or thermal-state changes. `features` covers the manual
+        // Battery Saver override. Reading shouldConserveEnergy keeps one policy
+        // source of truth for the whole desktop.
+        _ = power.lowPowerMode
+        _ = power.thermalState
+        return DesktopWindowEnergyPolicy.shouldRenderContent(
+            isMinimized: window.isMinimized,
+            isActive: isActive,
+            isWebBacked: DesktopWindowEnergyPolicy.isWebBackedApp(window.title),
+            shouldConserveEnergy: features.shouldConserveEnergy
+        )
     }
 
     private var titleBar: some View {
