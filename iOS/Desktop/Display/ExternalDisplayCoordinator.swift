@@ -22,6 +22,8 @@ public final class ExternalDisplayCoordinator: ObservableObject {
     @Published public private(set) var maximumFramesPerSecond: Int = 60
     @Published public private(set) var displayName: String = "External Display"
     @Published public private(set) var metricsRevision: Int = 0
+    /// Transient setup overlay; never persisted or used as proof of a hardware test.
+    @Published var showsSetupCalibration = false
 
     /// Fraction of the desktop width reserved on each left/right edge.
     /// This is an app-level comfort/calibration margin; it does not alter the mode negotiated by iOS.
@@ -91,7 +93,8 @@ public final class ExternalDisplayCoordinator: ObservableObject {
     }
 
     public var capabilitySummary: String {
-        "\(Int(nativePixelSize.width))×\(Int(nativePixelSize.height)) • up to \(maximumFramesPerSecond) Hz"
+        guard isConnected else { return "No display connected" }
+        return "\(Int(nativePixelSize.width))×\(Int(nativePixelSize.height)) • up to \(maximumFramesPerSecond) Hz"
     }
 
     public var scaleSummary: String {
@@ -157,6 +160,7 @@ public final class ExternalDisplayCoordinator: ObservableObject {
     public func disconnect() {
         guard isConnected else { return }
         isConnected = false
+        showsSetupCalibration = false
         DesktopSession.shared.externalDisplayDidDisconnect()
     }
 

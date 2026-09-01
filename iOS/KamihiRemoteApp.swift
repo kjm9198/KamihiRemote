@@ -6,6 +6,25 @@ struct KamihiRemoteApp: App {
     @StateObject private var session = RemoteSession()
     @StateObject private var desktop = DesktopSession.shared
     @StateObject private var desktopRecovery = DesktopRecoveryCoordinator.shared
+    @State private var deferredSetupThisLaunch = false
+
+    private var setupPreviewStep: DesktopSetupStep? {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if let index = args.firstIndex(of: "-KamihiSetupStep"), args.indices.contains(index + 1) {
+            return DesktopSetupStep(rawValue: args[index + 1])
+        }
+        #endif
+        return nil
+    }
+
+    private var shouldShowSetup: Bool {
+        if setupPreviewStep != nil { return !deferredSetupThisLaunch }
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-KamihiModeChooser") { return false }
+        #endif
+        return !DesktopSetupProgress().isComplete && !deferredSetupThisLaunch
+    }
 
     init() {
         #if DEBUG
@@ -30,7 +49,22 @@ struct KamihiRemoteApp: App {
             Group {
                 switch router.currentMode {
                 case .none:
-                    ModeSelectionView()
+                    if shouldShowSetup {
+                        DesktopSetupView(
+                            onFinish: {
+                                deferredSetupThisLaunch = true
+                                if setupPreviewStep == nil && desktop.isExternalDisplayConnected {
+                                    DesktopLaunchProfile.selected.apply(to: desktop)
+                                }
+                                router.selectMode(.externalDesktop)
+                            },
+                            onLater: { deferredSetupThisLaunch = true },
+                            initialStep: setupPreviewStep,
+                            persistsProgress: setupPreviewStep == nil
+                        )
+                    } else {
+                        ModeSelectionView()
+                    }
                 case .remoteMac:
                     // Kept only for legacy/debug launch arguments and integration regression testing.
                     // It is no longer exposed as a separate user-facing product in the normal app flow.

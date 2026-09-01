@@ -4,6 +4,7 @@ import SwiftUI
 struct ModeSelectionView: View {
     @EnvironmentObject private var router: AppModeRouter
     @State private var selectedProfile = DesktopLaunchProfile.selected
+    @State private var showSetup = false
 
     private let columns = [
         GridItem(.flexible(), spacing: KamihiTheme.Spacing.sm),
@@ -18,6 +19,16 @@ struct ModeSelectionView: View {
                 VStack(spacing: KamihiTheme.Spacing.lg) {
                     headerSection
                     featuredDesktopCard
+
+                    Button {
+                        DesktopSetupProgress().beginReview()
+                        showSetup = true
+                    } label: {
+                        Label("Connection & setup guide", systemImage: "sparkles.tv")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: 560)
 
                     VStack(alignment: .leading, spacing: KamihiTheme.Spacing.sm) {
                         Text("Choose how to start")
@@ -55,6 +66,19 @@ struct ModeSelectionView: View {
                 .padding(.vertical, KamihiTheme.Spacing.xl)
             }
         }
+        .sheet(isPresented: $showSetup) {
+            DesktopSetupView(
+                onFinish: {
+                    showSetup = false
+                    selectedProfile = DesktopLaunchProfile.selected
+                    if ExternalDisplayCoordinator.shared.isConnected {
+                        selectedProfile.apply(to: DesktopSession.shared)
+                    }
+                    router.selectMode(.externalDesktop)
+                },
+                onLater: { showSetup = false }
+            )
+        }
     }
 
     private var headerSection: some View {
@@ -86,7 +110,7 @@ struct ModeSelectionView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("One desktop. Use it however you want.")
                     .font(.headline)
-                Text("No forced coding layout and no separate Mac-remote product in the normal app flow.")
+                Text("Browse, watch, write and organize your files in a layout that suits you.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }

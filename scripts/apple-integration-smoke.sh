@@ -26,6 +26,11 @@ rm -rf "$DERIVED_IOS" "$DERIVED_MAC"
 
 cd "$ROOT_DIR"
 
+# Test only an isolated defaults suite. This executable never touches app/user data.
+echo "==> Desktop setup state and persistence regression checks"
+xcrun swiftc iOS/App/DesktopSetupProgress.swift scripts/DesktopSetupChecks.swift -o "$SMOKE_DIR/desktop-setup-checks"
+"$SMOKE_DIR/desktop-setup-checks" | tee "$SMOKE_DIR/desktop-setup-checks.log"
+
 retry_command() {
   local attempts="$1"
   local delay="$2"
@@ -333,6 +338,9 @@ visual_smoke() {
 }
 
 # First-class user-facing surfaces.
+for setup_step in welcome connection input display privacy ready; do
+  visual_smoke "Desktop setup: $setup_step" 2 "setup-$setup_step.png" -KamihiSetupStep "$setup_step"
+done
 visual_smoke "Mode chooser visual smoke" 2 "mode-chooser.png" -KamihiModeChooser
 visual_smoke "Kamihi Desktop Lab visual smoke" 4 "desktop-lab.png" -KamihiDesktopLab
 

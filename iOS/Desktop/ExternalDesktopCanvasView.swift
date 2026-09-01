@@ -24,6 +24,11 @@ struct ExternalDesktopCanvasView: View {
                     .padding(.leading, insets.leading)
                     .padding(.bottom, insets.bottom)
                     .padding(.trailing, insets.trailing)
+
+                if display.showsSetupCalibration {
+                    DesktopSetupCalibrationView()
+                        .zIndex(100)
+                }
             }
         }
         .preferredColorScheme(appearance.preferredColorScheme)
