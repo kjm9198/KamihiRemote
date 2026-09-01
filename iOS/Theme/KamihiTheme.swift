@@ -1,5 +1,58 @@
 import SwiftUI
 
+/// Persisted appearance choices shared by the phone controller and external-display scene.
+enum DesktopColorTheme: String, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: return "System"
+        case .light: return "Light"
+        case .dark: return "Dark"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .system: return "circle.lefthalf.filled"
+        case .light: return "sun.max.fill"
+        case .dark: return "moon.fill"
+        }
+    }
+
+    var preferredColorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
+
+@MainActor
+final class DesktopAppearanceSettings: ObservableObject {
+    static let shared = DesktopAppearanceSettings()
+
+    private enum Keys {
+        static let colorTheme = "kamihi.desktop.appearance.colorTheme"
+    }
+
+    @Published var colorTheme: DesktopColorTheme {
+        didSet { UserDefaults.standard.set(colorTheme.rawValue, forKey: Keys.colorTheme) }
+    }
+
+    var preferredColorScheme: ColorScheme? { colorTheme.preferredColorScheme }
+
+    private init() {
+        let saved = UserDefaults.standard.string(forKey: Keys.colorTheme)
+        colorTheme = DesktopColorTheme(rawValue: saved ?? "") ?? .system
+    }
+}
+
 /// Centralized semantic design tokens for Kamihi Remote & Kamihi Desktop.
 /// Provides consistent typography, spacing, corner radii, materials, colors, and spatial animations.
 public enum KamihiTheme {
@@ -56,16 +109,24 @@ public enum KamihiTheme {
 
         public static let separator = Color(uiColor: .separator)
         public static let subtleBorder = Color.primary.opacity(0.12)
+        public static let strongerBorder = Color.primary.opacity(0.20)
+        public static let controlFill = Color.primary.opacity(0.08)
+        public static let activeControlFill = Color.primary.opacity(0.15)
+        public static let scrim = Color.black.opacity(0.24)
         public static let glow = Color.accentColor.opacity(0.28)
     }
 
-    // MARK: - Atmospheric Meshes & Wallpapers
+    // MARK: - Atmospheric Wallpaper
+    /// An original Kamihi wallpaper that adapts to System/Light/Dark appearance.
+    /// It gives the desktop an iPadOS-like sense of depth without making every surface glass.
     public struct AtmosphericBackground: View {
+        @Environment(\.colorScheme) private var colorScheme
+
         public init() {}
 
         public var body: some View {
             ZStack {
-                Color.black
+                baseColor
                 MeshGradient(
                     width: 3,
                     height: 3,
@@ -74,22 +135,47 @@ public enum KamihiTheme {
                         [0, 0.5], [0.55, 0.48], [1, 0.5],
                         [0, 1], [0.5, 1], [1, 1]
                     ],
-                    colors: [
-                        Color(red: 0.03, green: 0.04, blue: 0.07),
-                        Color(red: 0.07, green: 0.08, blue: 0.14),
-                        Color(red: 0.04, green: 0.05, blue: 0.09),
-                        Color(red: 0.06, green: 0.07, blue: 0.13),
-                        Color(red: 0.16, green: 0.20, blue: 0.34),
-                        Color(red: 0.08, green: 0.07, blue: 0.16),
-                        Color(red: 0.02, green: 0.03, blue: 0.06),
-                        Color(red: 0.05, green: 0.06, blue: 0.12),
-                        Color(red: 0.03, green: 0.04, blue: 0.08)
-                    ]
+                    colors: meshColors
                 )
-                .blur(radius: 18)
+                .blur(radius: colorScheme == .dark ? 18 : 24)
+                .opacity(colorScheme == .dark ? 1 : 0.92)
             }
             .ignoresSafeArea()
             .allowsHitTesting(false)
+        }
+
+        private var baseColor: Color {
+            colorScheme == .dark
+                ? Color(red: 0.018, green: 0.022, blue: 0.04)
+                : Color(red: 0.91, green: 0.95, blue: 0.99)
+        }
+
+        private var meshColors: [Color] {
+            if colorScheme == .dark {
+                return [
+                    Color(red: 0.03, green: 0.04, blue: 0.07),
+                    Color(red: 0.07, green: 0.08, blue: 0.14),
+                    Color(red: 0.04, green: 0.05, blue: 0.09),
+                    Color(red: 0.06, green: 0.07, blue: 0.13),
+                    Color(red: 0.16, green: 0.20, blue: 0.34),
+                    Color(red: 0.08, green: 0.07, blue: 0.16),
+                    Color(red: 0.02, green: 0.03, blue: 0.06),
+                    Color(red: 0.05, green: 0.06, blue: 0.12),
+                    Color(red: 0.03, green: 0.04, blue: 0.08)
+                ]
+            }
+
+            return [
+                Color(red: 0.89, green: 0.95, blue: 1.00),
+                Color(red: 0.78, green: 0.90, blue: 1.00),
+                Color(red: 0.91, green: 0.92, blue: 1.00),
+                Color(red: 0.82, green: 0.94, blue: 0.97),
+                Color(red: 0.72, green: 0.84, blue: 1.00),
+                Color(red: 0.88, green: 0.83, blue: 1.00),
+                Color(red: 0.92, green: 0.97, blue: 1.00),
+                Color(red: 0.83, green: 0.91, blue: 1.00),
+                Color(red: 0.94, green: 0.92, blue: 1.00)
+            ]
         }
     }
 }
