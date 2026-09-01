@@ -40,6 +40,8 @@ final class TrackpadEngine: ObservableObject {
     private var secondTapCandidate = false
     private var threeFingerActionFired = false
     private var scrollVelocity: CGFloat = 0
+    private var previousPointerDelta: CGSize = .zero
+    private var hasPreviousPointerDelta = false
     private var momentumTask: Task<Void, Never>?
 
     var onThreeFingerSwipeUp: (() -> Void)?
@@ -70,6 +72,7 @@ final class TrackpadEngine: ObservableObject {
             gestureFingerCount = 1
             threeFingerActionFired = false
             scrollVelocity = 0
+            resetPointerSmoothing()
             secondTapCandidate = now - lastTapTime <= 0.30
             addRipple(at: center)
         } else {
@@ -77,6 +80,7 @@ final class TrackpadEngine: ObservableObject {
             lastCentroid = center
             lastSampleTime = now
             gestureFingerCount = max(gestureFingerCount, activeFingers)
+            resetPointerSmoothing()
         }
 
         lastObservedFingerCount = activeFingers
@@ -96,6 +100,7 @@ final class TrackpadEngine: ObservableObject {
             gestureFingerCount = max(gestureFingerCount, activeFingers)
             lastCentroid = center
             lastSampleTime = now
+            resetPointerSmoothing()
             return
         }
 
@@ -142,6 +147,7 @@ final class TrackpadEngine: ObservableObject {
         let duration = CACurrentMediaTime() - gestureStartTime
         let wasTap = duration < 0.26 && totalMovementDistance < 10
         let completedFingerCount = max(gestureFingerCount, activeTouchesBeforeEnd.count)
+        let wasDragLocked = state == .dragLocked
 
         activeFingers = max(remainingTouchCount, 0)
         lastObservedFingerCount = activeFingers
@@ -149,6 +155,7 @@ final class TrackpadEngine: ObservableObject {
         // Evaluate click semantics only when the complete gesture has ended.
         guard remainingTouchCount == 0 else {
             lastCentroid = .zero
+            resetPointerSmoothing()
             return
         }
 
@@ -159,7 +166,14 @@ final class TrackpadEngine: ObservableObject {
         }
 
         if wasTap {
-            if completedFingerCount == 1 && settings.tapToClick {
+            if wasDragLocked && completedFingerCount == 1 {
+                // Native-style drag lock: the next clean one-finger tap drops
+                // the item/window instead of leaking an unrelated click through.
+                desktop.endWindowDrag()
+                desktop.endPointerResize()
+                state = .idle
+                if settings.hapticsEnabled { Haptics.touchTap() }
+            } else if completedFingerCount == 1 && settings.tapToClick {
                 if settings.hapticsEnabled { Haptics.click() }
                 desktop.clickAtCursor()
                 lastTapTime = CACurrentMediaTime()
@@ -183,6 +197,7 @@ final class TrackpadEngine: ObservableObject {
         secondTapCandidate = false
         threeFingerActionFired = false
         scrollVelocity = 0
+        resetPointerSmoothing()
     }
 
     func handleGestureCancelled(desktop: DesktopSession) {
@@ -195,6 +210,7 @@ final class TrackpadEngine: ObservableObject {
         secondTapCandidate = false
         threeFingerActionFired = false
         scrollVelocity = 0
+        resetPointerSmoothing()
         desktop.cancelPointerManipulation()
     }
 
@@ -203,6 +219,8 @@ final class TrackpadEngine: ObservableObject {
         state = .idle
         desktop.endWindowDrag()
         desktop.endPointerResize()
+        desktop.cancelPointerManipulation()
+        resetPointerSmoothing()
     }
 
     // MARK: - Compatibility APIs
@@ -248,7 +266,7 @@ final class TrackpadEngine: ObservableObject {
         guard gestureFingerCount <= 1 else { return }
 
         let distance = hypot(dx, dy)
-        guard distance > 0.22 else { return }
+        guard distance > 0.16 else { return }
 
         if state == .dragLocked || state == .dragging {
             let delta = acceleratedDelta(dx: dx, dy: dy, dt: dt, settings: settings)
@@ -271,6 +289,7 @@ final class TrackpadEngine: ObservableObject {
             // Resize has priority when the pointer is on a window edge/corner.
             if desktop.beginPointerResize() {
                 state = .resizing
+                resetPointerSmoothing()
                 if settings.hapticsEnabled { Haptics.touchTap() }
                 let delta = acceleratedDelta(dx: dx, dy: dy, dt: dt, settings: settings)
                 desktop.updatePointerResize(delta: delta)
@@ -279,6 +298,7 @@ final class TrackpadEngine: ObservableObject {
 
             if desktop.beginWindowDrag() {
                 state = secondTapCandidate && settings.dragLock ? .dragLocked : .dragging
+                resetPointerSmoothing()
                 if settings.hapticsEnabled { Haptics.touchTap() }
                 let delta = acceleratedDelta(dx: dx, dy: dy, dt: dt, settings: settings)
                 desktop.updateWindowDrag(delta: delta)
@@ -287,7 +307,7 @@ final class TrackpadEngine: ObservableObject {
         }
 
         state = .moving
-        let delta = acceleratedDelta(dx: dx, dy: dy, dt: dt, settings: settings)
+        let delta = stabilizedPointerDelta(dx: dx, dy: dy, dt: dt, settings: settings)
         desktop.movePointer(delta: delta, sensitivity: 1.0)
     }
 
@@ -321,10 +341,13 @@ final class TrackpadEngine: ObservableObject {
         momentumTask = Task { @MainActor [weak self] in
             guard let self else { return }
             var velocity = min(max(initialVelocity, -2600), 2600)
+            let frameDuration: CGFloat = 1.0 / 60.0
 
             while !Task.isCancelled && abs(velocity) > 12 {
-                desktop.scrollActiveWindow(deltaY: velocity / 60.0)
-                velocity *= 0.90
+                desktop.scrollActiveWindow(deltaY: velocity * frameDuration)
+                // Slightly longer, smoother coast than the old 0.90 decay while
+                // remaining bounded and stopping immediately on the next touch.
+                velocity *= 0.93
                 try? await Task.sleep(for: .milliseconds(16))
             }
 
@@ -379,9 +402,36 @@ final class TrackpadEngine: ObservableObject {
         let accelerationProgress = min(max((speed - 90.0) / 950.0, 0.0), 1.0)
         let accelerationGain = 1.0 + CGFloat(max(acceleration, 0)) * accelerationProgress * 1.15
         let modeGain: CGFloat = precisionMode ? 0.42 : 1.0
-        let gain = precisionGain * accelerationGain * CGFloat(sensitivity) * modeGain
+        let unclampedGain = precisionGain * accelerationGain * CGFloat(sensitivity) * modeGain
+        // Keep extreme user settings useful on a 1080p desktop without allowing
+        // a single fast sample to fling the pointer across the whole canvas.
+        let gain = min(unclampedGain, precisionMode ? 2.2 : 4.6)
 
         return CGSize(width: dx * gain, height: dy * gain)
+    }
+
+    /// A one-sample adaptive low-pass filter. Slow, tiny movements get extra
+    /// stabilization for precise targeting; fast sweeps stay nearly direct so
+    /// smoothing never feels like visible cursor lag.
+    static func smoothedDelta(current: CGSize, previous: CGSize?, rawSpeed: CGFloat) -> CGSize {
+        guard let previous else { return current }
+        let speedProgress = min(max((rawSpeed - 35.0) / 700.0, 0.0), 1.0)
+        let currentWeight = 0.62 + speedProgress * 0.30
+        let previousWeight = 1.0 - currentWeight
+        return CGSize(
+            width: current.width * currentWeight + previous.width * previousWeight,
+            height: current.height * currentWeight + previous.height * previousWeight
+        )
+    }
+
+    private func stabilizedPointerDelta(dx: CGFloat, dy: CGFloat, dt: TimeInterval, settings: TrackpadSettings) -> CGSize {
+        let accelerated = acceleratedDelta(dx: dx, dy: dy, dt: dt, settings: settings)
+        let rawSpeed = hypot(dx, dy) / CGFloat(max(dt, 1.0 / 240.0))
+        let previous = hasPreviousPointerDelta ? previousPointerDelta : nil
+        let output = Self.smoothedDelta(current: accelerated, previous: previous, rawSpeed: rawSpeed)
+        previousPointerDelta = output
+        hasPreviousPointerDelta = true
+        return output
     }
 
     private func acceleratedDelta(dx: CGFloat, dy: CGFloat, dt: TimeInterval, settings: TrackpadSettings) -> CGSize {
@@ -393,6 +443,11 @@ final class TrackpadEngine: ObservableObject {
             acceleration: settings.pointerAcceleration,
             precisionMode: isPrecisionMode
         )
+    }
+
+    private func resetPointerSmoothing() {
+        previousPointerDelta = .zero
+        hasPreviousPointerDelta = false
     }
 
     private func centroid(of touches: Set<UITouch>, in view: UIView) -> CGPoint {
