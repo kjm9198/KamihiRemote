@@ -52,9 +52,10 @@ struct DesktopSetupView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("KAMIHI DESKTOP")
-                            .font(.caption.weight(.bold))
+                            .font(.system(size: 13, weight: .bold))
                             .tracking(2)
                             .foregroundStyle(.tint)
+                            .accessibilityHidden(true)
                         Text(step.title)
                             .font(.largeTitle.bold())
                             .accessibilityAddTraits(.isHeader)
@@ -211,7 +212,8 @@ struct DesktopSetupView: View {
             ForEach(DesktopLaunchProfile.allCases) { option in
                 Button { profile = option } label: {
                     HStack(alignment: .top, spacing: 14) {
-                        Image(systemName: option.systemImage).frame(width: 28).font(.title2)
+                        Image(systemName: option.systemImage).frame(width: 28).font(.system(size: 24))
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 5) {
                             Text(option.title).font(.headline).foregroundStyle(.primary)
                             Text(option.subtitle).font(.subheadline).foregroundStyle(.secondary)
@@ -244,31 +246,50 @@ struct DesktopSetupView: View {
     }
 
     private var navigationControls: some View {
-        HStack(spacing: 16) {
-            if step != .welcome {
-                Button("Back") { navigate(forward: false) }
-                    .frame(minWidth: 64, minHeight: 48)
-                    .accessibilityIdentifier("setup.back")
+        Group {
+            if contentTypeSize.isAccessibilitySize {
+                VStack(spacing: 8) {
+                    primaryAction
+                    if step != .welcome { backAction }
+                }
+            } else {
+                HStack(spacing: 16) {
+                    if step != .welcome { backAction }
+                    primaryAction
+                }
             }
-            Button {
-                if step == .ready { leaveSetup(finished: true) }
-                else { navigate(forward: true) }
-            } label: {
-                Text(step == .ready ? "Open my desktop" : "Continue")
-                    .frame(maxWidth: .infinity, minHeight: 28)
-            }
-            .buttonStyle(.borderedProminent)
-            // The app accent is very pale; use a contrast-safe action color in both themes.
-            .tint(Color(red: 0.05, green: 0.35, blue: 0.75))
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity, minHeight: 48)
-            .controlSize(.large)
-            .accessibilityIdentifier("setup.continue")
         }
         .frame(maxWidth: 620)
         .padding(.horizontal, 24).padding(.vertical, 12)
         .frame(maxWidth: .infinity)
         .background(Color(uiColor: .systemBackground))
+    }
+
+    private var backAction: some View {
+        Button("Back") { navigate(forward: false) }
+            .frame(minWidth: 64, minHeight: 48)
+            .accessibilityIdentifier("setup.back")
+    }
+
+    private var primaryAction: some View {
+        Button {
+            if step == .ready { leaveSetup(finished: true) }
+            else { navigate(forward: true) }
+        } label: {
+            Text(step == .ready ? "Open my desktop" : "Continue")
+                .font(.headline)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, minHeight: 28)
+        }
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.roundedRectangle(radius: 16))
+        // The app accent is very pale; use a contrast-safe action color in both themes.
+        .tint(Color(red: 0.05, green: 0.35, blue: 0.75))
+        .foregroundStyle(.white)
+        .frame(maxWidth: .infinity, minHeight: 48)
+        .controlSize(.large)
+        .accessibilityIdentifier("setup.continue")
     }
 
     private func navigate(forward: Bool) {
@@ -301,7 +322,7 @@ struct DesktopSetupView: View {
 
     private func info(_ title: String, _ text: String, icon: String) -> some View {
         HStack(alignment: .top, spacing: 14) {
-            Image(systemName: icon).font(.title2).foregroundStyle(.tint).frame(width: 30)
+            Image(systemName: icon).font(.system(size: 24)).foregroundStyle(.tint).frame(width: 30)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 7) {
                 Text(title).font(.headline)
