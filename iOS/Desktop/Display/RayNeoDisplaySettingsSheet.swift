@@ -1,14 +1,29 @@
 import SwiftUI
 
-/// iPhone-side controls for external-display fidelity and RayNeo comfort calibration.
-/// The sliders only inset Kamihi's desktop canvas; they never request a fake resolution/refresh mode.
+/// iPhone-side controls for external-display fidelity, RayNeo comfort calibration,
+/// and the desktop's persisted System/Light/Dark appearance.
 struct RayNeoDisplaySettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var display = ExternalDisplayCoordinator.shared
+    @StateObject private var appearance = DesktopAppearanceSettings.shared
 
     var body: some View {
         NavigationStack {
             Form {
+                Section("Appearance") {
+                    Picker("Desktop theme", selection: $appearance.colorTheme) {
+                        ForEach(DesktopColorTheme.allCases) { theme in
+                            Label(theme.title, systemImage: theme.symbol)
+                                .tag(theme)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Text("System follows the iPhone appearance. Light and Dark override only Kamihi Desktop, including the external display and Desktop Lab.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Connected Display") {
                     LabeledContent("Status", value: display.isConnected ? "Connected" : "Waiting")
                     LabeledContent("Native output", value: display.capabilitySummary)
@@ -56,7 +71,7 @@ struct RayNeoDisplaySettingsSheet: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("External Display")
+            .navigationTitle("Desktop & Display")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -64,6 +79,7 @@ struct RayNeoDisplaySettingsSheet: View {
                 }
             }
         }
+        .preferredColorScheme(appearance.preferredColorScheme)
     }
 
     private func calibrationSlider(title: String, value: Binding<Double>) -> some View {
