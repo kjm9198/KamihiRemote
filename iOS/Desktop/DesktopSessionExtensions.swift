@@ -16,30 +16,66 @@ extension DesktopSession {
     }
 
     public func clickAtCursor() {
-        if let topID = topWindow(at: cursor),
-           let window = windows.first(where: { $0.id == topID }) {
-            let frame = effectiveFrame(for: window)
+        guard let topID = topWindow(at: cursor),
+              let window = windows.first(where: { $0.id == topID }) else {
+            wantsPhoneKeyboard = false
+            return
+        }
 
-            if let action = DesktopWindowChrome.action(at: cursor, in: frame) {
-                activate(topID)
-                primaryClick()
-                switch action {
-                case .minimize:
-                    minimize(topID)
-                case .maximizeRestore:
-                    toggleMaximize(topID)
-                case .close:
-                    close(topID)
-                }
-                return
-            }
+        let frame = effectiveFrame(for: window)
 
+        if let action = DesktopWindowChrome.action(at: cursor, in: frame) {
+            wantsPhoneKeyboard = false
             activate(topID)
             primaryClick()
-            clickWebContentAtCursor()
-        } else if cursor.y > 0.88 {
-            primaryClick()
+            switch action {
+            case .minimize:
+                minimize(topID)
+            case .maximizeRestore:
+                toggleMaximize(topID)
+            case .close:
+                close(topID)
+            }
+            return
         }
+
+        activate(topID)
+        primaryClick()
+
+        // Native Notes use the phone keyboard as an explicit body editor.
+        if window.title == "Notes" {
+            wantsPhoneKeyboard = true
+            return
+        }
+
+        guard let point = webContentPoint(at: cursor, in: frame) else {
+            wantsPhoneKeyboard = false
+            return
+        }
+
+        DesktopWebInputRegistry.shared.click(
+            key: window.title,
+            x: point.x,
+            y: point.y
+        ) { [weak self] editable in
+            self?.wantsPhoneKeyboard = editable
+        }
+    }
+
+    /// New-registry secondary click. Kept separately from the older compatibility
+    /// method in DesktopProductivityMode so legacy code can remain untouched.
+    public func contextClickAtCursorUsingRegistry() {
+        guard let window = topWindowForInput(at: cursor),
+              window.title != "Notes",
+              let point = webContentPoint(at: cursor, in: effectiveFrame(for: window)) else { return }
+
+        wantsPhoneKeyboard = false
+        activate(window.id)
+        DesktopWebInputRegistry.shared.contextClick(
+            key: window.title,
+            x: point.x,
+            y: point.y
+        )
     }
 
     @discardableResult
@@ -72,15 +108,78 @@ extension DesktopSession {
         cancelWindowManipulation()
     }
 
+    /// Two-axis scrolling uses the same gain and direction rules on both axes.
+    /// Pages without horizontal overflow simply clamp X to their valid range.
+    public func scrollActiveWindow(deltaX: CGFloat, deltaY: CGFloat) {
+        guard let key = activeWindow?.title, key != "Notes" else { return }
+        DesktopWebInputRegistry.shared.scroll(key: key, deltaX: deltaX, deltaY: deltaY)
+    }
+
+    /// Compatibility overload for older call sites and deterministic tests.
     public func scrollActiveWindow(deltaY: CGFloat) {
-        scrollActiveWebView(deltaY: deltaY)
+        scrollActiveWindow(deltaX: 0, deltaY: deltaY)
+    }
+
+    public func typeIntoActiveDesktopField(_ text: String) {
+        guard !text.isEmpty else { return }
+        if activeWindow?.title == "Notes" {
+            DesktopNotesStore.shared.appendToActiveBody(text)
+            return
+        }
+        guard let key = activeWindow?.title else { return }
+        DesktopWebInputRegistry.shared.type(key: key, text: text)
+    }
+
+    public func deleteBackwardInActiveDesktopField() {
+        if activeWindow?.title == "Notes" {
+            DesktopNotesStore.shared.deleteBackwardFromActiveBody()
+            return
+        }
+        guard let key = activeWindow?.title else { return }
+        DesktopWebInputRegistry.shared.deleteBackward(key: key)
+    }
+
+    public func pressEnterInActiveDesktopField() {
+        if activeWindow?.title == "Notes" {
+            DesktopNotesStore.shared.insertNewlineIntoActiveBody()
+            return
+        }
+        guard let key = activeWindow?.title else { return }
+        DesktopWebInputRegistry.shared.pressEnter(key: key)
+    }
+
+    public func dismissPhoneKeyboardRequest() {
+        wantsPhoneKeyboard = false
     }
 
     public func goBackInActiveBrowser() {
-        browserBack()
+        guard let key = activeWindow?.title else { return }
+        DesktopWebInputRegistry.shared.goBack(key: key)
     }
 
     public func goForwardInActiveBrowser() {
-        browserForward()
+        guard let key = activeWindow?.title else { return }
+        DesktopWebInputRegistry.shared.goForward(key: key)
+    }
+
+    private func topWindowForInput(at point: CGPoint) -> DesktopWindow? {
+        windows.reversed().first(where: {
+            !$0.isMinimized && effectiveFrame(for: $0).contains(point)
+        })
+    }
+
+    private func webContentPoint(at point: CGPoint, in frame: CGRect) -> CGPoint? {
+        let titleBarHeight = DesktopWindowChrome.titleBarHeight(for: frame)
+        let contentTop = frame.minY + titleBarHeight
+        let contentHeight = frame.maxY - contentTop
+        guard frame.width > 0,
+              contentHeight > 0,
+              point.y > contentTop,
+              point.y <= frame.maxY else { return nil }
+
+        return CGPoint(
+            x: min(max((point.x - frame.minX) / frame.width, 0), 1),
+            y: min(max((point.y - contentTop) / contentHeight, 0), 1)
+        )
     }
 }

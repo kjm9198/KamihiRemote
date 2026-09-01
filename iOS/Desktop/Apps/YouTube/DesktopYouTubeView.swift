@@ -39,8 +39,11 @@ struct DesktopYouTubeView: View {
             .background(Color(red: 0.12, green: 0.13, blue: 0.17))
 
             // Web Content
-            WKWebViewRepresentable(url: URL(string: "https://www.youtube.com"))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            WKWebViewRepresentable(
+                url: URL(string: "https://www.youtube.com"),
+                registryKey: "YouTube"
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }

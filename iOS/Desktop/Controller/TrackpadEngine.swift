@@ -39,7 +39,7 @@ final class TrackpadEngine: ObservableObject {
     private var lastObservedFingerCount: Int = 0
     private var secondTapCandidate = false
     private var threeFingerActionFired = false
-    private var scrollVelocity: CGFloat = 0
+    private var scrollVelocity: CGSize = .zero
     private var previousPointerDelta: CGSize = .zero
     private var hasPreviousPointerDelta = false
     private var momentumTask: Task<Void, Never>?
@@ -71,7 +71,7 @@ final class TrackpadEngine: ObservableObject {
             totalMovementDistance = 0
             gestureFingerCount = 1
             threeFingerActionFired = false
-            scrollVelocity = 0
+            scrollVelocity = .zero
             resetPointerSmoothing()
             secondTapCandidate = now - lastTapTime <= 0.30
             addRipple(at: center)
@@ -126,7 +126,13 @@ final class TrackpadEngine: ObservableObject {
             )
 
         case 2:
-            handleTwoFingerScroll(dy: rawDY, dt: dt, desktop: desktop, settings: settings)
+            handleTwoFingerInteraction(
+                dx: rawDX,
+                dy: rawDY,
+                dt: dt,
+                desktop: desktop,
+                settings: settings
+            )
 
         case 3:
             handleThreeFingerGesture(center: center)
@@ -147,7 +153,8 @@ final class TrackpadEngine: ObservableObject {
         let duration = CACurrentMediaTime() - gestureStartTime
         let wasTap = duration < 0.26 && totalMovementDistance < 10
         let completedFingerCount = max(gestureFingerCount, activeTouchesBeforeEnd.count)
-        let wasDragLocked = state == .dragLocked
+        let endedState = state
+        let wasDragLocked = endedState == .dragLocked
 
         activeFingers = max(remainingTouchCount, 0)
         lastObservedFingerCount = activeFingers
@@ -159,9 +166,9 @@ final class TrackpadEngine: ObservableObject {
             return
         }
 
-        if state == .dragging {
+        if endedState == .dragging {
             desktop.endWindowDrag()
-        } else if state == .resizing {
+        } else if endedState == .resizing {
             desktop.endPointerResize()
         }
 
@@ -178,12 +185,14 @@ final class TrackpadEngine: ObservableObject {
                 desktop.clickAtCursor()
                 lastTapTime = CACurrentMediaTime()
             } else if completedFingerCount == 2 {
-                // A two-finger tap becomes context click only if no scrolling
-                // movement crossed the tap threshold.
+                // A two-finger tap becomes context click only if no scrolling or
+                // resize movement crossed the tap threshold.
                 if settings.hapticsEnabled { Haptics.rightClick() }
                 desktop.contextClickAtCursor()
             }
-        } else if completedFingerCount == 2 && settings.scrollMomentum {
+        } else if endedState == .scrolling,
+                  completedFingerCount == 2,
+                  settings.scrollMomentum {
             startMomentum(initialVelocity: scrollVelocity, desktop: desktop)
         }
 
@@ -196,7 +205,7 @@ final class TrackpadEngine: ObservableObject {
         totalMovementDistance = 0
         secondTapCandidate = false
         threeFingerActionFired = false
-        scrollVelocity = 0
+        scrollVelocity = .zero
         resetPointerSmoothing()
     }
 
@@ -209,7 +218,7 @@ final class TrackpadEngine: ObservableObject {
         totalMovementDistance = 0
         secondTapCandidate = false
         threeFingerActionFired = false
-        scrollVelocity = 0
+        scrollVelocity = .zero
         resetPointerSmoothing()
         desktop.cancelPointerManipulation()
     }
@@ -274,36 +283,18 @@ final class TrackpadEngine: ObservableObject {
             return
         }
 
-        if state == .resizing {
-            let delta = acceleratedDelta(dx: dx, dy: dy, dt: dt, settings: settings)
-            desktop.updatePointerResize(delta: delta)
-            return
-        }
-
         let heldDuration = now - gestureStartTime
         let wantsManipulation =
             (secondTapCandidate && totalMovementDistance > 3.0) ||
             (heldDuration > 0.34 && totalMovementDistance > 5.0)
 
-        if wantsManipulation {
-            // Resize has priority when the pointer is on a window edge/corner.
-            if desktop.beginPointerResize() {
-                state = .resizing
-                resetPointerSmoothing()
-                if settings.hapticsEnabled { Haptics.touchTap() }
-                let delta = acceleratedDelta(dx: dx, dy: dy, dt: dt, settings: settings)
-                desktop.updatePointerResize(delta: delta)
-                return
-            }
-
-            if desktop.beginWindowDrag() {
-                state = secondTapCandidate && settings.dragLock ? .dragLocked : .dragging
-                resetPointerSmoothing()
-                if settings.hapticsEnabled { Haptics.touchTap() }
-                let delta = acceleratedDelta(dx: dx, dy: dy, dt: dt, settings: settings)
-                desktop.updateWindowDrag(delta: delta)
-                return
-            }
+        if wantsManipulation, desktop.beginWindowDrag() {
+            state = secondTapCandidate && settings.dragLock ? .dragLocked : .dragging
+            resetPointerSmoothing()
+            if settings.hapticsEnabled { Haptics.touchTap() }
+            let delta = acceleratedDelta(dx: dx, dy: dy, dt: dt, settings: settings)
+            desktop.updateWindowDrag(delta: delta)
+            return
         }
 
         state = .moving
@@ -311,43 +302,96 @@ final class TrackpadEngine: ObservableObject {
         desktop.movePointer(delta: delta, sensitivity: 1.0)
     }
 
-    // MARK: - Two Finger Scroll
+    // MARK: - Two Finger Scroll / Resize
 
-    private func handleTwoFingerScroll(
+    private func handleTwoFingerInteraction(
+        dx: CGFloat,
         dy: CGFloat,
         dt: TimeInterval,
         desktop: DesktopSession,
         settings: TrackpadSettings
     ) {
-        // Once two-finger movement becomes scrolling, a click must not leak out.
-        state = .scrolling
-
-        var scrollDelta = dy * CGFloat(settings.scrollSpeed) * 1.30
-        if !settings.naturalScrolling {
-            scrollDelta = -scrollDelta
+        // Resizing is intentionally owned by exactly two fingers. A one-finger
+        // move can never resize a window, even when the pointer is on its edge.
+        if state == .resizing {
+            desktop.updatePointerResize(delta: CGSize(width: dx, height: dy))
+            return
         }
 
-        guard abs(scrollDelta) > 0.10 else { return }
-        desktop.scrollActiveWindow(deltaY: scrollDelta)
+        if state != .scrolling,
+           totalMovementDistance > 3.5,
+           desktop.beginPointerResize() {
+            state = .resizing
+            scrollVelocity = .zero
+            if settings.hapticsEnabled { Haptics.touchTap() }
+            desktop.updatePointerResize(delta: CGSize(width: dx, height: dy))
+            return
+        }
 
-        let instantaneousVelocity = scrollDelta / CGFloat(dt)
-        scrollVelocity = scrollVelocity * 0.72 + instantaneousVelocity * 0.28
+        handleTwoFingerScroll(dx: dx, dy: dy, dt: dt, desktop: desktop, settings: settings)
     }
 
-    private func startMomentum(initialVelocity: CGFloat, desktop: DesktopSession) {
+    private func handleTwoFingerScroll(
+        dx: CGFloat,
+        dy: CGFloat,
+        dt: TimeInterval,
+        desktop: DesktopSession,
+        settings: TrackpadSettings
+    ) {
+        state = .scrolling
+
+        let delta = Self.scrollDelta(
+            dx: dx,
+            dy: dy,
+            speed: settings.scrollSpeed,
+            naturalScrolling: settings.naturalScrolling
+        )
+        guard hypot(delta.width, delta.height) > 0.10 else { return }
+
+        desktop.scrollActiveWindow(deltaX: delta.width, deltaY: delta.height)
+
+        let instantaneous = CGSize(
+            width: delta.width / CGFloat(dt),
+            height: delta.height / CGFloat(dt)
+        )
+        scrollVelocity = CGSize(
+            width: scrollVelocity.width * 0.72 + instantaneous.width * 0.28,
+            height: scrollVelocity.height * 0.72 + instantaneous.height * 0.28
+        )
+    }
+
+    /// Symmetric two-axis scroll conversion. Keeping this pure makes vertical
+    /// and horizontal behavior testable and prevents one axis from feeling heavier.
+    static func scrollDelta(
+        dx: CGFloat,
+        dy: CGFloat,
+        speed: Double,
+        naturalScrolling: Bool
+    ) -> CGSize {
+        let gain = CGFloat(speed) * 1.30
+        let direction: CGFloat = naturalScrolling ? 1 : -1
+        return CGSize(width: dx * gain * direction, height: dy * gain * direction)
+    }
+
+    private func startMomentum(initialVelocity: CGSize, desktop: DesktopSession) {
         stopMomentum()
-        guard abs(initialVelocity) > 35 else { return }
+        guard hypot(initialVelocity.width, initialVelocity.height) > 35 else { return }
 
         momentumTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            var velocity = min(max(initialVelocity, -2600), 2600)
+            var velocity = CGSize(
+                width: min(max(initialVelocity.width, -2600), 2600),
+                height: min(max(initialVelocity.height, -2600), 2600)
+            )
             let frameDuration: CGFloat = 1.0 / 60.0
 
-            while !Task.isCancelled && abs(velocity) > 12 {
-                desktop.scrollActiveWindow(deltaY: velocity * frameDuration)
-                // Slightly longer, smoother coast than the old 0.90 decay while
-                // remaining bounded and stopping immediately on the next touch.
-                velocity *= 0.93
+            while !Task.isCancelled && hypot(velocity.width, velocity.height) > 12 {
+                desktop.scrollActiveWindow(
+                    deltaX: velocity.width * frameDuration,
+                    deltaY: velocity.height * frameDuration
+                )
+                velocity.width *= 0.93
+                velocity.height *= 0.93
                 try? await Task.sleep(for: .milliseconds(16))
             }
 

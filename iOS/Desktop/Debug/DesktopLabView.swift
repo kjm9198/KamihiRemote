@@ -92,9 +92,8 @@ struct DesktopLabView: View {
     @MainActor
     private func bootDesktopIfNeeded() {
         guard desktop.windows.isEmpty else { return }
-
-        if !DesktopFeatureState.shared.restoreSession(desktop: desktop) {
-            desktop.openVibeWorkspace()
-        }
+        // Desktop Lab mirrors real startup behavior: no surprise Vibe/browser
+        // windows. Resume may restore explicitly; every other profile stays clean.
+        DesktopLaunchProfile.selected.apply(to: desktop)
     }
 }

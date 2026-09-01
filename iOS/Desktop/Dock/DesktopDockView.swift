@@ -26,11 +26,10 @@ struct DesktopDockView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Open App Library")
 
-            Divider()
-                .frame(height: 24)
+            Divider().frame(height: 24)
 
             ForEach(pinnedApps, id: \.title) { app in
-                dockAppButton(title: app.title, icon: app.icon, color: app.color)
+                dockAppTile(title: app.title, icon: app.icon, color: app.color)
             }
 
             Spacer(minLength: 12)
@@ -51,9 +50,7 @@ struct DesktopDockView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(.ultraThinMaterial, in: Capsule())
-        .overlay(
-            Capsule().strokeBorder(KamihiTheme.Colors.subtleBorder, lineWidth: 1)
-        )
+        .overlay(Capsule().strokeBorder(KamihiTheme.Colors.subtleBorder, lineWidth: 1))
         .shadow(
             color: Color.black.opacity(colorScheme == .dark ? 0.34 : 0.16),
             radius: 14,
@@ -62,31 +59,40 @@ struct DesktopDockView: View {
         )
     }
 
-    private func dockAppButton(title: String, icon: String, color: Color) -> some View {
+    private func dockAppTile(title: String, icon: String, color: Color) -> some View {
         let isRunning = desktop.windows.contains(where: { $0.title == title })
         let isMinimized = desktop.windows.first(where: { $0.title == title })?.isMinimized ?? false
         let isActive = desktop.activeWindow?.title == title
 
-        return Button {
-            desktop.openProductivityApp(title)
-        } label: {
-            VStack(spacing: 2) {
-                Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(color)
-                    .frame(width: 38, height: 38)
-                    .background(
-                        isActive ? KamihiTheme.Colors.activeControlFill : KamihiTheme.Colors.controlFill,
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    )
+        return VStack(spacing: 2) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 38, height: 38)
+                .background(
+                    isActive ? KamihiTheme.Colors.activeControlFill : KamihiTheme.Colors.controlFill,
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
 
-                Circle()
-                    .fill(isRunning ? (isMinimized ? Color.orange : Color.primary) : Color.clear)
-                    .frame(width: 4, height: 4)
+            Circle()
+                .fill(isRunning ? (isMinimized ? Color.orange : Color.primary) : Color.clear)
+                .frame(width: 4, height: 4)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            if isRunning, let window = desktop.windows.first(where: { $0.title == title }) {
+                desktop.restoreAndActivate(window.id)
+            } else {
+                desktop.openProductivityApp(
+                    title,
+                    frame: CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60)
+                )
             }
         }
-        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
         .accessibilityValue(isActive ? "Active" : (isRunning ? "Running" : "Not running"))
+        .accessibilityHint("Double-tap to open")
+        .accessibilityAddTraits(.isButton)
     }
 }

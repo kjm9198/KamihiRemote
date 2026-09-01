@@ -56,13 +56,39 @@ public final class DesktopNotesStore: ObservableObject {
         let note = Note()
         notes.insert(note, at: 0)
         activeNoteID = note.id
+        text = note.body
     }
 
     public func deleteNote(id: UUID) {
         notes.removeAll(where: { $0.id == id })
         if activeNoteID == id {
             activeNoteID = notes.first?.id
+            text = activeNote?.body ?? ""
         }
+    }
+
+    /// Phone-keyboard bridge for the non-interactive external-display editor.
+    /// The phone edits the active note body directly; no Mac-remote path is involved.
+    public func appendToActiveBody(_ value: String) {
+        guard !value.isEmpty,
+              let id = activeNoteID,
+              let index = notes.firstIndex(where: { $0.id == id }) else { return }
+        notes[index].body.append(value)
+        notes[index].updatedAt = Date()
+        text = notes[index].body
+    }
+
+    public func deleteBackwardFromActiveBody() {
+        guard let id = activeNoteID,
+              let index = notes.firstIndex(where: { $0.id == id }),
+              !notes[index].body.isEmpty else { return }
+        notes[index].body.removeLast()
+        notes[index].updatedAt = Date()
+        text = notes[index].body
+    }
+
+    public func insertNewlineIntoActiveBody() {
+        appendToActiveBody("\n")
     }
 
     private func save() {

@@ -2,7 +2,7 @@ import Foundation
 import CoreGraphics
 
 /// User-facing ways to enter Kamihi Desktop.
-/// These are startup layouts, not separate products: once inside, every app remains available.
+/// Profiles prioritize the launcher rather than silently opening applications.
 public enum DesktopLaunchProfile: String, CaseIterable, Identifiable, Codable {
     case clean
     case resume
@@ -28,10 +28,10 @@ public enum DesktopLaunchProfile: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .clean: return "Start with an empty iOS-style desktop and open anything you want."
         case .resume: return "Restore the windows and layout from your last desktop session."
-        case .work: return "Start with a practical work layout, then rearrange it however you like."
-        case .browse: return "Open a full-size browser first for everyday web use."
-        case .media: return "Open media first for video, streaming, and entertainment."
-        case .vibe: return "Optional ChatGPT, YouTube, and Notes workspace."
+        case .work: return "Start clean with Notes, Files, and work tools surfaced first in the launcher."
+        case .browse: return "Start clean with Browser surfaced first; nothing opens until you choose it."
+        case .media: return "Start clean with YouTube and media apps surfaced first in the launcher."
+        case .vibe: return "Optional ChatGPT, YouTube, and Notes shortcuts without auto-opening them."
         }
     }
 
@@ -43,6 +43,22 @@ public enum DesktopLaunchProfile: String, CaseIterable, Identifiable, Codable {
         case .browse: return "safari"
         case .media: return "play.rectangle"
         case .vibe: return "sparkles.rectangle.stack"
+        }
+    }
+
+    /// Launcher ordering keeps profiles useful while preserving a calm empty desktop.
+    public var preferredAppOrder: [String] {
+        switch self {
+        case .clean, .resume:
+            return []
+        case .work:
+            return ["Notes", "Files", "Browser", "Calculator", "Clipboard"]
+        case .browse:
+            return ["Browser", "ChatGPT", "Files"]
+        case .media:
+            return ["YouTube", "Photos", "Browser"]
+        case .vibe:
+            return ["ChatGPT", "YouTube", "Notes", "Browser"]
         }
     }
 
@@ -62,28 +78,14 @@ public enum DesktopLaunchProfile: String, CaseIterable, Identifiable, Codable {
     @MainActor
     func apply(to desktop: DesktopSession) {
         switch self {
-        case .clean:
-            desktop.closeAllDesktopWindows()
         case .resume:
             if !DesktopFeatureState.shared.restoreSession(desktop: desktop) {
                 desktop.closeAllDesktopWindows()
             }
-        case .work:
-            DesktopFeatureState.shared.setWorkspace(.work, desktop: desktop)
-        case .browse:
+        case .clean, .work, .browse, .media, .vibe:
+            // Profiles influence launcher priority only. Apps never turn
+            // themselves on just because a display was connected.
             desktop.closeAllDesktopWindows()
-            _ = desktop.openProductivityApp(
-                "Browser",
-                frame: CGRect(x: 0.025, y: 0.055, width: 0.95, height: 0.835)
-            )
-        case .media:
-            desktop.closeAllDesktopWindows()
-            _ = desktop.openProductivityApp(
-                "YouTube",
-                frame: CGRect(x: 0.025, y: 0.055, width: 0.95, height: 0.835)
-            )
-        case .vibe:
-            DesktopFeatureState.shared.setWorkspace(.vibe, desktop: desktop)
         }
     }
 }

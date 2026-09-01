@@ -16,7 +16,7 @@ final class DesktopSession: ObservableObject {
         init(
             id: UUID = UUID(),
             title: String,
-            normalizedFrame: CGRect = CGRect(x: 0.17, y: 0.14, width: 0.66, height: 0.68),
+            normalizedFrame: CGRect = CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60),
             isMinimized: Bool = false,
             isMaximized: Bool = false
         ) {
@@ -43,6 +43,7 @@ final class DesktopSession: ObservableObject {
     @Published var cursor = CGPoint(x: 0.5, y: 0.45)
     @Published var windows: [DesktopWindow] = []
     @Published var activeWindowID: UUID?
+    @Published var wantsPhoneKeyboard = false
     @Published private(set) var cursorInteractionState: CursorInteractionState = .defaultState
     @Published private(set) var snapPreviewTarget: WindowSnapEngine.SnapTarget?
 
@@ -63,13 +64,13 @@ final class DesktopSession: ObservableObject {
 
     func externalDisplayDidConnect() {
         isExternalDisplayConnected = true
-        if windows.isEmpty {
-            openBrowser()
-        }
+        // Startup profiles own initial placement. Connecting a cable must never
+        // silently launch Browser or any other app.
     }
 
     func externalDisplayDidDisconnect() {
         isExternalDisplayConnected = false
+        wantsPhoneKeyboard = false
         cancelWindowManipulation()
     }
 
@@ -85,7 +86,9 @@ final class DesktopSession: ObservableObject {
     }
 
     func activate(_ id: UUID) {
+        let switchingWindows = activeWindowID != id
         activeWindowID = id
+        if switchingWindows { wantsPhoneKeyboard = false }
         guard let index = windows.firstIndex(where: { $0.id == id }) else { return }
         let window = windows.remove(at: index)
         windows.append(window)
@@ -98,6 +101,7 @@ final class DesktopSession: ObservableObject {
         snapTargets[id] = nil
         if activeWindowID == id {
             activeWindowID = windows.last?.id
+            wantsPhoneKeyboard = false
         }
         if dragWindowID == id || resizeWindowID == id {
             cancelWindowManipulation()
@@ -107,6 +111,7 @@ final class DesktopSession: ObservableObject {
 
     func minimize(_ id: UUID) {
         mutateWindow(id) { $0.isMinimized = true }
+        if activeWindowID == id { wantsPhoneKeyboard = false }
         activeWindowID = windows.last(where: { !$0.isMinimized && $0.id != id })?.id
         updateCursorAffordance()
     }
@@ -137,9 +142,8 @@ final class DesktopSession: ObservableObject {
         activate(id)
     }
 
-    /// Applies a snap target while preserving the last floating geometry.
-    /// Command-palette and drag-to-edge snapping share this path so restoring
-    /// behaves identically regardless of how the layout was entered.
+    /// Explicit placement path used by window-management commands. Pointer drag
+    /// no longer invokes snapping just because it reaches a display edge.
     func snapWindow(_ id: UUID, to target: WindowSnapEngine.SnapTarget) {
         guard let index = windows.firstIndex(where: { $0.id == id }) else { return }
 
@@ -168,12 +172,6 @@ final class DesktopSession: ObservableObject {
 
     func primaryClick() {
         pulseCursor(.clicking)
-
-        if cursor.y > 0.91 {
-            openBrowser()
-            return
-        }
-
         guard let id = topWindow(at: cursor) else { return }
         activate(id)
     }
@@ -216,6 +214,7 @@ final class DesktopSession: ObservableObject {
             snapTargets[id] = nil
         }
 
+        wantsPhoneKeyboard = false
         activate(id)
         guard let active = windows.first(where: { $0.id == id }) else { return false }
         dragWindowID = id
@@ -238,21 +237,13 @@ final class DesktopSession: ObservableObject {
             let newY = min(max(cursor.y - dragOffset.y, 0.045), 0.885 - height)
             window.normalizedFrame.origin = CGPoint(x: newX, y: newY)
         }
-        snapPreviewTarget = WindowSnapEngine.evaluateSnapIntent(cursor: cursor)
+
+        // Edge contact is no longer an implicit resize/snap command.
+        snapPreviewTarget = nil
         cursorInteractionState = .dragging
     }
 
     func endPrimaryDrag() {
-        guard let id = dragWindowID else {
-            snapPreviewTarget = nil
-            updateCursorAffordance()
-            return
-        }
-
-        if let target = snapPreviewTarget {
-            snapWindow(id, to: target)
-        }
-
         dragWindowID = nil
         snapPreviewTarget = nil
         updateCursorAffordance()
@@ -265,11 +256,11 @@ final class DesktopSession: ObservableObject {
               let index = windows.firstIndex(where: { $0.id == hit.id }),
               !windows[index].isMaximized else { return false }
 
-        // Resizing a snapped window detaches it from the snap layout. Keep the
-        // visible snapped frame as the resize starting point; its next snap or
-        // maximize operation will capture the newly resized geometry.
+        // Resizing a snapped window detaches it from the snap layout. Gesture
+        // ownership is enforced by TrackpadEngine: resize requires two fingers.
         snapTargets[hit.id] = nil
         restoreFrames[hit.id] = nil
+        wantsPhoneKeyboard = false
 
         activate(hit.id)
         resizeWindowID = hit.id
@@ -388,9 +379,9 @@ final class DesktopSession: ObservableObject {
             cursorInteractionState = .resizing(edge: edge.rawValue)
         } else if dragWindowID != nil {
             cursorInteractionState = .dragging
-        } else if let edge = resizeEdgeAtCursor() {
-            cursorInteractionState = .resizing(edge: edge.rawValue)
         } else {
+            // Merely hovering an edge never implies that a one-finger move will
+            // resize it; resize feedback appears only after the two-finger resize begins.
             cursorInteractionState = .defaultState
         }
     }

@@ -55,8 +55,7 @@ struct DesktopBrowserView: View {
                         } label: {
                             HStack(spacing: 7) {
                                 if tab.isLoading {
-                                    ProgressView()
-                                        .controlSize(.mini)
+                                    ProgressView().controlSize(.mini)
                                 } else {
                                     Image(systemName: tab.id == state.activeTabID ? "globe" : "circle.fill")
                                         .font(.system(size: tab.id == state.activeTabID ? 11 : 5, weight: .semibold))
@@ -190,9 +189,7 @@ struct DesktopBrowserView: View {
             TextField("Find on this page", text: $findText)
                 .textFieldStyle(.plain)
                 .onSubmit { controller.find(findText) }
-                .onChange(of: findText) { _, value in
-                    controller.find(value)
-                }
+                .onChange(of: findText) { _, value in controller.find(value) }
 
             Button("Done") {
                 showFind = false
@@ -241,6 +238,9 @@ final class DesktopBrowserController: ObservableObject {
     func present(tabID: UUID, url: URL?, in container: UIView, state: DesktopBrowserState) {
         let webView = webView(for: tabID, state: state)
         activeTabID = tabID
+
+        // Trackpad/phone-keyboard input always points at the retained active tab.
+        DesktopWebInputRegistry.shared.register(webView, key: "Browser")
 
         if webView.superview !== container {
             container.subviews.forEach { $0.removeFromSuperview() }
@@ -410,8 +410,7 @@ private struct BrowserLibrarySheet: View {
             List {
                 Section("Bookmarks") {
                     if state.bookmarks.isEmpty {
-                        Text("No bookmarks yet")
-                            .foregroundStyle(.secondary)
+                        Text("No bookmarks yet").foregroundStyle(.secondary)
                     } else {
                         ForEach(state.bookmarks) { bookmark in
                             Button {
@@ -431,8 +430,7 @@ private struct BrowserLibrarySheet: View {
 
                 Section {
                     if state.history.isEmpty {
-                        Text("No browsing history yet")
-                            .foregroundStyle(.secondary)
+                        Text("No browsing history yet").foregroundStyle(.secondary)
                     } else {
                         ForEach(state.history) { item in
                             Button {

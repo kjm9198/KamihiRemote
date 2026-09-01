@@ -13,7 +13,7 @@ public enum DesktopRefactorTests {
     public static func runSelfChecks() -> [TestResult] {
         var results: [TestResult] = []
 
-        // Test 1: Mode Router Transitions
+        // Test 1: Mode Router Transitions (legacy remote remains regression-only).
         do {
             let router = AppModeRouter()
             router.selectMode(.remoteMac)
@@ -154,6 +154,37 @@ public enum DesktopRefactorTests {
             results.append(TestResult(name: "Desktop Window Chrome Hit Testing", passed: true, message: "OK"))
         } catch {
             results.append(TestResult(name: "Desktop Window Chrome Hit Testing", passed: false, message: error.localizedDescription))
+        }
+
+        // Test 7: default app placement is a centered 60% window.
+        do {
+            let frame = DesktopSession.DesktopWindow(title: "Test").normalizedFrame
+            let tolerance: CGFloat = 0.0001
+            guard abs(frame.width - 0.60) < tolerance,
+                  abs(frame.height - 0.60) < tolerance,
+                  abs(frame.midX - 0.50) < tolerance,
+                  abs(frame.midY - 0.465) < tolerance else {
+                throw NSError(domain: "Test", code: 11, userInfo: [NSLocalizedDescriptionKey: "Default desktop window is not centered at 60%: \(frame)"])
+            }
+            results.append(TestResult(name: "Centered 60 Percent Window Default", passed: true, message: "OK"))
+        } catch {
+            results.append(TestResult(name: "Centered 60 Percent Window Default", passed: false, message: error.localizedDescription))
+        }
+
+        // Test 8: two-finger scrolling has symmetric X/Y gain and direction.
+        do {
+            let natural = TrackpadEngine.scrollDelta(dx: 8, dy: -8, speed: 1.0, naturalScrolling: true)
+            let reversed = TrackpadEngine.scrollDelta(dx: 8, dy: -8, speed: 1.0, naturalScrolling: false)
+            let tolerance: CGFloat = 0.0001
+
+            guard abs(abs(natural.width) - abs(natural.height)) < tolerance,
+                  abs(reversed.width + natural.width) < tolerance,
+                  abs(reversed.height + natural.height) < tolerance else {
+                throw NSError(domain: "Test", code: 12, userInfo: [NSLocalizedDescriptionKey: "Horizontal/vertical scroll gains diverged"])
+            }
+            results.append(TestResult(name: "Two Axis Scroll Symmetry", passed: true, message: "OK"))
+        } catch {
+            results.append(TestResult(name: "Two Axis Scroll Symmetry", passed: false, message: error.localizedDescription))
         }
 
         return results
