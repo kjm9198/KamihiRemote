@@ -142,8 +142,8 @@ final class DesktopSession: ObservableObject {
         activate(id)
     }
 
-    /// Explicit placement path used by window-management commands. Pointer drag
-    /// no longer invokes snapping just because it reaches a display edge.
+    /// Explicit placement path used by window-management commands and completed
+    /// title-bar drags that deliberately reach a snap activation zone.
     func snapWindow(_ id: UUID, to target: WindowSnapEngine.SnapTarget) {
         guard let index = windows.firstIndex(where: { $0.id == id }) else { return }
 
@@ -222,6 +222,7 @@ final class DesktopSession: ObservableObject {
             x: cursor.x - active.normalizedFrame.minX,
             y: cursor.y - active.normalizedFrame.minY
         )
+        snapPreviewTarget = nil
         cursorInteractionState = .dragging
         return true
     }
@@ -238,15 +239,28 @@ final class DesktopSession: ObservableObject {
             window.normalizedFrame.origin = CGPoint(x: newX, y: newY)
         }
 
-        // Edge contact is no longer an implicit resize/snap command.
-        snapPreviewTarget = nil
+        // Preview only while an active title-bar drag deliberately reaches an
+        // edge activation zone. Ordinary pointer movement and resize gestures
+        // never trigger snapping, preserving the isolated gesture semantics from
+        // the pointer-hardening pass.
+        snapPreviewTarget = WindowSnapEngine.evaluateSnapIntent(cursor: cursor)
         cursorInteractionState = .dragging
     }
 
     func endPrimaryDrag() {
+        let completedWindowID = dragWindowID
+        let completedSnapTarget = snapPreviewTarget
         dragWindowID = nil
         snapPreviewTarget = nil
-        updateCursorAffordance()
+
+        // Commit the snap only on release. This keeps the dragged floating frame
+        // responsive and makes the preview reversible simply by moving away from
+        // the activation zone before lifting the finger.
+        if let id = completedWindowID, let target = completedSnapTarget {
+            snapWindow(id, to: target)
+        } else {
+            updateCursorAffordance()
+        }
     }
 
     @discardableResult
