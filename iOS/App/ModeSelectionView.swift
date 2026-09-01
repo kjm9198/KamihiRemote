@@ -3,12 +3,19 @@ import SwiftUI
 /// Desktop-first launch experience. Startup choices are layouts, not separate products.
 struct ModeSelectionView: View {
     @EnvironmentObject private var router: AppModeRouter
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var selectedProfile = DesktopLaunchProfile.selected
 
-    private let columns = [
-        GridItem(.flexible(), spacing: KamihiTheme.Spacing.sm),
-        GridItem(.flexible(), spacing: KamihiTheme.Spacing.sm)
-    ]
+    private var columns: [GridItem] {
+        if dynamicTypeSize.isAccessibilitySize {
+            return [GridItem(.flexible())]
+        }
+        return [
+            GridItem(.flexible(), spacing: KamihiTheme.Spacing.sm),
+            GridItem(.flexible(), spacing: KamihiTheme.Spacing.sm)
+        ]
+    }
 
     var body: some View {
         ZStack {
@@ -60,12 +67,12 @@ struct ModeSelectionView: View {
     private var headerSection: some View {
         VStack(spacing: KamihiTheme.Spacing.xs) {
             Text("KAMIHI DESKTOP")
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .tracking(2.2)
+                .font(.caption.weight(.bold))
+                .tracking(dynamicTypeSize.isAccessibilitySize ? 0.8 : 2.2)
                 .foregroundStyle(.tint)
 
             Text("Your iPhone desktop")
-                .font(.system(size: 30, weight: .bold, design: .rounded))
+                .font(.largeTitle.bold())
                 .multilineTextAlignment(.center)
 
             Text("Connect RayNeo or another external display and use the iPhone as the trackpad, keyboard, launcher, and secure touch surface.")
@@ -74,14 +81,16 @@ struct ModeSelectionView: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 520)
         }
+        .accessibilityElement(children: .combine)
     }
 
     private var featuredDesktopCard: some View {
-        HStack(spacing: KamihiTheme.Spacing.md) {
+        HStack(alignment: .top, spacing: KamihiTheme.Spacing.md) {
             Image(systemName: "display.2")
-                .font(.system(size: 34, weight: .semibold))
+                .font(.title.weight(.semibold))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(.tint)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("One desktop. Use it however you want.")
@@ -95,7 +104,11 @@ struct ModeSelectionView: View {
         }
         .padding(KamihiTheme.Spacing.md)
         .frame(maxWidth: 560)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: KamihiTheme.Radius.lg, style: .continuous))
+        .background(
+            reduceTransparency ? AnyShapeStyle(Color(uiColor: .secondarySystemBackground)) : AnyShapeStyle(.thinMaterial),
+            in: RoundedRectangle(cornerRadius: KamihiTheme.Radius.lg, style: .continuous)
+        )
+        .accessibilityElement(children: .combine)
     }
 
     private func profileCard(_ profile: DesktopLaunchProfile) -> some View {
@@ -109,12 +122,14 @@ struct ModeSelectionView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Image(systemName: profile.systemImage)
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.title3.weight(.semibold))
                         .foregroundStyle(isSelected ? Color.accentColor : .primary)
+                        .accessibilityHidden(true)
                     Spacer()
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.tint)
+                            .accessibilityHidden(true)
                     }
                 }
 
@@ -127,11 +142,19 @@ struct ModeSelectionView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
-                    .lineLimit(4)
-                    .frame(maxWidth: .infinity, minHeight: 54, alignment: .topLeading)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 4)
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: dynamicTypeSize.isAccessibilitySize ? nil : 54,
+                        alignment: .topLeading
+                    )
             }
             .padding(14)
-            .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: dynamicTypeSize.isAccessibilitySize ? nil : 150,
+                alignment: .topLeading
+            )
             .background(
                 isSelected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.05),
                 in: RoundedRectangle(cornerRadius: KamihiTheme.Radius.md, style: .continuous)
@@ -143,6 +166,7 @@ struct ModeSelectionView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(profile.title)
-        .accessibilityHint(profile.subtitle)
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+        .accessibilityHint("\(profile.subtitle) Opens Kamihi Desktop with this starting layout.")
     }
 }
