@@ -6,6 +6,7 @@ struct RayNeoDisplaySettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var display = ExternalDisplayCoordinator.shared
     @StateObject private var appearance = DesktopAppearanceSettings.shared
+    @State private var showSetup = false
 
     var body: some View {
         NavigationStack {
@@ -26,8 +27,15 @@ struct RayNeoDisplaySettingsSheet: View {
 
                 Section("Connected Display") {
                     LabeledContent("Status", value: display.isConnected ? "Connected" : "Waiting")
-                    LabeledContent("Native output", value: display.capabilitySummary)
-                    LabeledContent("UIKit canvas", value: display.scaleSummary)
+                    if display.isConnected {
+                        LabeledContent("Native output", value: display.capabilitySummary)
+                        LabeledContent("UIKit canvas", value: display.scaleSummary)
+                        LabeledContent("Backing scale", value: display.backingSummary)
+                        Text(display.negotiatedModeSummary)
+                            .font(.footnote).foregroundStyle(.secondary)
+                        Text("Refresh is the maximum capability iOS reports, not a measurement of current refresh rate.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
                     LabeledContent("Calibration", value: display.calibrationSummary)
 
                     if display.isConnected {
@@ -70,6 +78,13 @@ struct RayNeoDisplaySettingsSheet: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+
+                Section("Getting started") {
+                    Button("Review connection & setup guide", systemImage: "list.bullet.rectangle") {
+                        DesktopSetupProgress().beginReview()
+                        showSetup = true
+                    }
+                }
             }
             .navigationTitle("Desktop & Display")
             .navigationBarTitleDisplayMode(.inline)
@@ -80,6 +95,9 @@ struct RayNeoDisplaySettingsSheet: View {
             }
         }
         .preferredColorScheme(appearance.preferredColorScheme)
+        .sheet(isPresented: $showSetup) {
+            DesktopSetupView(onFinish: { showSetup = false }, onLater: { showSetup = false })
+        }
     }
 
     private func calibrationSlider(title: String, value: Binding<Double>) -> some View {
