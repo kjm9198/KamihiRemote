@@ -22,6 +22,10 @@ struct ContextualControllerToolbar: View {
         min(max(controlSize * 0.36, 16), 20)
     }
 
+    private var openWindows: [DesktopSession.DesktopWindow] {
+        desktop.windows.filter { !$0.isMinimized }
+    }
+
     var body: some View {
         HStack(spacing: 7) {
             compactButton(
@@ -37,6 +41,8 @@ struct ContextualControllerToolbar: View {
                 hint: "Opens the Kamihi Desktop app launcher.",
                 action: onOpenLauncher
             )
+
+            windowSwitcher
 
             Spacer(minLength: 2)
 
@@ -71,6 +77,60 @@ struct ContextualControllerToolbar: View {
         .padding(.vertical, 4)
         .frame(minHeight: controlSize + 8)
         .accessibilityElement(children: .contain)
+    }
+
+    private var windowSwitcher: some View {
+        Menu {
+            if openWindows.isEmpty {
+                Text("No open windows")
+            } else {
+                ForEach(openWindows) { window in
+                    Button {
+                        desktop.activate(window.id)
+                        if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                    } label: {
+                        Label(window.title, systemImage: window.id == desktop.activeWindowID ? "checkmark.circle.fill" : "app")
+                    }
+                }
+            }
+
+            Divider()
+
+            Button {
+                desktop.cycleWindow()
+                if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+            } label: {
+                Label("Next Window", systemImage: "arrow.trianglehead.2.clockwise.rotate.90")
+            }
+            .disabled(openWindows.count < 2)
+
+            Button(action: onOpenOverview) {
+                Label("All Windows", systemImage: "rectangle.on.rectangle")
+            }
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: "rectangle.stack.fill")
+                    .font(.system(size: symbolSize, weight: .semibold))
+                    .foregroundStyle(Color.primary.opacity(0.86))
+                    .frame(width: controlSize, height: controlSize)
+                    .contentShape(Circle())
+
+                if openWindows.count > 1 {
+                    Text("\(min(openWindows.count, 9))")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .frame(width: 17, height: 17)
+                        .background(Color.accentColor, in: Circle())
+                        .offset(x: 2, y: -2)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .circle)
+        .accessibilityLabel("Switch Desktop Window")
+        .accessibilityValue(openWindows.isEmpty ? "No open windows" : "\(openWindows.count) open")
+        .accessibilityHint("Switches directly to an open window or shows all windows.")
     }
 
     @ViewBuilder
