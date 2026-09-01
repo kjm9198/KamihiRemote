@@ -41,6 +41,9 @@ final class DesktopRecoveryCoordinator: ObservableObject {
     private let defaults: UserDefaults
     private let snapshotKey = "kamihi.desktop.recovery.v1"
     private let cleanExitKey = "kamihi.desktop.cleanExit.v1"
+    private let autosaveMinimumInterval: TimeInterval = 0.75
+    private var lastAutosaveDate: Date?
+    private var pendingAutosaveTask: Task<Void, Never>?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -49,22 +52,51 @@ final class DesktopRecoveryCoordinator: ObservableObject {
 
     @discardableResult
     func prepareForConnection(desktop: DesktopSession) -> Bool {
+        pendingAutosaveTask?.cancel()
+        pendingAutosaveTask = nil
         let previousSessionWasClean = defaults.object(forKey: cleanExitKey) == nil || defaults.bool(forKey: cleanExitKey)
         let restored = !previousSessionWasClean && restoreSnapshot(desktop: desktop)
         recoveredAfterInterruption = restored
         displayHealth = restored ? .recovered : .connected
         defaults.set(false, forKey: cleanExitKey)
         saveSnapshot(desktop: desktop)
+        lastAutosaveDate = Date()
         return restored
     }
 
     func autosave(desktop: DesktopSession) {
         guard desktop.isExternalDisplayConnected else { return }
-        saveSnapshot(desktop: desktop)
+
+        let now = Date()
+        let elapsed = lastAutosaveDate.map { now.timeIntervalSince($0) } ?? autosaveMinimumInterval
+        if elapsed >= autosaveMinimumInterval {
+            pendingAutosaveTask?.cancel()
+            pendingAutosaveTask = nil
+            saveSnapshot(desktop: desktop)
+            lastAutosaveDate = now
+            return
+        }
+
+        // Window drag/resize can publish dozens of state changes per second. Keep
+        // the first recovery write immediate, then coalesce the burst into one
+        // trailing write instead of repeatedly serializing into UserDefaults.
+        pendingAutosaveTask?.cancel()
+        let remaining = max(0.10, autosaveMinimumInterval - elapsed)
+        let delayNanoseconds = UInt64(remaining * 1_000_000_000)
+        pendingAutosaveTask = Task { [weak self, weak desktop] in
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            guard !Task.isCancelled, let self, let desktop, desktop.isExternalDisplayConnected else { return }
+            self.saveSnapshot(desktop: desktop)
+            self.lastAutosaveDate = Date()
+            self.pendingAutosaveTask = nil
+        }
     }
 
     func finishSession(desktop: DesktopSession) {
+        pendingAutosaveTask?.cancel()
+        pendingAutosaveTask = nil
         saveSnapshot(desktop: desktop)
+        lastAutosaveDate = Date()
         defaults.set(true, forKey: cleanExitKey)
         displayHealth = .disconnected
         recoveredAfterInterruption = false
