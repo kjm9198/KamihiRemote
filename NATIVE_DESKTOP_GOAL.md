@@ -1,144 +1,67 @@
 # Kamihi Desktop — iPhone OS-on-Display Goal
 
-Current desktop-first baseline: `141dadb` and newer.
+Current desktop-first baseline: `40aee5a` and newer.
 
 ## North Star
 
-Kamihi is now primarily an **iPhone-powered desktop environment for RayNeo Air 4 Pro and other external displays**.
-
-The product should feel like iOS/iPadOS expanded onto a large desktop canvas: native interaction patterns, Apple-like clarity, excellent pointer/trackpad behavior, real window productivity, secure phone handoff, and enough freedom that the user can browse, watch media, write, work, organize files, use AI, or do anything else the built-in/public-API app set supports.
+Kamihi is primarily an **iPhone-powered desktop environment for RayNeo Air 4 Pro and other external displays**. It should feel like iOS/iPadOS expanded onto a desktop canvas: native interaction patterns, Apple-like clarity, excellent pointer/trackpad behavior, real window productivity, secure phone handoff, and enough freedom to browse, watch media, write, work, organize files, use AI, or do anything else the built-in/public-API app set supports.
 
 Vibe coding is an optional workflow, not the identity of the product.
-
-The benchmark is:
 
 > Connect the iPhone to RayNeo, choose how to start, and comfortably use Kamihi Desktop for an hour like a lightweight iPadOS-class computer without wishing the interface were Samsung DeX, a laptop, or the normal phone UI.
 
 ## Product direction
 
-- The **normal user-facing app no longer presents Remote for Mac as a separate compartment/product**.
-- Legacy Mac-remote code may remain dormant for regression testing/backward compatibility, but it should not shape normal navigation or receive feature priority.
-- Normal launch starts with Kamihi Desktop profiles: Clean Desktop, Resume, Work, Browse, Media, and optional Vibe.
-- Startup profiles only choose the initial layout. Once inside, every available Kamihi Desktop app remains launchable and windows remain freely rearrangeable.
-- Clean Desktop must be a true blank/flexible desktop, not a forced ChatGPT + YouTube layout.
-- The iPhone is the secure control surface: trackpad, keyboard, launcher, contextual controls, Phone Takeover, authentication and file/photo picking.
+- The normal user-facing app must **not present Remote for Mac as a separate compartment/product**.
+- Legacy Mac-remote code may remain dormant for regression/backward compatibility, but should not shape normal navigation or receive feature priority.
+- Normal launch starts with desktop profiles: Clean Desktop, Resume, Work, Browse, Media, and optional Vibe.
+- Profiles only choose the initial layout; once inside, all available desktop apps remain freely launchable and rearrangeable.
+- Clean Desktop must remain genuinely blank/flexible.
+- The iPhone is the secure control surface: trackpad, keyboard, launcher, contextual controls, Phone Takeover, authentication, file/photo picking.
 
 ## RayNeo Air 4 Pro target
 
-RayNeo Air 4 Pro is the first-class physical display target.
+RayNeo Air 4 Pro is the first-class physical display target. Normal 2D target is 1920×1080, 16:9, with hardware capability up to 120 Hz and HDR10. Kamihi must use the **native backing resolution, scale, and maximum refresh capability that iOS actually negotiates and exposes**.
 
-Official hardware target for normal 2D desktop use:
+Do not artificially downscale a negotiated 1080p scene. Do not claim or force 120 Hz when iOS reports less. Do not fake HDR capability if the public external-display path does not safely expose it.
 
-- Full HD 1920×1080 per 2D display input.
-- 16:9 desktop composition.
-- Up to 120 Hz hardware refresh capability.
-- HDR10-capable display hardware.
+Required display behavior:
 
-Kamihi must use the **native backing resolution, scale and maximum refresh capability that iOS actually negotiates and exposes** for the connected external screen.
-
-Do not artificially downscale a 1080p external scene.
-Do not claim or force 120 Hz when iOS reports a lower negotiated maximum.
-Do not fake HDR capability if the public iOS external-display path does not expose a safe supported way to request it.
-
-Required display work:
-
-- track logical UIKit size separately from native pixel size,
-- track native scale,
+- track logical UIKit size separately from native pixel size and native scale,
 - track `maximumFramesPerSecond`,
-- render the external scene at the screen's negotiated native backing scale,
-- preserve 16:9 layouts without clipping,
-- RayNeo safe-area/overscan calibration,
-- readable text-size presets for glasses,
+- render using negotiated native backing scale,
+- preserve 16:9 without clipping,
+- persisted RayNeo safe-area/overscan calibration,
+- readable glasses text scaling,
 - display diagnostics showing native resolution + negotiated refresh,
-- stable unplug/replug recovery,
-- no duplicate desktop sessions on reconnect,
-- use full native scene size for Desktop Lab/reference screenshots.
+- stable unplug/replug recovery with no duplicate sessions,
+- full native scene size for Desktop Lab/reference screenshots.
 
-Physical RayNeo resolution/refresh remains `NEEDS PHYSICAL TEST` until the real iPhone + Air 4 Pro reports and displays it correctly.
+Physical RayNeo resolution/refresh remains `NEEDS PHYSICAL TEST` until verified on the real iPhone + Air 4 Pro.
 
 ## iPadOS-style visual identity
 
-Kamihi Desktop should feel closer to iPadOS windowed multitasking than to Windows, Samsung DeX, or a fake macOS skin.
+Prefer system typography, SF Symbols, semantic colors, System/Light/Dark appearance, restrained materials, clear active-window hierarchy, comfortable spacing, accessible targets, contextual controls, and original Kamihi dock/window/pointer styling.
 
-Use:
-
-- system typography,
-- SF Symbols,
-- semantic colors,
-- System / Light / Dark themes,
-- materials only where appropriate,
-- clear active/inactive window hierarchy,
-- comfortable spacing,
-- touch/pointer targets that remain easy to acquire,
-- contextual controls,
-- original Kamihi pointer/dock/window styling.
-
-Avoid:
-
-- developer-dashboard UI,
-- forced dark mode,
-- permanent walls of controls,
-- copying macOS traffic lights or Samsung trade dress,
-- glass on every surface,
-- tiny desktop chrome,
-- layouts that assume every session is vibe coding.
+Avoid developer-dashboard UI, forced dark mode, permanent control walls, copied macOS traffic lights/Samsung trade dress, glass everywhere, tiny chrome, and layouts that assume every session is vibe coding.
 
 ## Trackpad and pointer quality gate
 
-The phone trackpad is one of the most important features.
-
-Required end state:
-
-- precise one-finger pointer movement,
-- low-speed precision and velocity acceleration,
-- no pointer movement during two-finger scrolling,
-- momentum scrolling,
-- natural scrolling option,
-- tap/click/double-click correctness,
-- hold/drag and drag-lock,
-- reliable right-click,
-- gesture cancellation that prevents accidental clicks,
-- configurable pointer and scroll speed,
-- subtle optional haptics,
-- Kamihi Dot / Arrow / Precision / Accessibility cursor options,
-- correct click/drag/text/resize/busy pointer states,
-- high-refresh cursor updates only while interaction requires them,
-- no permanent idle 60/120 Hz loop.
+Required: precise one-finger movement; low-speed precision + acceleration; two-finger scroll isolation; momentum/natural-scroll option; click/double-click/drag-lock/right-click correctness; cancellation without leaked clicks; pointer/scroll tuning; optional subtle haptics; Kamihi Dot/Arrow/Precision/Accessibility cursors; click/drag/text/resize/busy cursor states; and no permanent idle 60/120 Hz rendering loop.
 
 ## Windowing quality gate
 
-Required:
-
-- drag,
-- resize from edges/corners,
-- minimum sizes,
-- correct z-order,
-- halves / thirds / quarters,
-- edge snap preview,
-- maximize + restore previous frame,
-- minimize/restore spatial continuity,
-- Mission Control/window overview,
-- multiple workspaces when useful,
-- keyboard window switching,
-- intelligent new-window placement.
+Required: drag; all-edge/corner resize; minimum sizes; correct z-order; halves/thirds/quarters; edge snap preview; maximize + true floating-frame restore; minimize/restore continuity; overview/Mission Control; useful workspaces; keyboard switching; intelligent placement; and spatially coherent animations.
 
 ## Phone controller quality gate
 
-Default controller remains approximately:
-
-1. compact status/header,
-2. large trackpad,
-3. small contextual bottom toolbar.
-
-Do not restore permanent Apps + Commands + Windows + Workspaces + URL + utility rows.
-
-Controls adapt to the active app.
+Default structure stays approximately: compact status/header → large trackpad → small contextual bottom toolbar. Do not restore permanent Apps + Commands + Windows + Workspaces + URL + utility rows. Controls adapt to the active app.
 
 ## Browser and web apps
 
-Browser must become a real desktop app with tabs, tab overview, address/search, back/forward, reload, bookmarks, history, downloads, find, share, app pinning, desktop/mobile preference where appropriate, session persistence and efficient sleeping of inactive WebViews.
+Browser is a real desktop app. Current foundation now includes retained per-tab WebViews, tab/session persistence, address/search, back/forward/reload/stop, bookmarks, history, and find-on-page. Remaining browser-cycle work includes downloads, share, app pinning, desktop/mobile preference where useful, tab overview polish, and conservative sleeping/recovery of inactive WebViews.
 
-ChatGPT, YouTube and other web apps are apps the user can open when wanted; they are not mandatory desktop furniture.
+ChatGPT, YouTube and other web apps remain optional apps, not mandatory desktop furniture. Shared standalone web-app surfaces use the persistent default WebKit website data store for session continuity.
 
 ## Phone Takeover and authentication
 
@@ -146,56 +69,36 @@ Use the iPhone for interactions that need real touch/native OS services:
 
 Desktop web app → Continue on iPhone → login/form/CAPTCHA/file picker/auth → Return to Desktop.
 
-Prioritize public Apple/WebKit capabilities for:
-
-- Password AutoFill,
-- passkeys,
-- Face ID/device authentication,
-- file/document picker,
-- photo picker,
-- direct touch interaction.
-
-Never read, store or log raw passwords/credentials.
+Prioritize public Apple/WebKit capabilities for Password AutoFill, passkeys, Face ID/device authentication, file/document picker, photo picker, and direct touch. Never read, store, or log raw passwords/credentials.
 
 ## Native apps
 
-Notes, Files, PDF, Photos, Calculator, Settings, Clipboard and future utilities should feel like native iPad apps placed inside Kamihi windows, not generic web pages inside fake chrome.
+Notes, Files, PDF, Photos, Calculator, Settings, Clipboard and future utilities should feel like native iPad apps placed inside Kamihi windows, not generic pages inside fake chrome.
 
 ## Performance and energy
 
-Measure and improve:
-
-- pointer latency,
-- Core Animation frame pacing,
-- memory,
-- WebKit process count,
-- battery usage,
-- thermal state,
-- reconnect stability.
-
-Sleep/throttle minimized or long-idle WebViews conservatively without losing important user state.
+Measure and improve pointer latency, Core Animation pacing, memory, WebKit process count, battery, thermal state, and reconnect stability. Sleep/throttle minimized or long-idle WebViews conservatively without losing important state.
 
 ## Desktop Lab requirement
 
-Desktop Lab remains mandatory for substantial UI/input changes and should model a true 16:9 external screen plus the live iPhone controller using the same `DesktopSession`.
-
-Use it to verify cursor, click, scroll, drag, resize, snapping, overview, launcher, apps, themes, startup profiles and animations before physical RayNeo testing.
+Desktop Lab remains mandatory for substantial UI/input changes and should model a true 16:9 external screen plus live iPhone controller using the same `DesktopSession`. Use it to verify cursor, click, scroll, drag, resize, snapping, overview, launcher, apps, themes, startup profiles, browser flows, and animations before physical RayNeo testing.
 
 ## CI requirement
 
 Every coherent batch:
 
-1. Inspect latest main and current GitHub Actions before editing.
-2. Implement one focused quality area.
-3. Run the strongest available simulator/self-check/Desktop Lab/integration checks.
-4. Push only a compiling/tested batch.
-5. Inspect GitHub Actions for the exact pushed commit.
-6. If CI fails, diagnose and fix it before starting a different area.
-7. Update roadmap evidence.
+1. Search Gmail for the newest KamihiRemote GitHub failure email and match it to the exact SHA/workflow.
+2. Inspect latest `main` and current GitHub Actions before editing.
+3. If current head is red, diagnose/fix it before feature work.
+4. Implement one focused rotation area.
+5. Run the strongest available simulator/self-check/Desktop Lab/integration checks.
+6. Push only a compiling/tested batch.
+7. Inspect Actions for the exact pushed commit.
+8. Apple Integration Smoke must pass on its **first attempt**. A fail-then-rerun-green identical SHA is a CI reliability defect, not healthy CI.
+9. Preserve per-SHA smoke evidence and Apple Build transcripts so failure emails can be diagnosed from artifacts.
+10. Update roadmap evidence after the run.
 
 ## Hourly rotation
-
-Each hourly improvement run must focus on a different area from the previous run:
 
 1. RayNeo resolution/refresh/safe-area/reconnect.
 2. iPadOS shell, themes and design system.
@@ -212,11 +115,13 @@ Then repeat with the highest-impact unfinished issue in each category without du
 
 ## Rotation evidence
 
-- **2026-09-01 — Focus 1: RayNeo display fidelity.** Added persisted horizontal/vertical safe-area calibration, applied those margins consistently to the desktop coordinate space, refreshed native metrics on external display mode changes, prevented duplicate connect/disconnect session notifications, surfaced native resolution + negotiated maximum refresh on the iPhone controller, and added a RayNeo calibration/settings sheet. Exact feature head: `5b07ad3`. Apple build and Apple Integration Smoke both passed on the first attempt for that head. Physical Air 4 Pro resolution, actual refresh, overscan/readability, pointer latency, and USB-C reconnect remain `NEEDS PHYSICAL TEST`.
-- **2026-09-01 — Focus 2: iPadOS shell, themes and design system.** Added persistent System / Light / Dark desktop appearance, adaptive Kamihi wallpaper, theme-aware external-display/Desktop Lab surfaces, semantic snap/safe-area overlays, an appearance-aware translucent dock, and appearance controls in Desktop & Display settings. Feature head: `6ae2808`; successor evidence head `c6c81f3` completed Apple Build, deploy, and Apple Integration Smoke successfully, with Integration Smoke passing on attempt 1.
-- **2026-09-01 — Focus 3: Trackpad and pointer.** Added adaptive one-sample pointer stabilization that increases precision at low speed without adding visible fast-sweep lag, bounded extreme acceleration gain for 1080p desktop control, kept drag/resize movement direct rather than smoothed, fixed drag-lock so a clean one-finger tap drops without leaking a click to the underlying app, hardened manipulation cleanup, and lengthened bounded momentum scrolling while preserving immediate cancellation on the next touch. Exact feature head: `f000e5b`. Apple Build and Apple Integration Smoke both passed on attempt 1.
-- **2026-09-01 — Focus 4: Windowing and spatial animations.** Preserved each window's floating frame across snap/maximize transitions, unified drag-to-edge snapping through a shared spatial-placement path, made maximized and snapped windows draggable away from their layout so they restore to the previous floating size directly under the pointer, retained title-bar grab position during that restore, and made resizing a snapped window explicitly detach it from snap state so the resized geometry becomes the next floating baseline. Exact feature head: `6c87dcd`. At evidence-write time the first Apple build check and deploy had passed; Apple Integration Smoke and the remaining native build were still running on first attempt, so this head is not yet recorded as fully green.
-- **Next rotation focus: 5 — Phone controller ergonomics.**
+- **2026-09-01 — Focus 1: RayNeo display fidelity.** Added persisted horizontal/vertical safe-area calibration, applied margins consistently to desktop coordinates, refreshed native metrics on display-mode changes, prevented duplicate session notifications, surfaced native resolution + negotiated refresh, and added RayNeo calibration/settings. Feature head `5b07ad3`; Apple Build + Integration Smoke passed first attempt. Physical resolution/refresh/overscan/readability/pointer latency/USB-C reconnect remain `NEEDS PHYSICAL TEST`.
+- **2026-09-01 — Focus 2: iPadOS shell/themes.** Added persistent System/Light/Dark appearance, adaptive Kamihi wallpaper, theme-aware display/Desktop Lab surfaces, semantic overlays, adaptive translucent dock, and appearance settings. Feature head `6ae2808`; successor evidence head `c6c81f3` completed Apple Build/deploy/Integration Smoke, smoke first attempt.
+- **2026-09-01 — Focus 3: Trackpad/pointer.** Added adaptive low-speed stabilization, bounded extreme acceleration, direct drag/resize movement, drag-lock drop without click leakage, hardened manipulation cleanup, and improved bounded momentum. Feature head `f000e5b`; Apple Build + Integration Smoke passed first attempt.
+- **2026-09-01 — Focus 4: Windowing/spatial continuity.** Preserved floating frames across snap/maximize, unified drag-edge placement, restored snapped/maximized windows under the same pointer grab position, and detached snapped windows cleanly on manual resize. Feature head `6c87dcd`; subsequent evidence established the windowing line without a product rollback.
+- **2026-09-01 — Focus 5: Phone controller ergonomics.** Reworked the bottom controller to stay trackpad-dominant, replaced text-heavy launcher chrome with compact controls, maintained 44×44 thumb targets, made app actions contextual, used semantic theme colors, improved Continue-on-iPhone affordance, and surfaced precision-mode accessibility state. Feature head `094ad81`; Apple Build, deploy, and Integration Smoke were green with smoke passing first attempt.
+- **2026-09-01 — Focus 6: Browser/web-app quality.** Replaced the superficial single-WebView tab UI with retained per-tab `WKWebView` instances; persisted tabs/active tab/bookmarks/history across launches; wired real back/forward/reload/stop and address/search; added bookmark/history library and find-on-page; retained the default website data store for login/session continuity; and restored the shared standalone WebView bridge used by ChatGPT, YouTube and Phone Takeover. Initial browser heads exposed real compile regressions; Gmail failure triage plus newly persisted Apple Build transcripts identified and fixed each exact error rather than masking/retrying. Final feature/fix head `40aee5a`: iOS build passed, macOS host build passed, deploy passed, and Apple Integration Smoke passed on **attempt 1**. The Apple Build workflow now also preserves per-SHA iOS/macOS transcripts and no longer cancels an older SHA merely because a newer commit arrives.
+- **Next rotation focus: 7 — Phone Takeover/authentication.** Prioritize safe Continue-on-iPhone session continuity, Password AutoFill/passkey compatibility through public APIs, CAPTCHA/form/file-picker ergonomics, and never exposing raw credentials.
 
 ## Physical-only checks
 
@@ -235,19 +140,4 @@ Do not mark these verified based only on CI/Simulator:
 
 ## Definition of done
 
-The goal is done when Kamihi feels like an intentional Apple-native desktop workflow rather than an app demo:
-
-- launch is desktop-first and flexible,
-- no normal Remote-for-Mac compartment,
-- Clean Desktop is genuinely open-ended,
-- RayNeo uses the best external-display mode iOS negotiates,
-- pointer/scroll/drag feel excellent,
-- windows are predictable and fluid,
-- browser is usable as a desktop browser,
-- native utilities feel like iPad apps,
-- phone takeover makes authentication/forms practical,
-- themes/accessibility work,
-- reconnect/session restore works,
-- energy use is sensible,
-- CI stays green,
-- physical RayNeo checks are completed before claiming full hardware readiness.
+Kamihi is done when it feels like an intentional Apple-native desktop workflow rather than an app demo: desktop-first flexible launch, no normal Remote-for-Mac compartment, genuinely open-ended Clean Desktop, best RayNeo mode iOS negotiates, excellent pointer/scroll/drag, predictable fluid windows, usable desktop browser, native-feeling utilities, practical secure phone takeover, themes/accessibility, reconnect/session restore, sensible energy behavior, continuously green first-attempt CI, and completed physical RayNeo checks before claiming full hardware readiness.
