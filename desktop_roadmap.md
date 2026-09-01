@@ -8,7 +8,7 @@ Status legend: `VERIFIED` = implemented and covered by available automated/CI ev
 |---:|---|---|---|
 | 1 | Instant Desktop Mode on external display | IMPLEMENTED / PHYSICAL TEST | External noninteractive scene + automatic controller switch; Apple Build and simulator-host smoke green on `5eca7498`; verify with RayNeo Air 4 Pro. |
 | 2 | Real window manager | PARTIAL | Move, focus, minimize, maximize, close plus controller resizing/centering exist; direct resize handles still TODO. |
-| 3 | Smart snapping 1/2, 1/3, 2/3, 1/4 | PARTIAL | Halves, thirds and quarters implemented with deterministic frame checks; drag-edge snap detection/preview TODO. |
+| 3 | Smart snapping 1/2, 1/3, 2/3, 1/4 | PARTIAL | Halves, thirds and quarters plus guarded title-bar drag edge/corner preview and release-to-snap are implemented on `864dd1d`; direct resize handles and richer spatial/workspace behavior remain. |
 | 4 | Vibe Coding Workspace | IMPLEMENTED / PHYSICAL TEST | ChatGPT + YouTube + Notes layout exists; integration smoke green on `5eca7498`; physical display interaction still required. |
 | 5 | Saved workspace presets | PARTIAL | Vibe/Work/Study/Entertainment/Focus service presets exist; richer editor TODO. |
 | 6 | Workspace restoration | PARTIAL | Window session serialization/restoration + reconnect restoration + continuous autosave exist; recovery snapshot now added and awaiting final-head CI/real interruption validation. |
@@ -92,7 +92,7 @@ Status legend: `VERIFIED` = implemented and covered by available automated/CI ev
 | 74 | Web app pinning | TODO | Pin ChatGPT/GitHub/YouTube/custom sites as Desktop apps. |
 | 75 | Hardware keyboard shortcut layer | PARTIAL | Cmd-K, launcher/settings/save shortcuts are present in controller UI; close/cycle/layout shortcut coverage and focus routing TODO. |
 | 76 | Trackpad tuning | TODO | Pointer sensitivity, acceleration curve, natural scrolling, drag lock and tap-to-click controls. |
-| 77 | Drag-edge snap preview | TODO | Show target rectangle and snap automatically at screen edges/corners. |
+| 77 | Drag-edge snap preview | IMPLEMENTED / PHYSICAL TEST | Active title-bar drags now show the existing target rectangle and commit edge/corner/maximize snap only on release; moving away cancels. Feature head `864dd1d`; Apple Build + Integration Smoke passed attempt 1. Real iPhone/RayNeo drag feel remains a physical check. |
 | 78 | Continuous session autosave | VERIFIED | `AdvancedPhoneControllerView` saves on every desktop window-state change; recovery coordinator also refreshes last-known-good snapshots. Prior `5eca7498` CI is green; recovery-specific check added this run. |
 | 79 | External-display health banner | PARTIAL | Recovery coordinator exposes connected/recovered/disconnected health state; visible recovery/health banner still TODO. |
 | 80 | RayNeo safe-area calibration | TODO | User-adjustable overscan/safe margins and saved glasses profile. |
@@ -124,7 +124,7 @@ A feature is not `VERIFIED` until all applicable gates pass:
 
 ## Current priority order
 
-1. Complete resize handles + drag-edge snapping + preview while preserving pointer/drag reliability.
+1. Complete direct resize handles + richer workspace/spatial animations while preserving pointer/drag reliability.
 2. Finish Photos permission flow, richer Files organization/export, and desktop capture/share.
 3. Surface recovery/display-health UI and validate abnormal-termination restore behavior.
 4. Add browser downloads/reader/pinning polish and long-idle retained-tab WebView eviction/recovery.
@@ -138,4 +138,5 @@ A feature is not `VERIFIED` until all applicable gates pass:
 
 - **2026-09-01 — Focus 8: Native desktop apps.** Persistent Files document library + native PDFKit viewing landed on feature head `678cf9c`. Apple Build and Apple Integration Smoke both passed on attempt 1. The normal launch remains Kamihi Desktop startup profiles; no Remote-for-Mac compartment was added or expanded.
 - **2026-09-01 — Focus 9: Performance/energy/WebView lifecycle.** Added centralized `DesktopWindowEnergyPolicy`; minimized windows no longer retain fully hidden app/WebKit/media content, and Battery Saver/iOS Low Power Mode/serious-or-critical thermal pressure unload inactive Browser, ChatGPT and YouTube content while keeping the active window live. Login cookies stay in `WKWebsiteDataStore.default()` and Browser tab/URL metadata stays persisted, so sleeping does not read/store credentials. Feature head `074a64c`: iOS build, macOS regression build, Pages/deploy, and Apple Integration Smoke all passed; smoke passed on **attempt 1** with `exit_status=0`, one authenticated controller sync, and a visually clean Desktop Lab screenshot artifact. Real battery savings, memory pressure behavior, thermal response, media continuity and long-session stability remain `NEEDS PHYSICAL TEST`.
-- **Next rotation focus: 10 — keyboard/accessibility/polish.** Prioritize hardware shortcut discoverability, VoiceOver/focus order, Dynamic Type on phone UI, Reduce Motion/Transparency, contrast, large-pointer profiles and visual QA without changing the Desktop-first launch model.
+- **2026-09-01 — Focus 4 (current cycle): Windowing.** Restored guarded active-title-bar drag edge/corner snap intent. The preview appears only during an owned window drag, snap commits only on release, moving away cancels it, and ordinary pointer movement/two-finger resize remain isolated. Feature head `864dd1d`: Pages build/deploy, Apple Build, and Apple Integration Smoke all passed; smoke passed on **attempt 1**. The Desktop Lab artifact was visually inspected and remained clean/Desktop-first with no Remote-for-Mac compartment or obvious clipping/overlap regression. Real drag-edge snap feel on iPhone + RayNeo remains `NEEDS PHYSICAL TEST`.
+- **Next rotation focus: 5 — phone controller ergonomics.** Prioritize trackpad-dominant one-handed use, contextual controls, keyboard/clipboard and app switching without reintroducing permanent control walls.
