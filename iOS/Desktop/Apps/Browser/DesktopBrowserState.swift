@@ -54,11 +54,18 @@ public final class DesktopBrowserState: ObservableObject {
     @Published public private(set) var tabs: [Tab]
     @Published public var activeTabID: UUID
     @Published public var urlInput: String
-    @Published public private(set) var currentURLText: String
-    @Published public private(set) var title: String
-    @Published public private(set) var canGoBack: Bool = false
-    @Published public private(set) var canGoForward: Bool = false
-    @Published public private(set) var isLoading: Bool = false
+
+    // These navigation mirrors intentionally remain writable. The existing
+    // DesktopWebViewStore syncs the active window's WKWebView into this shared
+    // state, while the new retained-tab controller updates them through
+    // updateNavigationState(). Keeping this narrow compatibility surface avoids
+    // coupling legacy window plumbing to the persisted tab collection.
+    @Published public var currentURLText: String
+    @Published public var title: String
+    @Published public var canGoBack: Bool = false
+    @Published public var canGoForward: Bool = false
+    @Published public var isLoading: Bool = false
+
     @Published public private(set) var bookmarks: [Bookmark]
     @Published public private(set) var history: [HistoryItem]
 
