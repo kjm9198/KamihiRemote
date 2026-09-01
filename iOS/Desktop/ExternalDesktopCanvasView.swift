@@ -5,9 +5,11 @@ struct ExternalDesktopCanvasView: View {
     @EnvironmentObject private var desktop: DesktopSession
     @StateObject private var settings = TrackpadSettings.shared
     @StateObject private var display = ExternalDisplayCoordinator.shared
+    @StateObject private var appearance = DesktopAppearanceSettings.shared
     @State private var showLauncher = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         GeometryReader { outer in
@@ -24,6 +26,7 @@ struct ExternalDesktopCanvasView: View {
                     .padding(.trailing, insets.trailing)
             }
         }
+        .preferredColorScheme(appearance.preferredColorScheme)
     }
 
     private var desktopSurface: some View {
@@ -63,20 +66,20 @@ struct ExternalDesktopCanvasView: View {
         .clipShape(Rectangle())
         .overlay {
             if showLauncher {
-                Color.black.opacity(0.32)
+                (colorScheme == .dark ? Color.black.opacity(0.32) : Color.black.opacity(0.18))
                     .onTapGesture { showLauncher = false }
 
                 DesktopAppLauncherView()
                     .environmentObject(desktop)
                     .frame(maxWidth: 600, maxHeight: 420)
                     .clipShape(RoundedRectangle(cornerRadius: KamihiTheme.Radius.lg, style: .continuous))
-                    .shadow(color: .black.opacity(0.35), radius: 24, y: 12)
+                    .shadow(color: .black.opacity(colorScheme == .dark ? 0.35 : 0.18), radius: 24, y: 12)
             }
         }
         .overlay {
             if display.horizontalSafeMargin > 0 || display.verticalSafeMargin > 0 {
                 Rectangle()
-                    .strokeBorder(.white.opacity(0.10), lineWidth: 1)
+                    .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
@@ -94,10 +97,10 @@ struct ExternalDesktopCanvasView: View {
             )
 
             RoundedRectangle(cornerRadius: KamihiTheme.Radius.lg, style: .continuous)
-                .fill(.white.opacity(0.08))
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.06))
                 .overlay(
                     RoundedRectangle(cornerRadius: KamihiTheme.Radius.lg, style: .continuous)
-                        .strokeBorder(.white.opacity(0.34), lineWidth: 1.5)
+                        .strokeBorder(Color.primary.opacity(0.30), lineWidth: 1.5)
                 )
                 .frame(width: frame.width, height: frame.height)
                 .position(x: frame.midX, y: frame.midY)
@@ -122,9 +125,10 @@ struct ExternalDesktopCanvasView: View {
             VStack {
                 Text(title)
                     .font(.headline)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(KamihiTheme.Colors.surfaceBackground)
         }
     }
 }
