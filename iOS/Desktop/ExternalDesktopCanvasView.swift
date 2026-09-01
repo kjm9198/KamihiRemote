@@ -4,14 +4,30 @@ import SwiftUI
 struct ExternalDesktopCanvasView: View {
     @EnvironmentObject private var desktop: DesktopSession
     @StateObject private var settings = TrackpadSettings.shared
+    @StateObject private var display = ExternalDisplayCoordinator.shared
     @State private var showLauncher = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        ZStack {
-            KamihiTheme.AtmosphericBackground()
+        GeometryReader { outer in
+            let insets = display.safeInsets(for: outer.size)
 
+            ZStack {
+                KamihiTheme.AtmosphericBackground()
+                    .ignoresSafeArea()
+
+                desktopSurface
+                    .padding(.top, insets.top)
+                    .padding(.leading, insets.leading)
+                    .padding(.bottom, insets.bottom)
+                    .padding(.trailing, insets.trailing)
+            }
+        }
+    }
+
+    private var desktopSurface: some View {
+        ZStack {
             if let target = desktop.snapPreviewTarget {
                 snapPreview(for: target)
                     .transition(.opacity)
@@ -44,10 +60,10 @@ struct ExternalDesktopCanvasView: View {
         }
         .animation(reduceMotion ? nil : KamihiTheme.Animation.fast, value: desktop.snapPreviewTarget)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipShape(Rectangle())
         .overlay {
             if showLauncher {
                 Color.black.opacity(0.32)
-                    .ignoresSafeArea()
                     .onTapGesture { showLauncher = false }
 
                 DesktopAppLauncherView()
@@ -55,6 +71,14 @@ struct ExternalDesktopCanvasView: View {
                     .frame(maxWidth: 600, maxHeight: 420)
                     .clipShape(RoundedRectangle(cornerRadius: KamihiTheme.Radius.lg, style: .continuous))
                     .shadow(color: .black.opacity(0.35), radius: 24, y: 12)
+            }
+        }
+        .overlay {
+            if display.horizontalSafeMargin > 0 || display.verticalSafeMargin > 0 {
+                Rectangle()
+                    .strokeBorder(.white.opacity(0.10), lineWidth: 1)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
         }
     }
