@@ -68,30 +68,35 @@ public final class DesktopBrowserState: ObservableObject {
     private let bookmarksKey = "kamihi.desktop.browser.bookmarks.v1"
     private let historyKey = "kamihi.desktop.browser.history.v1"
     private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
 
     private init() {
-        let restoredTabs: [Tab] = Self.decode([Tab].self, from: UserDefaults.standard.data(forKey: "kamihi.desktop.browser.tabs.v1")) ?? []
+        let defaults = UserDefaults.standard
+        let restoredTabs: [Tab] = Self.decode([Tab].self, from: defaults.data(forKey: "kamihi.desktop.browser.tabs.v1")) ?? []
         let initialTabs = restoredTabs.isEmpty ? [Tab()] : restoredTabs.map {
             var tab = $0
             tab.isLoading = false
             return tab
         }
-        tabs = initialTabs
 
-        if let storedID = UserDefaults.standard.string(forKey: "kamihi.desktop.browser.activeTab.v1").flatMap(UUID.init(uuidString:)),
+        let resolvedActiveTabID: UUID
+        if let storedID = defaults.string(forKey: "kamihi.desktop.browser.activeTab.v1").flatMap(UUID.init(uuidString:)),
            initialTabs.contains(where: { $0.id == storedID }) {
-            activeTabID = storedID
+            resolvedActiveTabID = storedID
         } else {
-            activeTabID = initialTabs[0].id
+            resolvedActiveTabID = initialTabs[0].id
         }
 
-        let active = initialTabs.first(where: { $0.id == activeTabID }) ?? initialTabs[0]
+        let active = initialTabs.first(where: { $0.id == resolvedActiveTabID }) ?? initialTabs[0]
+        let restoredBookmarks = Self.decode([Bookmark].self, from: defaults.data(forKey: "kamihi.desktop.browser.bookmarks.v1")) ?? []
+        let restoredHistory = Self.decode([HistoryItem].self, from: defaults.data(forKey: "kamihi.desktop.browser.history.v1")) ?? []
+
+        tabs = initialTabs
+        activeTabID = resolvedActiveTabID
         urlInput = active.url?.absoluteString ?? ""
         currentURLText = active.url?.absoluteString ?? ""
         title = active.title
-        bookmarks = Self.decode([Bookmark].self, from: UserDefaults.standard.data(forKey: "kamihi.desktop.browser.bookmarks.v1")) ?? []
-        history = Self.decode([HistoryItem].self, from: UserDefaults.standard.data(forKey: "kamihi.desktop.browser.history.v1")) ?? []
+        bookmarks = restoredBookmarks
+        history = restoredHistory
     }
 
     public var activeTab: Tab? {
