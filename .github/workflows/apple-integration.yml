@@ -4,18 +4,24 @@ on:
   pull_request:
   push:
     branches: ["main"]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# Every commit gets a complete smoke result. A newer push must never cancel an
+# older in-progress integration run and turn healthy code into a misleading
+# cancelled/failed notification.
 concurrency:
-  group: apple-integration-${{ github.ref }}
-  cancel-in-progress: true
+  group: apple-integration-${{ github.sha }}
+  cancel-in-progress: false
 
 jobs:
   simulator-host-smoke:
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 35
+    env:
+      CI: "1"
     steps:
       - uses: actions/checkout@v5
 
@@ -29,8 +35,13 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kamihi-integration-smoke
+          # run_attempt avoids artifact-name collisions when GitHub reruns the
+          # same workflow run after an infrastructure failure.
+          name: kamihi-integration-smoke-${{ github.run_attempt }}
           if-no-files-found: ignore
+          retention-days: 7
           path: |
             ${{ runner.temp }}/kamihi-smoke/*.png
             ${{ runner.temp }}/kamihi-smoke/*.log
+            ${{ runner.temp }}/kamihi-smoke/*.txt
+            ${{ runner.temp }}/kamihi-smoke/*.json
