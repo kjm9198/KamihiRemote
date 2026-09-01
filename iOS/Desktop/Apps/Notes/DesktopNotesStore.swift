@@ -19,12 +19,22 @@ public final class DesktopNotesStore: ObservableObject {
         }
     }
 
-    @Published public var notes: [Note] = [] {
+    @Published public private(set) var notes: [Note] = [] {
         didSet { save() }
     }
 
-    @Published public var activeNoteID: UUID?
-    @Published public var text: String = ""
+    @Published public private(set) var activeNoteID: UUID?
+    /// Writable phone-editor bridge. Direct edits are folded back into the active
+    /// note so the existing iPhone keyboard sheet remains compatible and durable.
+    @Published public var text: String = "" {
+        didSet {
+            guard let id = activeNoteID,
+                  let index = notes.firstIndex(where: { $0.id == id }),
+                  notes[index].body != text else { return }
+            notes[index].body = text
+            notes[index].updatedAt = Date()
+        }
+    }
 
     private let storageKey = "kamihi.desktop.notes.v2"
 
@@ -35,36 +45,66 @@ public final class DesktopNotesStore: ObservableObject {
                 title: "Welcome to Kamihi Notes",
                 body: "This is your native offline scratchpad for thoughts, outlines, and code snippets."
             )
-            notes.append(defaultNote)
-            activeNoteID = defaultNote.id
-            text = defaultNote.body
+            notes = [defaultNote]
+            selectNote(defaultNote.id)
         } else {
-            activeNoteID = notes.first?.id
-            text = notes.first?.body ?? ""
+            selectNote(notes.sorted(by: { $0.updatedAt > $1.updatedAt }).first?.id)
         }
     }
 
     public var activeNote: Note? {
-        get { notes.first(where: { $0.id == activeNoteID }) }
-        set {
-            guard let newValue, let idx = notes.firstIndex(where: { $0.id == newValue.id }) else { return }
-            notes[idx] = newValue
+        notes.first(where: { $0.id == activeNoteID })
+    }
+
+    public var notesByRecency: [Note] {
+        notes.sorted { lhs, rhs in
+            if lhs.updatedAt == rhs.updatedAt {
+                return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+            }
+            return lhs.updatedAt > rhs.updatedAt
         }
+    }
+
+    public func matchingNotes(query: String) -> [Note] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return notesByRecency }
+        return notesByRecency.filter {
+            $0.title.localizedCaseInsensitiveContains(trimmed) ||
+            $0.body.localizedCaseInsensitiveContains(trimmed)
+        }
+    }
+
+    public func selectNote(_ id: UUID?) {
+        activeNoteID = id
+        text = notes.first(where: { $0.id == id })?.body ?? ""
     }
 
     public func createNewNote() {
         let note = Note()
-        notes.insert(note, at: 0)
-        activeNoteID = note.id
-        text = note.body
+        notes.append(note)
+        selectNote(note.id)
     }
 
     public func deleteNote(id: UUID) {
+        let wasActive = activeNoteID == id
         notes.removeAll(where: { $0.id == id })
-        if activeNoteID == id {
-            activeNoteID = notes.first?.id
-            text = activeNote?.body ?? ""
+        if wasActive {
+            selectNote(notesByRecency.first?.id)
         }
+    }
+
+    public func updateTitle(id: UUID, title: String) {
+        guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
+        notes[index].title = title
+        notes[index].updatedAt = Date()
+    }
+
+    public func updateBody(id: UUID, body: String) {
+        guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
+        guard notes[index].body != body else { return }
+        notes[index].body = body
+        notes[index].updatedAt = Date()
+        if activeNoteID == id { text = body }
     }
 
     /// Phone-keyboard bridge for the non-interactive external-display editor.
@@ -72,19 +112,16 @@ public final class DesktopNotesStore: ObservableObject {
     public func appendToActiveBody(_ value: String) {
         guard !value.isEmpty,
               let id = activeNoteID,
-              let index = notes.firstIndex(where: { $0.id == id }) else { return }
-        notes[index].body.append(value)
-        notes[index].updatedAt = Date()
-        text = notes[index].body
+              let note = notes.first(where: { $0.id == id }) else { return }
+        updateBody(id: id, body: note.body + value)
     }
 
     public func deleteBackwardFromActiveBody() {
         guard let id = activeNoteID,
-              let index = notes.firstIndex(where: { $0.id == id }),
-              !notes[index].body.isEmpty else { return }
-        notes[index].body.removeLast()
-        notes[index].updatedAt = Date()
-        text = notes[index].body
+              var body = notes.first(where: { $0.id == id })?.body,
+              !body.isEmpty else { return }
+        body.removeLast()
+        updateBody(id: id, body: body)
     }
 
     public func insertNewlineIntoActiveBody() {
@@ -100,7 +137,7 @@ public final class DesktopNotesStore: ObservableObject {
     private func load() {
         if let data = UserDefaults.standard.data(forKey: storageKey),
            let saved = try? JSONDecoder().decode([Note].self, from: data) {
-            self.notes = saved
+            notes = saved
         }
     }
 }
