@@ -39,6 +39,9 @@ struct DesktopSetupView: View {
         if !persistsProgress && ProcessInfo.processInfo.arguments.contains("-KamihiSetupDark") {
             return .dark
         }
+        if !persistsProgress && ProcessInfo.processInfo.arguments.contains("-KamihiSetupLight") {
+            return .light
+        }
         #endif
         return appearance.preferredColorScheme
     }
@@ -254,6 +257,9 @@ struct DesktopSetupView: View {
                     .frame(maxWidth: .infinity, minHeight: 28)
             }
             .buttonStyle(.borderedProminent)
+            // The app accent is very pale; use a contrast-safe action color in both themes.
+            .tint(Color(red: 0.05, green: 0.35, blue: 0.75))
+            .foregroundStyle(.white)
             .frame(maxWidth: .infinity, minHeight: 48)
             .controlSize(.large)
             .accessibilityIdentifier("setup.continue")
