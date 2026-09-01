@@ -21,6 +21,7 @@ public final class ExternalDisplayCoordinator: ObservableObject {
     @Published public private(set) var nativeScale: CGFloat = 1
     @Published public private(set) var maximumFramesPerSecond: Int = 60
     @Published public private(set) var displayName: String = "External Display"
+    @Published public private(set) var metricsRevision: Int = 0
 
     /// Fraction of the desktop width reserved on each left/right edge.
     /// This is an app-level comfort/calibration margin; it does not alter the mode negotiated by iOS.
@@ -42,20 +43,51 @@ public final class ExternalDisplayCoordinator: ObservableObject {
     /// Backward-compatible display size. Prefer nativePixelSize for diagnostics and logicalSize for layout.
     public var displaySize: CGSize { nativePixelSize }
 
+    /// Orientation-independent native pixel size. RayNeo is normally landscape, but diagnostics should
+    /// not incorrectly report a mode mismatch if UIKit momentarily reports swapped dimensions.
+    public var landscapeNativePixelSize: CGSize {
+        CGSize(
+            width: max(nativePixelSize.width, nativePixelSize.height),
+            height: min(nativePixelSize.width, nativePixelSize.height)
+        )
+    }
+
     public var aspectRatio: CGFloat {
-        guard nativePixelSize.height > 0 else { return 16.0 / 9.0 }
-        return nativePixelSize.width / nativePixelSize.height
+        guard landscapeNativePixelSize.height > 0 else { return 16.0 / 9.0 }
+        return landscapeNativePixelSize.width / landscapeNativePixelSize.height
+    }
+
+    public var isSixteenNineClass: Bool {
+        abs(aspectRatio - (16.0 / 9.0)) < 0.03
     }
 
     public var isFullHDClass: Bool {
-        nativePixelSize.width >= 1920 && nativePixelSize.height >= 1080
+        landscapeNativePixelSize.width >= 1920 && landscapeNativePixelSize.height >= 1080
     }
 
     /// RayNeo Air 4 Pro's normal 2D target is a 16:9 Full-HD-class input. This is deliberately
     /// capability-based rather than device-name-based because iOS does not provide a reliable model name.
     public var isLikelyRayNeo2DTarget: Bool {
-        let ratioDelta = abs(aspectRatio - (16.0 / 9.0))
-        return isFullHDClass && ratioDelta < 0.03
+        isFullHDClass && isSixteenNineClass
+    }
+
+    /// Effective backing ratios derived from the exact logical canvas and native backing dimensions.
+    /// Keeping these visible makes it possible to detect accidental app-side downscaling without
+    /// pretending Kamihi can choose a hardware mode that iOS did not negotiate.
+    public var effectiveBackingScaleX: CGFloat {
+        guard logicalSize.width > 0 else { return nativeScale }
+        return nativePixelSize.width / logicalSize.width
+    }
+
+    public var effectiveBackingScaleY: CGFloat {
+        guard logicalSize.height > 0 else { return nativeScale }
+        return nativePixelSize.height / logicalSize.height
+    }
+
+    public var isNativeBackingAligned: Bool {
+        let tolerance: CGFloat = 0.03
+        return abs(effectiveBackingScaleX - nativeScale) <= tolerance
+            && abs(effectiveBackingScaleY - nativeScale) <= tolerance
     }
 
     public var capabilitySummary: String {
@@ -63,7 +95,29 @@ public final class ExternalDisplayCoordinator: ObservableObject {
     }
 
     public var scaleSummary: String {
-        String(format: "logical %.0f×%.0f • %.2fx backing scale", logicalSize.width, logicalSize.height, nativeScale)
+        String(format: "logical %.0f×%.0f • %.2fx UIKit scale", logicalSize.width, logicalSize.height, nativeScale)
+    }
+
+    public var backingSummary: String {
+        String(
+            format: "effective %.2fx × %.2fx • %@",
+            effectiveBackingScaleX,
+            effectiveBackingScaleY,
+            isNativeBackingAligned ? "native-aligned" : "inspect scaling"
+        )
+    }
+
+    public var negotiatedModeSummary: String {
+        if isLikelyRayNeo2DTarget && isNativeBackingAligned {
+            return "1080p-class 16:9 native backing detected"
+        }
+        if !isSixteenNineClass {
+            return "Negotiated output is not 16:9"
+        }
+        if !isFullHDClass {
+            return "Negotiated output is below 1080p class"
+        }
+        return "1080p-class output detected; backing scale needs inspection"
     }
 
     public var calibrationSummary: String {
@@ -96,6 +150,7 @@ public final class ExternalDisplayCoordinator: ObservableObject {
         nativeScale = screen.nativeScale
         maximumFramesPerSecond = screen.maximumFramesPerSecond
         displayName = "External Display • \(Int(nativePixelSize.width))×\(Int(nativePixelSize.height))"
+        metricsRevision &+= 1
     }
 
     /// Called by the active external-display scene delegate when iOS tears down the display scene.
