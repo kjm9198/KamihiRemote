@@ -200,6 +200,10 @@ struct WKWebViewRepresentable: UIViewRepresentable {
     let url: URL?
     var registryKey: String? = nil
 
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
@@ -210,6 +214,7 @@ struct WKWebViewRepresentable: UIViewRepresentable {
         webView.backgroundColor = .systemBackground
         webView.scrollView.backgroundColor = .systemBackground
         webView.allowsBackForwardNavigationGestures = false
+        webView.uiDelegate = context.coordinator
 
         if let registryKey {
             DesktopWebInputRegistry.shared.register(webView, key: registryKey)
@@ -221,10 +226,30 @@ struct WKWebViewRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
+        webView.uiDelegate = context.coordinator
         if let registryKey {
             DesktopWebInputRegistry.shared.register(webView, key: registryKey)
         }
         guard let url, webView.url != url else { return }
         webView.load(URLRequest(url: url))
+    }
+
+    final class Coordinator: NSObject, WKUIDelegate {
+        func webView(
+            _ webView: WKWebView,
+            createWebViewWith configuration: WKWebViewConfiguration,
+            for navigationAction: WKNavigationAction,
+            windowFeatures: WKWindowFeatures
+        ) -> WKWebView? {
+            // Standalone Desktop web apps intentionally stay single-window. Sites
+            // frequently use target=_blank/window.open for sign-in, help and
+            // external links; without a UI delegate WebKit silently drops those
+            // navigations. Keep the flow alive in the same retained view so login
+            // cookies/session state remain in WebKit's default data store.
+            guard navigationAction.targetFrame == nil,
+                  let requestURL = navigationAction.request.url else { return nil }
+            webView.load(URLRequest(url: requestURL))
+            return nil
+        }
     }
 }
