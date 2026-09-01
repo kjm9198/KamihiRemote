@@ -7,7 +7,7 @@ import WebKit
 /// a simpler lifecycle while sharing the default website data store for login
 /// and session continuity.
 struct WKWebViewRepresentable: UIViewRepresentable {
-    let url: URL
+    let url: URL?
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -19,12 +19,14 @@ struct WKWebViewRepresentable: UIViewRepresentable {
         webView.backgroundColor = .systemBackground
         webView.scrollView.backgroundColor = .systemBackground
         webView.allowsBackForwardNavigationGestures = false
-        webView.load(URLRequest(url: url))
+        if let url {
+            webView.load(URLRequest(url: url))
+        }
         return webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        guard webView.url != url else { return }
+        guard let url, webView.url != url else { return }
         webView.load(URLRequest(url: url))
     }
 }
