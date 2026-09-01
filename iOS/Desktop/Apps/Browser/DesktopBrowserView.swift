@@ -1,60 +1,96 @@
 import SwiftUI
 import WebKit
 
-/// Full-featured desktop browser container with tabs and URL navigation.
+/// Desktop browser with persistent tabs and one retained WKWebView per tab.
 struct DesktopBrowserView: View {
     @StateObject private var state = DesktopBrowserState.shared
+    @StateObject private var controller = DesktopBrowserController()
+    @State private var showLibrary = false
+    @State private var findText = ""
+    @State private var showFind = false
+
     var onContinueOnPhone: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
-            // Tab Bar
             tabBar
-                .frame(height: 32)
-                .background(Color(red: 0.12, green: 0.13, blue: 0.18))
+                .frame(height: 38)
+                .background(.thinMaterial)
 
-            // Navigation Address Bar
             navigationBar
-                .frame(height: 40)
-                .background(Color(red: 0.15, green: 0.16, blue: 0.22))
+                .frame(height: 46)
+                .background(.ultraThinMaterial)
 
-            // Web Content Area
-            WKWebViewRepresentable(url: state.activeTab?.url)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if showFind {
+                findBar
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            DesktopBrowserWebViewHost(
+                state: state,
+                controller: controller,
+                tabID: state.activeTabID,
+                url: state.activeTab?.url
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .background(Color(.systemBackground))
+        .sheet(isPresented: $showLibrary) {
+            BrowserLibrarySheet(state: state) { url in
+                state.navigateActiveTab(to: url)
+                controller.navigate(to: url)
+                showLibrary = false
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: showFind)
     }
 
     private var tabBar: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 6) {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 4) {
+                HStack(spacing: 5) {
                     ForEach(state.tabs) { tab in
-                        HStack(spacing: 6) {
-                            Text(tab.title)
-                                .font(.system(size: 11, weight: .medium, design: .rounded))
-                                .foregroundStyle(tab.id == state.activeTabID ? .white : .white.opacity(0.6))
-                                .lineLimit(1)
-                                .frame(maxWidth: 120, alignment: .leading)
+                        Button {
+                            state.selectTab(id: tab.id)
+                        } label: {
+                            HStack(spacing: 7) {
+                                if tab.isLoading {
+                                    ProgressView()
+                                        .controlSize(.mini)
+                                } else {
+                                    Image(systemName: tab.id == state.activeTabID ? "globe" : "circle.fill")
+                                        .font(.system(size: tab.id == state.activeTabID ? 11 : 5, weight: .semibold))
+                                        .foregroundStyle(tab.id == state.activeTabID ? Color.accentColor : Color.secondary)
+                                }
 
-                            Button {
-                                state.closeTab(id: tab.id)
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .foregroundStyle(.white.opacity(0.5))
+                                Text(tab.title)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(Color.primary)
+                                    .lineLimit(1)
+                                    .frame(maxWidth: 150, alignment: .leading)
+
+                                Button {
+                                    controller.closeTab(tab.id)
+                                    state.closeTab(id: tab.id)
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .frame(width: 20, height: 20)
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(Color.secondary)
+                                .accessibilityLabel("Close tab")
                             }
-                            .buttonStyle(.plain)
+                            .padding(.leading, 10)
+                            .padding(.trailing, 5)
+                            .frame(height: 30)
+                            .background(
+                                tab.id == state.activeTabID ? Color.primary.opacity(0.09) : Color.clear,
+                                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            )
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(
-                            tab.id == state.activeTabID ? Color(red: 0.18, green: 0.20, blue: 0.28) : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        )
-                        .onTapGesture {
-                            state.activeTabID = tab.id
-                            state.urlInput = tab.url?.absoluteString ?? ""
-                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Tab \(tab.title)")
                     }
                 }
                 .padding(.horizontal, 6)
@@ -64,99 +100,379 @@ struct DesktopBrowserView: View {
                 state.newTab()
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.7))
-                    .frame(width: 24, height: 24)
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 30, height: 30)
             }
             .buttonStyle(.plain)
+            .foregroundStyle(Color.primary)
+            .accessibilityLabel("New tab")
             .padding(.trailing, 6)
         }
     }
 
     private var navigationBar: some View {
-        HStack(spacing: 8) {
-            Button {
-                // Back action
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.8))
+        HStack(spacing: 6) {
+            browserButton("chevron.left", label: "Back", enabled: state.canGoBack) {
+                controller.goBack()
             }
-            .buttonStyle(.plain)
 
-            Button {
-                // Forward action
-            } label: {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.8))
+            browserButton("chevron.right", label: "Forward", enabled: state.canGoForward) {
+                controller.goForward()
             }
-            .buttonStyle(.plain)
 
-            Button {
-                // Reload action
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.8))
+            browserButton(state.isLoading ? "xmark" : "arrow.clockwise", label: state.isLoading ? "Stop" : "Reload") {
+                state.isLoading ? controller.stopLoading() : controller.reload()
             }
-            .buttonStyle(.plain)
 
-            // Address bar
-            HStack(spacing: 6) {
-                Image(systemName: "lock.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+            HStack(spacing: 7) {
+                Image(systemName: state.currentURLText.hasPrefix("https://") ? "lock.fill" : "globe")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.secondary)
 
                 TextField("Search or enter website name", text: $state.urlInput)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12, design: .rounded))
-                    .foregroundStyle(.white)
-                    .onSubmit {
-                        if let valid = DesktopBrowserState.normalizeURL(state.urlInput) {
-                            if let idx = state.tabs.firstIndex(where: { $0.id == state.activeTabID }) {
-                                state.tabs[idx].url = valid
-                                state.tabs[idx].title = valid.host ?? "Web"
-                            }
-                        }
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.primary)
+                    .submitLabel(.go)
+                    .onSubmit(navigateFromAddressBar)
+
+                if !state.urlInput.isEmpty {
+                    Button {
+                        state.urlInput = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.secondary)
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear address")
+                }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color.black.opacity(0.35), in: Capsule())
+            .padding(.horizontal, 11)
+            .frame(height: 32)
+            .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            browserButton(state.isActivePageBookmarked ? "star.fill" : "star", label: state.isActivePageBookmarked ? "Remove Bookmark" : "Bookmark") {
+                state.toggleBookmarkForActivePage()
+            }
+
+            browserButton("text.magnifyingglass", label: "Find on Page") {
+                showFind.toggle()
+                if !showFind {
+                    findText = ""
+                    controller.find("")
+                }
+            }
+
+            browserButton("book.pages", label: "Bookmarks and History") {
+                showLibrary = true
+            }
 
             if let onContinueOnPhone {
                 Button(action: onContinueOnPhone) {
                     Image(systemName: "iphone.and.arrow.forward")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.cyan)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 32, height: 32)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Continue on iPhone")
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 8)
+    }
+
+    private var findBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(Color.secondary)
+
+            TextField("Find on this page", text: $findText)
+                .textFieldStyle(.plain)
+                .onSubmit { controller.find(findText) }
+                .onChange(of: findText) { _, value in
+                    controller.find(value)
+                }
+
+            Button("Done") {
+                showFind = false
+                findText = ""
+                controller.find("")
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 12, weight: .semibold))
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 38)
+        .background(.thinMaterial)
+    }
+
+    private func browserButton(
+        _ symbol: String,
+        label: String,
+        enabled: Bool = true,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(enabled ? Color.primary : Color.secondary.opacity(0.45))
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .accessibilityLabel(label)
+    }
+
+    private func navigateFromAddressBar() {
+        guard let url = DesktopBrowserState.normalizeURL(state.urlInput) else { return }
+        state.navigateActiveTab(to: url)
+        controller.navigate(to: url)
     }
 }
 
-// MARK: - Reusable WebKit Representable
-struct WKWebViewRepresentable: UIViewRepresentable {
-    let url: URL?
+@MainActor
+final class DesktopBrowserController: ObservableObject {
+    private var webViews: [UUID: WKWebView] = [:]
+    private var delegates: [UUID: DesktopBrowserNavigationDelegate] = [:]
+    private var activeTabID: UUID?
 
-    func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.websiteDataStore = .default()
-        let webView = WKWebView(frame: .zero, configuration: config)
-        webView.backgroundColor = .black
-        if let url {
-            webView.load(URLRequest(url: url))
+    func present(tabID: UUID, url: URL?, in container: UIView, state: DesktopBrowserState) {
+        let webView = webView(for: tabID, state: state)
+        activeTabID = tabID
+
+        if webView.superview !== container {
+            container.subviews.forEach { $0.removeFromSuperview() }
+            webView.frame = container.bounds
+            webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            container.addSubview(webView)
         }
-        return webView
+
+        if let url, webView.url != url {
+            webView.load(URLRequest(url: url))
+        } else {
+            state.updateNavigationState(
+                tabID: tabID,
+                url: webView.url ?? url,
+                pageTitle: webView.title,
+                isLoading: webView.isLoading,
+                canGoBack: webView.canGoBack,
+                canGoForward: webView.canGoForward
+            )
+        }
     }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {
-        if let url, uiView.url != url {
-            uiView.load(URLRequest(url: url))
+    func closeTab(_ id: UUID) {
+        webViews[id]?.stopLoading()
+        webViews[id]?.removeFromSuperview()
+        webViews[id] = nil
+        delegates[id] = nil
+        if activeTabID == id { activeTabID = nil }
+    }
+
+    func navigate(to url: URL) {
+        currentWebView?.load(URLRequest(url: url))
+    }
+
+    func goBack() {
+        guard currentWebView?.canGoBack == true else { return }
+        currentWebView?.goBack()
+    }
+
+    func goForward() {
+        guard currentWebView?.canGoForward == true else { return }
+        currentWebView?.goForward()
+    }
+
+    func reload() {
+        currentWebView?.reload()
+    }
+
+    func stopLoading() {
+        currentWebView?.stopLoading()
+    }
+
+    func find(_ text: String) {
+        guard let webView = currentWebView else { return }
+        if text.isEmpty {
+            webView.evaluateJavaScript("window.getSelection().removeAllRanges()", completionHandler: nil)
+            return
         }
+        let configuration = WKFindConfiguration()
+        configuration.backwards = false
+        configuration.wraps = true
+        webView.find(text, configuration: configuration) { _ in }
+    }
+
+    private var currentWebView: WKWebView? {
+        guard let activeTabID else { return nil }
+        return webViews[activeTabID]
+    }
+
+    private func webView(for id: UUID, state: DesktopBrowserState) -> WKWebView {
+        if let existing = webViews[id] { return existing }
+
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .default()
+        configuration.defaultWebpagePreferences.preferredContentMode = .desktop
+
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.isOpaque = false
+        webView.backgroundColor = .systemBackground
+        webView.scrollView.backgroundColor = .systemBackground
+        webView.allowsBackForwardNavigationGestures = false
+
+        let delegate = DesktopBrowserNavigationDelegate(tabID: id, state: state)
+        webView.navigationDelegate = delegate
+        delegates[id] = delegate
+        webViews[id] = webView
+        return webView
+    }
+}
+
+struct DesktopBrowserWebViewHost: UIViewRepresentable {
+    let state: DesktopBrowserState
+    let controller: DesktopBrowserController
+    let tabID: UUID
+    let url: URL?
+
+    func makeUIView(context: Context) -> UIView {
+        let container = UIView()
+        container.backgroundColor = .systemBackground
+        controller.present(tabID: tabID, url: url, in: container, state: state)
+        return container
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        controller.present(tabID: tabID, url: url, in: uiView, state: state)
+    }
+}
+
+final class DesktopBrowserNavigationDelegate: NSObject, WKNavigationDelegate {
+    private let tabID: UUID
+    private weak var state: DesktopBrowserState?
+
+    init(tabID: UUID, state: DesktopBrowserState) {
+        self.tabID = tabID
+        self.state = state
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        sync(webView, recordVisit: false)
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        sync(webView, recordVisit: false)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        sync(webView, recordVisit: true)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        sync(webView, recordVisit: false)
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        sync(webView, recordVisit: false)
+    }
+
+    private func sync(_ webView: WKWebView, recordVisit: Bool) {
+        let tabID = tabID
+        let state = state
+        let url = webView.url
+        let title = webView.title
+        let loading = webView.isLoading
+        let canGoBack = webView.canGoBack
+        let canGoForward = webView.canGoForward
+        Task { @MainActor in
+            state?.updateNavigationState(
+                tabID: tabID,
+                url: url,
+                pageTitle: title,
+                isLoading: loading,
+                canGoBack: canGoBack,
+                canGoForward: canGoForward,
+                recordVisit: recordVisit
+            )
+        }
+    }
+}
+
+private struct BrowserLibrarySheet: View {
+    @ObservedObject var state: DesktopBrowserState
+    let openURL: (URL) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Bookmarks") {
+                    if state.bookmarks.isEmpty {
+                        Text("No bookmarks yet")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(state.bookmarks) { bookmark in
+                            Button {
+                                openURL(bookmark.url)
+                            } label: {
+                                libraryRow(title: bookmark.title, url: bookmark.url)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .onDelete { offsets in
+                            for index in offsets {
+                                state.removeBookmark(id: state.bookmarks[index].id)
+                            }
+                        }
+                    }
+                }
+
+                Section {
+                    if state.history.isEmpty {
+                        Text("No browsing history yet")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(state.history) { item in
+                            Button {
+                                openURL(item.url)
+                            } label: {
+                                libraryRow(title: item.title, url: item.url)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                } header: {
+                    HStack {
+                        Text("History")
+                        Spacer()
+                        if !state.history.isEmpty {
+                            Button("Clear") { state.clearHistory() }
+                                .font(.caption)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Browser")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func libraryRow(title: String, url: URL) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.body.weight(.medium))
+                .lineLimit(1)
+            Text(url.absoluteString)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .contentShape(Rectangle())
     }
 }
