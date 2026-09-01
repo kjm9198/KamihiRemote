@@ -61,7 +61,7 @@
 					<key>UISceneClassName</key>
 					<string>UIWindowScene</string>
 					<key>UISceneDelegateClassName</key>
-					<string>$(PRODUCT_MODULE_NAME).AdvancedExternalDisplaySceneDelegate</string>
+					<string>$(PRODUCT_MODULE_NAME).ExternalDisplaySceneDelegate</string>
 				</dict>
 			</array>
 		</dict>

@@ -47,7 +47,19 @@ public final class TrackpadSettings: ObservableObject {
         let defaults = UserDefaults.standard
         self.pointerSensitivity = defaults.object(forKey: "kamihi.desktop.pointerSensitivity") as? Double ?? 1.20
         self.pointerAcceleration = defaults.object(forKey: "kamihi.desktop.pointerAcceleration") as? Double ?? 1.0
-        self.scrollSpeed = defaults.object(forKey: "kamihi.desktop.scrollSpeed") as? Double ?? 1.0
+
+        // v2 raises the baseline scroll travel so short two-finger strokes feel
+        // useful on a desktop canvas. Existing faster custom values are kept.
+        let savedScrollSpeed = defaults.object(forKey: "kamihi.desktop.scrollSpeed") as? Double
+        let scrollTuningVersion = defaults.integer(forKey: "kamihi.desktop.scrollTuningVersion")
+        if scrollTuningVersion < 2 {
+            self.scrollSpeed = max(savedScrollSpeed ?? 1.0, 1.35)
+            defaults.set(2, forKey: "kamihi.desktop.scrollTuningVersion")
+            defaults.set(self.scrollSpeed, forKey: "kamihi.desktop.scrollSpeed")
+        } else {
+            self.scrollSpeed = savedScrollSpeed ?? 1.35
+        }
+
         self.naturalScrolling = defaults.object(forKey: "kamihi.desktop.naturalScrolling") as? Bool ?? true
         self.scrollMomentum = defaults.object(forKey: "kamihi.desktop.scrollMomentum") as? Bool ?? true
         self.tapToClick = defaults.object(forKey: "kamihi.desktop.tapToClick") as? Bool ?? true

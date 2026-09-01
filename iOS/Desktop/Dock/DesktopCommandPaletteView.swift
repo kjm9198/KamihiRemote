@@ -14,14 +14,16 @@ struct DesktopCommandPaletteView: View {
         let action: (DesktopSession) -> Void
     }
 
+    private let centeredAppFrame = CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60)
+
     private var allCommands: [CommandItem] {
         [
-            // Apps
-            CommandItem(title: "Open ChatGPT", icon: "sparkles", category: "Apps") { $0.openChatGPT() },
+            // Apps — all normal launches use the same centered 60% geometry.
+            CommandItem(title: "Open ChatGPT", icon: "sparkles", category: "Apps") { _ = $0.openProductivityApp("ChatGPT", frame: centeredAppFrame) },
             CommandItem(title: "Open Browser", icon: "globe", category: "Apps") { $0.openBrowser() },
-            CommandItem(title: "Open YouTube", icon: "play.rectangle.fill", category: "Apps") { $0.openYouTube() },
-            CommandItem(title: "Open Notes", icon: "note.text", category: "Apps") { $0.openNotes() },
-            CommandItem(title: "Open Files", icon: "folder.fill", category: "Apps") { _ = $0.openProductivityApp("Files") },
+            CommandItem(title: "Open YouTube", icon: "play.rectangle.fill", category: "Apps") { _ = $0.openProductivityApp("YouTube", frame: centeredAppFrame) },
+            CommandItem(title: "Open Notes", icon: "note.text", category: "Apps") { _ = $0.openProductivityApp("Notes", frame: centeredAppFrame) },
+            CommandItem(title: "Open Files", icon: "folder.fill", category: "Apps") { _ = $0.openProductivityApp("Files", frame: centeredAppFrame) },
 
             // Window Management
             CommandItem(title: "Snap Left (Half)", icon: "rectangle.leadinghalf.filled", category: "Window") { $0.snapActiveLeft() },
@@ -36,7 +38,7 @@ struct DesktopCommandPaletteView: View {
                 if let id = $0.activeWindowID { $0.close(id) }
             },
 
-            // Workspaces
+            // Workspaces — Vibe remains explicitly user-triggered only.
             CommandItem(title: "Start Vibe Workspace (Tiled)", icon: "sparkles.rectangle.stack", category: "Workspaces") { $0.openVibeWorkspace() },
             CommandItem(title: "Close All Windows", icon: "trash", category: "Workspaces") { $0.closeAllDesktopWindows() }
         ]
