@@ -52,13 +52,13 @@ public final class TrackpadSettings: ObservableObject {
         // useful on a desktop canvas. Existing faster custom values are kept.
         let savedScrollSpeed = defaults.object(forKey: "kamihi.desktop.scrollSpeed") as? Double
         let scrollTuningVersion = defaults.integer(forKey: "kamihi.desktop.scrollTuningVersion")
+        let resolvedScrollSpeed: Double
         if scrollTuningVersion < 2 {
-            self.scrollSpeed = max(savedScrollSpeed ?? 1.0, 1.35)
-            defaults.set(2, forKey: "kamihi.desktop.scrollTuningVersion")
-            defaults.set(self.scrollSpeed, forKey: "kamihi.desktop.scrollSpeed")
+            resolvedScrollSpeed = max(savedScrollSpeed ?? 1.0, 1.35)
         } else {
-            self.scrollSpeed = savedScrollSpeed ?? 1.35
+            resolvedScrollSpeed = savedScrollSpeed ?? 1.35
         }
+        self.scrollSpeed = resolvedScrollSpeed
 
         self.naturalScrolling = defaults.object(forKey: "kamihi.desktop.naturalScrolling") as? Bool ?? true
         self.scrollMomentum = defaults.object(forKey: "kamihi.desktop.scrollMomentum") as? Bool ?? true
@@ -71,6 +71,11 @@ public final class TrackpadSettings: ObservableObject {
             self.cursorStyle = style
         } else {
             self.cursorStyle = .kamihiDot
+        }
+
+        if scrollTuningVersion < 2 {
+            defaults.set(2, forKey: "kamihi.desktop.scrollTuningVersion")
+            defaults.set(resolvedScrollSpeed, forKey: "kamihi.desktop.scrollSpeed")
         }
     }
 }
