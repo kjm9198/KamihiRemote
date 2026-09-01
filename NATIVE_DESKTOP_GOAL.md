@@ -77,6 +77,8 @@ Current takeover behavior uses a dedicated phone `WKWebView` backed by `WKWebsit
 
 Notes, Files, PDF, Photos, Calculator, Settings, Clipboard and future utilities should feel like native iPad apps placed inside Kamihi windows, not generic pages inside fake chrome.
 
+Files now uses the iOS document picker in copy mode and keeps user-selected copies inside Kamihi's Application Support container. PDFs render through PDFKit; other supported formats use Quick Look. Kamihi does not keep broad external filesystem access or raw credentials to support this workflow.
+
 ## Performance and energy
 
 Measure and improve pointer latency, Core Animation pacing, memory, WebKit process count, battery, thermal state, and reconnect stability. Sleep/throttle minimized or long-idle WebViews conservatively without losing important state.
@@ -124,7 +126,8 @@ Then repeat with the highest-impact unfinished issue in each category without du
 - **2026-09-01 — Focus 5: Phone controller ergonomics.** Reworked the bottom controller to stay trackpad-dominant, replaced text-heavy launcher chrome with compact controls, maintained 44×44 thumb targets, made app actions contextual, used semantic theme colors, improved Continue-on-iPhone affordance, and surfaced precision-mode accessibility state. Feature head `094ad81`; Apple Build, deploy, and Integration Smoke were green with smoke passing first attempt.
 - **2026-09-01 — Focus 6: Browser/web-app quality.** Replaced the superficial single-WebView tab UI with retained per-tab `WKWebView` instances; persisted tabs/active tab/bookmarks/history across launches; wired real back/forward/reload/stop and address/search; added bookmark/history library and find-on-page; retained the default website data store for login/session continuity; and restored the shared standalone WebView bridge used by ChatGPT, YouTube and Phone Takeover. Initial browser heads exposed real compile regressions; Gmail failure triage plus newly persisted Apple Build transcripts identified and fixed each exact error rather than masking/retrying. Final feature/fix head `40aee5a`: iOS build passed, macOS host build passed, deploy passed, and Apple Integration Smoke passed on **attempt 1**. The Apple Build workflow now also preserves per-SHA iOS/macOS transcripts and no longer cancels an older SHA merely because a newer commit arrives.
 - **2026-09-01 — Focus 7: Phone Takeover/authentication.** Rebuilt Continue-on-iPhone around an interactive phone WebView using the default persistent WebKit data store; added touch-friendly navigation/loading state; handled OAuth/`target=_blank` flows in the visible takeover rather than invisible windows; kept password/passkey values entirely inside WebKit/iOS; and synchronized the final Browser URL back to the active desktop tab on return. Feature head `a96e492`: Apple Build and deploy passed; Apple Integration Smoke was still running on attempt 1 when this evidence note was written. Real Password AutoFill/passkeys/CAPTCHA/file-picker behavior remains `NEEDS PHYSICAL TEST`.
-- **Next rotation focus: 8 — Native desktop apps.** Prioritize native-feeling Files/document picking, PDF viewing, Photos permission flow, Calculator/Settings/Clipboard polish without turning the desktop into generic web-style panels.
+- **2026-09-01 — Focus 8: Native desktop apps.** Hardened Files into a persistent, sandbox-backed document library using the public iOS document picker in copy mode; imported documents survive relaunch/reconnect inside Kamihi's Application Support container; duplicate names are preserved safely; removing a document only deletes Kamihi's owned copy; PDFs now use a native PDFKit continuous-page viewer while other supported formats retain Quick Look. Feature head `678cf9c`; Apple Build and Apple Integration Smoke passed on **attempt 1**, with smoke evidence uploaded. Real document-provider behavior and PDF interaction on the iPhone + external display remain `NEEDS PHYSICAL TEST`.
+- **Next rotation focus: 9 — Performance/energy/WebView lifecycle.** Prioritize conservative sleeping/throttling of minimized or long-idle WebViews, memory cleanup, thermal/Low Power Mode behavior, active-refresh rendering only while needed, and long-session stability without losing browser/login state.
 
 ## Physical-only checks
 
@@ -139,6 +142,7 @@ Do not mark these verified based only on CI/Simulator:
 - Password AutoFill/passkeys,
 - ChatGPT/YouTube login/playback,
 - Bluetooth keyboard/mouse behavior,
+- native document-provider/PDF interaction on the external display,
 - long-session battery/thermal behavior.
 
 ## Definition of done
