@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// Floating glass dock on the external display.
+/// Floating iPadOS-inspired dock on the external display.
 struct DesktopDockView: View {
     @EnvironmentObject private var desktop: DesktopSession
+    @Environment(\.colorScheme) private var colorScheme
     var onOpenLauncher: () -> Void
 
     private let pinnedApps: [(title: String, icon: String, color: Color)] = [
@@ -14,50 +15,51 @@ struct DesktopDockView: View {
     ]
 
     var body: some View {
-        HStack(spacing: 8) {
-            // App Launcher Trigger
+        HStack(spacing: KamihiTheme.Spacing.xs) {
             Button(action: onOpenLauncher) {
                 Image(systemName: "square.grid.2x2.fill")
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .frame(width: 38, height: 38)
-                    .background(Color.white.opacity(0.18), in: Circle())
+                    .background(KamihiTheme.Colors.activeControlFill, in: Circle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Open App Library")
 
             Divider()
                 .frame(height: 24)
-                .background(Color.white.opacity(0.2))
 
-            // Pinned Apps
             ForEach(pinnedApps, id: \.title) { app in
                 dockAppButton(title: app.title, icon: app.icon, color: app.color)
             }
 
             Spacer(minLength: 12)
 
-            // Right Status Cluster
-            HStack(spacing: 8) {
+            HStack(spacing: KamihiTheme.Spacing.xs) {
                 Text(Date(), style: .time)
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
 
                 Circle()
                     .fill(Color.green)
                     .frame(width: 7, height: 7)
+                    .accessibilityHidden(true)
             }
             .padding(.trailing, 6)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(
-            Color(red: 0.10, green: 0.11, blue: 0.15).opacity(0.88)
-        )
-        .clipShape(Capsule())
+        .background(.ultraThinMaterial, in: Capsule())
         .overlay(
-            Capsule().strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
+            Capsule().strokeBorder(KamihiTheme.Colors.subtleBorder, lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.4), radius: 12, x: 0, y: 6)
+        .shadow(
+            color: Color.black.opacity(colorScheme == .dark ? 0.34 : 0.16),
+            radius: 14,
+            x: 0,
+            y: 7
+        )
     }
 
     private func dockAppButton(title: String, icon: String, color: Color) -> some View {
@@ -73,14 +75,18 @@ struct DesktopDockView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(color)
                     .frame(width: 38, height: 38)
-                    .background(isActive ? Color.white.opacity(0.22) : Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .background(
+                        isActive ? KamihiTheme.Colors.activeControlFill : KamihiTheme.Colors.controlFill,
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
 
-                // Active dot indicator
                 Circle()
-                    .fill(isRunning ? (isMinimized ? Color.yellow : Color.white) : Color.clear)
+                    .fill(isRunning ? (isMinimized ? Color.orange : Color.primary) : Color.clear)
                     .frame(width: 4, height: 4)
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityValue(isActive ? "Active" : (isRunning ? "Running" : "Not running"))
     }
 }
