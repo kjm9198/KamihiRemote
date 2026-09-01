@@ -85,6 +85,7 @@ struct DesktopSetupView: View {
         }
         .preferredColorScheme(contentColorScheme)
         .environment(\.dynamicTypeSize, contentTypeSize)
+        .tint(.blue)
         .onAppear {
             step = initialStep ?? progress.step
             refreshAccessories()
@@ -336,7 +337,7 @@ struct DesktopSetupCalibrationView: View {
             let insets = display.safeInsets(for: geometry.size)
             ZStack {
                 Color(uiColor: .systemBackground)
-                Rectangle().strokeBorder(Color.accentColor, lineWidth: 4)
+                Rectangle().strokeBorder(Color.blue, lineWidth: 4)
                 VStack {
                     HStack { Text("TOP LEFT"); Spacer(); Text("TOP RIGHT") }
                     Spacer()
