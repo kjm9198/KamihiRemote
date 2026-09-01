@@ -270,7 +270,7 @@ struct DesktopFilesView: View {
 
 // MARK: - Persistent sandbox document library
 
-private enum DesktopDocumentLibrary {
+enum DesktopDocumentLibrary {
     private static let folderName = "Kamihi Desktop Files"
 
     static func load() -> [URL] {

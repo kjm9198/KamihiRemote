@@ -57,8 +57,8 @@ final class DesktopSession: ObservableObject {
 
     /// Floating frames are retained while a window is snapped/maximized so a
     /// drag away from the edge restores the user's previous size and position.
-    private var restoreFrames: [UUID: CGRect] = [:]
-    private var snapTargets: [UUID: WindowSnapEngine.SnapTarget] = [:]
+    private(set) var restoreFrames: [UUID: CGRect] = [:]
+    private(set) var snapTargets: [UUID: WindowSnapEngine.SnapTarget] = [:]
 
     private init() {}
 

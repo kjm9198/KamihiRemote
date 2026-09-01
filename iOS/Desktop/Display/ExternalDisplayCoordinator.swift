@@ -29,7 +29,11 @@ public final class ExternalDisplayCoordinator: ObservableObject {
     /// This is an app-level comfort/calibration margin; it does not alter the mode negotiated by iOS.
     @Published public var horizontalSafeMargin: Double {
         didSet {
-            horizontalSafeMargin = min(max(horizontalSafeMargin, 0), 0.08)
+            let clamped = min(max(horizontalSafeMargin, 0), 0.08)
+            if horizontalSafeMargin != clamped {
+                horizontalSafeMargin = clamped
+                return
+            }
             UserDefaults.standard.set(horizontalSafeMargin, forKey: DefaultsKey.horizontalSafeMargin)
         }
     }
@@ -37,7 +41,11 @@ public final class ExternalDisplayCoordinator: ObservableObject {
     /// Fraction of the desktop height reserved on each top/bottom edge.
     @Published public var verticalSafeMargin: Double {
         didSet {
-            verticalSafeMargin = min(max(verticalSafeMargin, 0), 0.08)
+            let clamped = min(max(verticalSafeMargin, 0), 0.08)
+            if verticalSafeMargin != clamped {
+                verticalSafeMargin = clamped
+                return
+            }
             UserDefaults.standard.set(verticalSafeMargin, forKey: DefaultsKey.verticalSafeMargin)
         }
     }

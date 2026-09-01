@@ -27,19 +27,31 @@ struct KamihiRemoteApp: App {
 
     init() {
         #if DEBUG
-        Task { @MainActor in
-            let gesturePassed = GestureEngineTests.runSelfChecks()
-            let servicesPassed = DesktopServicesTests.runSelfChecks()
-            let refactor = DesktopRefactorTests.runSelfChecks()
-            print("=== KAMIHI ON-DEVICE RUNTIME SELF-CHECKS ===")
-            print("Gesture checks: \(gesturePassed ? "PASSED ✓" : "FAILED ✗")")
-            print("Desktop service checks: \(servicesPassed ? "PASSED ✓" : "FAILED ✗")")
-            print("Refactor architecture checks: \(refactor.filter { $0.passed }.count)/\(refactor.count) passed")
-            for r in refactor {
-                print("  [\(r.passed ? "PASS" : "FAIL")] \(r.name): \(r.message)")
-            }
-            print("============================================")
+        let gesturePassed = GestureEngineTests.runSelfChecks()
+        let servicesPassed = DesktopServicesTests.runSelfChecks()
+        let refactor = DesktopRefactorTests.runSelfChecks()
+        NSLog("=== KAMIHI ON-DEVICE RUNTIME SELF-CHECKS ===")
+        NSLog("Gesture checks: %@", gesturePassed ? "PASSED ✓" : "FAILED ✗")
+        NSLog("Desktop service checks: %@", servicesPassed ? "PASSED ✓" : "FAILED ✗")
+        NSLog("Refactor architecture checks: %d/%d passed", refactor.filter { $0.passed }.count, refactor.count)
+        var logLines = [
+            "=== KAMIHI ON-DEVICE RUNTIME SELF-CHECKS ===",
+            "Gesture checks: \(gesturePassed ? "PASSED ✓" : "FAILED ✗")",
+            "Desktop service checks: \(servicesPassed ? "PASSED ✓" : "FAILED ✗")",
+            "Refactor architecture checks: \(refactor.filter { $0.passed }.count)/\(refactor.count) passed"
+        ]
+        for r in refactor {
+            NSLog("  [%@] %@: %@", r.passed ? "PASS" : "FAIL", r.name, r.message)
+            logLines.append("  [\(r.passed ? "PASS" : "FAIL")] \(r.name): \(r.message)")
         }
+        NSLog("============================================")
+        logLines.append("============================================")
+        let outputText = logLines.joined(separator: "\n") + "\n"
+        if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            let fileURL = docs.appendingPathComponent("kamihi-parity-test-results.txt")
+            try? outputText.write(to: fileURL, atomically: true, encoding: .utf8)
+        }
+        try? outputText.write(toFile: "/tmp/kamihi-parity-test-results.txt", atomically: true, encoding: .utf8)
         #endif
     }
 
