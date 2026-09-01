@@ -26,6 +26,11 @@ rm -rf "$DERIVED_IOS" "$DERIVED_MAC"
 
 cd "$ROOT_DIR"
 
+# Test only an isolated defaults suite. This executable never touches app/user data.
+echo "==> Desktop setup state and persistence regression checks"
+xcrun swiftc iOS/App/DesktopSetupProgress.swift scripts/DesktopSetupChecks.swift -o "$SMOKE_DIR/desktop-setup-checks"
+"$SMOKE_DIR/desktop-setup-checks" | tee "$SMOKE_DIR/desktop-setup-checks.log"
+
 retry_command() {
   local attempts="$1"
   local delay="$2"
@@ -333,7 +338,14 @@ visual_smoke() {
 }
 
 # First-class user-facing surfaces.
+for setup_step in welcome connection input display privacy ready; do
+  visual_smoke "Desktop setup: $setup_step" 2 "setup-$setup_step.png" -KamihiSetupStep "$setup_step"
+done
 visual_smoke "Mode chooser visual smoke" 2 "mode-chooser.png" -KamihiModeChooser
+visual_smoke "Setup input at largest Dynamic Type" 2 "setup-input-large.png" -KamihiSetupStep input -KamihiSetupLargeText
+visual_smoke "Setup final step at largest Dynamic Type" 2 "setup-ready-large.png" -KamihiSetupStep ready -KamihiSetupLargeText
+visual_smoke "Setup dark appearance" 2 "setup-welcome-dark.png" -KamihiSetupStep welcome -KamihiSetupDark
+visual_smoke "Setup light appearance" 2 "setup-welcome-light.png" -KamihiSetupStep welcome -KamihiSetupLight
 visual_smoke "Kamihi Desktop Lab visual smoke" 4 "desktop-lab.png" -KamihiDesktopLab
 
 # Hidden legacy Remote-for-Mac paths stay covered as regression protection even
