@@ -157,8 +157,22 @@ fi
 echo "==> End-to-end authenticated handshake PASS"
 xcrun simctl io "$UDID" screenshot "$SMOKE_DIR/connected-trackpad.png"
 
-# Smoke the interaction-heavy workspaces independently so layout/startup
-# regressions are caught even when the default trackpad screen is healthy.
+# Product-routing smoke: the normal chooser and Desktop Lab are first-class
+# surfaces now, so keep screenshot evidence for both on every integration run.
+echo "==> Mode chooser visual smoke"
+xcrun simctl terminate "$UDID" com.kamihi.remote >/dev/null 2>&1 || true
+xcrun simctl launch "$UDID" com.kamihi.remote -KamihiModeChooser | tee -a "$SIM_LOG"
+sleep 2
+xcrun simctl io "$UDID" screenshot "$SMOKE_DIR/mode-chooser.png"
+
+echo "==> Kamihi Desktop Lab visual smoke"
+xcrun simctl terminate "$UDID" com.kamihi.remote >/dev/null 2>&1 || true
+xcrun simctl launch "$UDID" com.kamihi.remote -KamihiDesktopLab | tee -a "$SIM_LOG"
+sleep 4
+xcrun simctl io "$UDID" screenshot "$SMOKE_DIR/desktop-lab.png"
+
+# Smoke the existing Remote-for-Mac interaction-heavy workspaces independently
+# so the Desktop refactor cannot silently regress the original product.
 echo "==> Controller workspace smoke"
 xcrun simctl terminate "$UDID" com.kamihi.remote >/dev/null 2>&1 || true
 xcrun simctl launch "$UDID" com.kamihi.remote -KamihiUITestTab controller | tee -a "$SIM_LOG"
@@ -179,4 +193,4 @@ xcrun simctl io "$UDID" screenshot "$SMOKE_DIR/deck.png"
 
 kill -0 "$HOST_PID" >/dev/null 2>&1 || { echo "Mac host did not survive smoke test"; exit 1; }
 
-echo "==> Kamihi iPhone + Mac integration smoke PASS"
+echo "==> Kamihi iPhone + Mac + Desktop Lab integration smoke PASS"
