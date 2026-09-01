@@ -9,29 +9,31 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard session.role == .windowExternalDisplayNonInteractive,
               let windowScene = scene as? UIWindowScene else { return }
 
+        let screen = windowScene.screen
         let root = ExternalDesktopCanvasView()
             .environmentObject(DesktopSession.shared)
         let controller = UIHostingController(rootView: root)
         controller.view.backgroundColor = .black
+        controller.view.isOpaque = true
+        // Keep SwiftUI/UIKit rendering aligned with the backing scale iOS negotiated for the external display.
+        controller.view.contentScaleFactor = screen.nativeScale
 
         let window = UIWindow(windowScene: windowScene)
+        window.frame = screen.bounds
         window.rootViewController = controller
         window.makeKeyAndVisible()
         self.window = window
 
         Task { @MainActor in
-            let desktop = DesktopSession.shared
-            desktop.externalDisplayDidConnect()
-            if !DesktopFeatureState.shared.restoreSession(desktop: desktop) {
-                desktop.openVibeWorkspace()
-            }
+            ExternalDisplayCoordinator.shared.connect(screen: screen)
+            DesktopLaunchProfile.selected.apply(to: DesktopSession.shared)
         }
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {
         Task { @MainActor in
             DesktopFeatureState.shared.saveSession(desktop: DesktopSession.shared)
-            DesktopSession.shared.externalDisplayDidDisconnect()
+            ExternalDisplayCoordinator.shared.disconnect()
         }
         window = nil
     }
