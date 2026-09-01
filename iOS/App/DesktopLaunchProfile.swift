@@ -60,7 +60,7 @@ public enum DesktopLaunchProfile: String, CaseIterable, Identifiable, Codable {
     }
 
     @MainActor
-    public func apply(to desktop: DesktopSession) {
+    func apply(to desktop: DesktopSession) {
         switch self {
         case .clean:
             desktop.closeAllDesktopWindows()
