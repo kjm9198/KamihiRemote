@@ -8,8 +8,12 @@
 - Integration Merge: `810eb1472cb65a181e28e1d844a8abf8b85c0a50` + diagnostic regression test harness  
 **Test Environment:**  
 - macOS 26.6.2 (Darwin 25.6.0, Apple Silicon Mac17,9)  
-- Xcode 17E192 / SDK 26.4 (iOS Simulator 26.4, macOS 26.4)  
+- Xcode 17E192 / SDK 26.4 (iOS Simulator 26.4, iPhoneOS 26.4)  
 - Simulator Device: `iPhone 17 Pro` (UDID `0FD0F826-4B6B-4629-82F4-7C8253690D26`)  
+- **Physical Device:** `iPhone 17 (iPhone18,3)` named `kjm9198` (CoreDevice `2B445E34-13DC-57D9-9A1C-32BC838E96D5`, UDID `00008150-00106CA40204401C`)
+- Code Signing: `Apple Development: vutiendat_pl@icloud.com (854TPAX5ZV)`, Team `QBAGFXM25Q`
+- Installed Bundle on Device: `/private/var/containers/Bundle/Application/5B27CAA4-3C9F-429B-BDB8-F8B1445FFBA6/KamihiRemote.app/`
+- Physical Device PID: `74977`
 - External Display Specification: `docs/XEOS_PARITY_SPEC.md` (53 requirements)  
 
 ---
