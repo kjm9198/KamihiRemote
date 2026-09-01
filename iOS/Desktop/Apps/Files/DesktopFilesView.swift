@@ -1,15 +1,18 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import QuickLook
+import PDFKit
 
 /// Native document and media manager for Kamihi Desktop.
-/// Imported documents stay inside the app sandbox because the system document
-/// picker is configured with `asCopy: true`; Files never needs broad filesystem
-/// access or a custom credential/storage layer.
+///
+/// The iPhone system document picker is deliberately configured with `asCopy: true`.
+/// Selected files are then moved into a Kamihi-owned Application Support folder so
+/// they remain available after reconnect/relaunch without retaining broad external
+/// filesystem access or security-scoped bookmarks.
 struct DesktopFilesView: View {
     @Environment(\.colorScheme) private var colorScheme
 
-    @State private var importedFiles: [URL] = []
+    @State private var importedFiles: [URL] = DesktopDocumentLibrary.load()
     @State private var showDocumentPicker = false
     @State private var selectedFile: URL?
 
@@ -24,10 +27,20 @@ struct DesktopFilesView: View {
         }
         .background(canvasBackground)
         .sheet(isPresented: $showDocumentPicker) {
-            DocumentPicker(selectedFiles: $importedFiles) { pickedFiles in
-                if selectedFile == nil {
-                    selectedFile = pickedFiles.first
+            DocumentPicker { pickedFiles in
+                let imported = DesktopDocumentLibrary.importCopies(from: pickedFiles)
+                importedFiles = DesktopDocumentLibrary.load()
+                if let first = imported.first {
+                    selectedFile = first
+                } else if selectedFile == nil {
+                    selectedFile = importedFiles.first
                 }
+            }
+        }
+        .onAppear {
+            importedFiles = DesktopDocumentLibrary.load()
+            if let selectedFile, !importedFiles.contains(selectedFile) {
+                self.selectedFile = importedFiles.first
             }
         }
     }
@@ -69,7 +82,7 @@ struct DesktopFilesView: View {
                     Text("No Files Added")
                         .font(.system(size: 12, weight: .semibold))
 
-                    Text("Import documents from Files to preview them on your desktop.")
+                    Text("Import documents from Files to keep a private copy available on your desktop.")
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -146,6 +159,15 @@ struct DesktopFilesView: View {
 
                     Spacer()
 
+                    if file.pathExtension.lowercased() == "pdf" {
+                        Label("PDF", systemImage: "doc.richtext")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(.thinMaterial, in: Capsule())
+                    }
+
                     Button {
                         showDocumentPicker = true
                     } label: {
@@ -173,11 +195,11 @@ struct DesktopFilesView: View {
                 Text("Select a file to preview")
                     .font(.system(size: 13, weight: .semibold))
 
-                Text("PDFs, images, text documents and other Quick Look formats open directly here.")
+                Text("PDFs use the native PDFKit viewer. Images, Office/iWork files and supported text formats use Quick Look.")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                    .frame(maxWidth: 300)
+                    .frame(maxWidth: 320)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(canvasBackground)
@@ -197,7 +219,8 @@ struct DesktopFilesView: View {
     }
 
     private func remove(_ file: URL) {
-        importedFiles.removeAll { $0 == file }
+        DesktopDocumentLibrary.remove(file)
+        importedFiles = DesktopDocumentLibrary.load()
         if selectedFile == file {
             selectedFile = importedFiles.first
         }
@@ -207,7 +230,8 @@ struct DesktopFilesView: View {
         let removed = offsets.compactMap { index in
             importedFiles.indices.contains(index) ? importedFiles[index] : nil
         }
-        importedFiles.remove(atOffsets: offsets)
+        removed.forEach(DesktopDocumentLibrary.remove)
+        importedFiles = DesktopDocumentLibrary.load()
         if let selectedFile, removed.contains(selectedFile) {
             self.selectedFile = importedFiles.first
         }
@@ -244,10 +268,124 @@ struct DesktopFilesView: View {
     }
 }
 
-/// Embeds Apple's native Quick Look renderer directly inside the desktop window.
-/// This gives PDFs, images, Office/iWork documents and supported text formats a
-/// real preview without copying their contents into Kamihi-owned data models.
-private struct NativeFilePreview: UIViewControllerRepresentable {
+// MARK: - Persistent sandbox document library
+
+private enum DesktopDocumentLibrary {
+    private static let folderName = "Kamihi Desktop Files"
+
+    static func load() -> [URL] {
+        guard let directory = directory(createIfNeeded: true),
+              let files = try? FileManager.default.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+              ) else {
+            return []
+        }
+
+        return files.sorted { lhs, rhs in
+            let lhsDate = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let rhsDate = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return lhsDate > rhsDate
+        }
+    }
+
+    static func importCopies(from urls: [URL]) -> [URL] {
+        guard let directory = directory(createIfNeeded: true) else { return [] }
+        var imported: [URL] = []
+
+        for source in urls {
+            let destination = uniqueDestination(for: source.lastPathComponent, in: directory)
+            do {
+                try FileManager.default.copyItem(at: source, to: destination)
+                imported.append(destination)
+            } catch {
+                // The picker already hands Kamihi copies. If a provider returns a URL
+                // that cannot be copied, skip it rather than retaining external access.
+                continue
+            }
+        }
+
+        return imported
+    }
+
+    static func remove(_ url: URL) {
+        guard let directory = directory(createIfNeeded: false),
+              url.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL else {
+            return
+        }
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    private static func directory(createIfNeeded: Bool) -> URL? {
+        guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        let directory = base.appendingPathComponent(folderName, isDirectory: true)
+        if createIfNeeded && !FileManager.default.fileExists(atPath: directory.path) {
+            do {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            } catch {
+                return nil
+            }
+        }
+        return directory
+    }
+
+    private static func uniqueDestination(for filename: String, in directory: URL) -> URL {
+        let sourceURL = URL(fileURLWithPath: filename)
+        let stem = sourceURL.deletingPathExtension().lastPathComponent.isEmpty ? "Document" : sourceURL.deletingPathExtension().lastPathComponent
+        let ext = sourceURL.pathExtension
+        var candidate = directory.appendingPathComponent(filename)
+        var suffix = 2
+
+        while FileManager.default.fileExists(atPath: candidate.path) {
+            let nextName = ext.isEmpty ? "\(stem) \(suffix)" : "\(stem) \(suffix).\(ext)"
+            candidate = directory.appendingPathComponent(nextName)
+            suffix += 1
+        }
+        return candidate
+    }
+}
+
+// MARK: - Native previews
+
+private struct NativeFilePreview: View {
+    let url: URL
+
+    var body: some View {
+        if url.pathExtension.lowercased() == "pdf" {
+            NativePDFPreview(url: url)
+        } else {
+            QuickLookPreview(url: url)
+        }
+    }
+}
+
+/// PDFKit is used directly for PDFs so the desktop gets native page rendering,
+/// zooming and selection behavior instead of treating PDFs as a generic preview.
+private struct NativePDFPreview: UIViewRepresentable {
+    let url: URL
+
+    func makeUIView(context: Context) -> PDFView {
+        let view = PDFView()
+        view.autoScales = true
+        view.displayMode = .singlePageContinuous
+        view.displayDirection = .vertical
+        view.displaysPageBreaks = true
+        view.backgroundColor = .clear
+        view.document = PDFDocument(url: url)
+        return view
+    }
+
+    func updateUIView(_ view: PDFView, context: Context) {
+        guard view.document?.documentURL != url else { return }
+        view.document = PDFDocument(url: url)
+        view.autoScales = true
+    }
+}
+
+private struct QuickLookPreview: UIViewControllerRepresentable {
     let url: URL
 
     func makeCoordinator() -> Coordinator {
@@ -285,8 +423,8 @@ private struct NativeFilePreview: UIViewControllerRepresentable {
 }
 
 // MARK: - Document Picker Representable
+
 private struct DocumentPicker: UIViewControllerRepresentable {
-    @Binding var selectedFiles: [URL]
     let onPicked: ([URL]) -> Void
 
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
@@ -310,9 +448,7 @@ private struct DocumentPicker: UIViewControllerRepresentable {
         }
 
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            let unique = urls.filter { !parent.selectedFiles.contains($0) }
-            parent.selectedFiles.append(contentsOf: unique)
-            parent.onPicked(unique)
+            parent.onPicked(urls)
         }
     }
 }
