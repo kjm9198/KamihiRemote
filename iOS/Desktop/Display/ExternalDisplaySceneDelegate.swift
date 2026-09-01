@@ -30,6 +30,20 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
+    func windowScene(
+        _ windowScene: UIWindowScene,
+        didUpdate previousCoordinateSpace: UICoordinateSpace,
+        interfaceOrientation previousInterfaceOrientation: UIInterfaceOrientation,
+        traitCollection previousTraitCollection: UITraitCollection
+    ) {
+        let screen = windowScene.screen
+        window?.frame = screen.bounds
+        window?.rootViewController?.view.contentScaleFactor = screen.nativeScale
+        Task { @MainActor in
+            ExternalDisplayCoordinator.shared.refreshMetrics(from: screen)
+        }
+    }
+
     func sceneDidDisconnect(_ scene: UIScene) {
         Task { @MainActor in
             DesktopFeatureState.shared.saveSession(desktop: DesktopSession.shared)

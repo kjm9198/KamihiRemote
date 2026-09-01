@@ -1,7 +1,9 @@
 import SwiftUI
 import UIKit
 
-/// Coordinates external display discovery, native pixel geometry, refresh capability, calibration, and reconnection.
+/// Coordinates external display native pixel geometry, refresh capability, calibration, and reconnection.
+/// Connection/disconnection ownership lives in `ExternalDisplaySceneDelegate`, which is the modern
+/// scene-based lifecycle path for external displays. This coordinator only tracks metrics/state.
 @MainActor
 public final class ExternalDisplayCoordinator: ObservableObject {
     public static let shared = ExternalDisplayCoordinator()
@@ -73,57 +75,30 @@ public final class ExternalDisplayCoordinator: ObservableObject {
     private init() {
         horizontalSafeMargin = min(max(UserDefaults.standard.double(forKey: DefaultsKey.horizontalSafeMargin), 0), 0.08)
         verticalSafeMargin = min(max(UserDefaults.standard.double(forKey: DefaultsKey.verticalSafeMargin), 0), 0.08)
-
-        checkConnectedScreens()
-        NotificationCenter.default.addObserver(
-            forName: UIScreen.didConnectNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            guard let screen = notification.object as? UIScreen else {
-                self?.checkConnectedScreens()
-                return
-            }
-            self?.connect(screen: screen)
-        }
-        NotificationCenter.default.addObserver(
-            forName: UIScreen.didDisconnectNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.checkConnectedScreens()
-        }
-        NotificationCenter.default.addObserver(
-            forName: UIScreen.modeDidChangeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            guard let screen = notification.object as? UIScreen else {
-                self?.checkConnectedScreens()
-                return
-            }
-            self?.connect(screen: screen, notifySession: false)
-        }
     }
 
+    /// Called by the active external-display scene delegate when iOS creates the display scene.
     public func connect(screen: UIScreen) {
-        connect(screen: screen, notifySession: true)
-    }
-
-    private func connect(screen: UIScreen, notifySession: Bool) {
         let wasConnected = isConnected
         isConnected = true
+        refreshMetrics(from: screen)
+
+        if !wasConnected {
+            DesktopSession.shared.externalDisplayDidConnect()
+        }
+    }
+
+    /// Refresh metrics after an already-connected display changes mode/geometry.
+    /// This deliberately does not emit another session-connect event.
+    public func refreshMetrics(from screen: UIScreen) {
         logicalSize = screen.bounds.size
         nativePixelSize = screen.nativeBounds.size
         nativeScale = screen.nativeScale
         maximumFramesPerSecond = screen.maximumFramesPerSecond
         displayName = "External Display • \(Int(nativePixelSize.width))×\(Int(nativePixelSize.height))"
-
-        if notifySession && !wasConnected {
-            DesktopSession.shared.externalDisplayDidConnect()
-        }
     }
 
+    /// Called by the active external-display scene delegate when iOS tears down the display scene.
     public func disconnect() {
         guard isConnected else { return }
         isConnected = false
@@ -139,14 +114,5 @@ public final class ExternalDisplayCoordinator: ObservableObject {
         let horizontal = size.width * CGFloat(horizontalSafeMargin)
         let vertical = size.height * CGFloat(verticalSafeMargin)
         return EdgeInsets(top: vertical, leading: horizontal, bottom: vertical, trailing: horizontal)
-    }
-
-    public func checkConnectedScreens() {
-        let screens = UIScreen.screens
-        if screens.count > 1, let external = screens.last {
-            connect(screen: external, notifySession: !isConnected)
-        } else {
-            disconnect()
-        }
     }
 }

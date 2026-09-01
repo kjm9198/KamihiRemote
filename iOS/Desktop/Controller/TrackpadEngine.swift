@@ -186,9 +186,10 @@ final class TrackpadEngine: ObservableObject {
                 lastTapTime = CACurrentMediaTime()
             } else if completedFingerCount == 2 {
                 // A two-finger tap becomes context click only if no scrolling or
-                // resize movement crossed the tap threshold.
+                // resize movement crossed the tap threshold. Route it through the
+                // same active WebView registry used by normal pointer input.
                 if settings.hapticsEnabled { Haptics.rightClick() }
-                desktop.contextClickAtCursor()
+                desktop.contextClickAtCursorUsingRegistry()
             }
         } else if endedState == .scrolling,
                   completedFingerCount == 2,
