@@ -24,6 +24,8 @@ struct KamihiRemoteApp: App {
                 case .none:
                     ModeSelectionView()
                 case .remoteMac:
+                    // Kept only for legacy/debug launch arguments and integration regression testing.
+                    // It is no longer exposed as a separate user-facing product in the normal app flow.
                     RemoteMacRootView()
                 case .externalDesktop:
                     ExternalDesktopRootView()
@@ -33,7 +35,6 @@ struct KamihiRemoteApp: App {
             .environmentObject(session)
             .environmentObject(desktop)
             .environmentObject(desktopRecovery)
-            .preferredColorScheme(.dark)
             .statusBarHidden(false)
             .onChange(of: desktop.isExternalDisplayConnected) { _, connected in
                 if connected {
