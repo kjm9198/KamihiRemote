@@ -3,7 +3,6 @@ import SwiftUI
 @main
 struct KamihiRemoteApp: App {
     @StateObject private var router = AppModeRouter()
-    @StateObject private var session = RemoteSession()
     @StateObject private var desktop = DesktopSession.shared
     @StateObject private var desktopRecovery = DesktopRecoveryCoordinator.shared
     @State private var deferredSetupThisLaunch = false
@@ -68,13 +67,12 @@ struct KamihiRemoteApp: App {
                 case .remoteMac:
                     // Kept only for legacy/debug launch arguments and integration regression testing.
                     // It is no longer exposed as a separate user-facing product in the normal app flow.
-                    RemoteMacRootView()
+                    LegacyRemoteSessionRoot()
                 case .externalDesktop:
                     ExternalDesktopRootView()
                 }
             }
             .environmentObject(router)
-            .environmentObject(session)
             .environmentObject(desktop)
             .environmentObject(desktopRecovery)
             .statusBarHidden(false)
@@ -89,5 +87,16 @@ struct KamihiRemoteApp: App {
                 desktopRecovery.autosave(desktop: desktop)
             }
         }
+    }
+}
+
+/// Instantiate Bonjour/remote transport only when the legacy route is actually opened.
+/// Constructing RemoteSession at App scope would start discovery during Desktop setup.
+private struct LegacyRemoteSessionRoot: View {
+    @StateObject private var session = RemoteSession()
+
+    var body: some View {
+        RemoteMacRootView()
+            .environmentObject(session)
     }
 }

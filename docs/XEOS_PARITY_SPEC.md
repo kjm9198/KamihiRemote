@@ -18,7 +18,10 @@ Evidence: the public website and guides were inspected; the XeOS binary was not 
 - [Phone layout handoff](https://externaldisplayiphone.com/guides/device-layout-mode)
 - [Mouse, keyboard and shortcuts](https://externaldisplayiphone.com/guides/mouse-keyboard-and-shortcuts)
 - [Photos and slideshows](https://externaldisplayiphone.com/guides/photo-slideshow-on-tv)
-- [Guide directory: browser, installed sites, import and presenting](https://externaldisplayiphone.com/guides)
+- [Browser reference](https://externaldisplayiphone.com/guides/browser-features-guide)
+- [Installed sites and dock](https://externaldisplayiphone.com/guides/install-websites-as-apps)
+- [Bookmark and password import](https://externaldisplayiphone.com/guides/import-bookmarks-and-passwords)
+- [Guide directory: presenting and other workflows](https://externaldisplayiphone.com/guides)
 
 ## Immediate source findings
 
@@ -29,6 +32,7 @@ Evidence: the public website and guides were inspected; the XeOS binary was not 
 5. Phone takeover currently creates a separate WebView with the default persistent data store. Cookies can be shared, but this does not preserve the original page's complete DOM, unsaved form text, back-forward list or scroll state. Do not claim seamless no-reload handoff.
 6. The newer external canvas does not consume the `DesktopFeatureState.uiScale` preference that is used by an older canvas. A saved slider value alone is not working desktop scaling.
 7. The README and parts of `desktop_roadmap.md` lag behind source. This document identifies audited gaps; older VERIFIED labels do not override the physical-test requirements.
+8. `RemoteSession.init()` starts Bonjour discovery and auto-connect. It was created at app scope, even for the desktop. This change moves it into a legacy-route-only SwiftUI owner so fresh desktop setup does not instantiate remote discovery or request Local Network access through it. The original remote integration tests still exercise that route.
 
 ## Setup behavior implemented in this change
 
