@@ -22,8 +22,8 @@ Status legend: `VERIFIED` = implemented and covered by available automated/CI ev
 | 14 | Video Picture-in-Picture | TODO | Use public AVKit/WebKit PiP support where available. |
 | 15 | Native Kamihi Notes | PARTIAL | Local autosaving notes store + desktop view + phone editor exist; desktop keyboard editing TODO. |
 | 16 | AI -> Notes handoff | PARTIAL | Clipboard Center can append selected/copied text directly to Notes; direct response-selection affordance TODO. |
-| 17 | Files app | TODO | Public document picker + security-scoped access only. |
-| 18 | PDF viewer | TODO | PDFKit window. |
+| 17 | Files app | PARTIAL | Native Files window imports through the public system document picker in copy mode and persists Kamihi-owned copies in Application Support; richer organization/export workflows remain. |
+| 18 | PDF viewer | PARTIAL | Native PDFKit continuous-page viewer with auto scaling is wired into Files on `678cf9c`; real-device/external-display interaction still needs physical validation. |
 | 19 | Photos window | TODO | PhotoKit with explicit limited/full permission handling. |
 | 20 | Clipboard manager | PARTIAL | 20-item clipboard history service plus phone Clipboard Center exists; persistence/privacy controls TODO. |
 | 21 | Multiple desktop workspaces | PARTIAL | Workspace presets exist; swipeable independent Spaces/state TODO. |
@@ -71,7 +71,7 @@ Status legend: `VERIFIED` = implemented and covered by available automated/CI ev
 | 58 | AI clipboard actions | PARTIAL | Quick paste and Add to Notes exist; Explain/Rewrite/Translate/Fix actions TODO. |
 | 59 | Session history | PARTIAL | Current workspace serialization and last-known-good recovery snapshot exist; recent closed/history list TODO. |
 | 60 | Crash recovery | PARTIAL | Recovery coordinator now persists last-known-good workspace/window snapshot, tracks clean exit, and restores after an unclean desktop session; final-head CI and abnormal-termination validation pending. |
-| 61 | Offline Notes/Calculator/Files | PARTIAL | Notes and local Calculator work offline; document workflows TODO. |
+| 61 | Offline Notes/Calculator/Files | PARTIAL | Notes, local Calculator, and imported Kamihi-owned document copies work offline; broader file creation/export workflows remain. |
 | 62 | Connection Doctor | PARTIAL | Existing KamihiRemote connection doctor exists; desktop recovery coordinator now tracks connected/recovered/disconnected state, but cable/RayNeo diagnostics UI integration TODO. |
 | 63 | External display test screen | PARTIAL | Display metrics + RayNeo diagnostic checklist exist; visual calibration patterns TODO. |
 | 64 | Accessibility mode | PARTIAL | Reduce Motion support exists; scale/contrast/VoiceOver/focus navigation audit TODO. |
@@ -97,7 +97,7 @@ Status legend: `VERIFIED` = implemented and covered by available automated/CI ev
 | 79 | External-display health banner | PARTIAL | Recovery coordinator exposes connected/recovered/disconnected health state; visible recovery/health banner still TODO. |
 | 80 | RayNeo safe-area calibration | TODO | User-adjustable overscan/safe margins and saved glasses profile. |
 | 81 | Web app lifecycle sleeping | TODO | Freeze or unload long-idle/minimized WebViews to reduce heat and battery drain. |
-| 82 | Document import center | TODO | Files picker, recent documents and security-scoped access. |
+| 82 | Document import center | PARTIAL | System document picker imports copies into a persistent Kamihi Application Support library with collision-safe names; organization/export/edit-in-place workflows remain. |
 | 83 | Quick Paste to active app | IMPLEMENTED / PHYSICAL TEST | Clipboard Center can inject text into the active supported WebKit/AI editor; physical external-display input validation required. |
 | 84 | Desktop capture/share | TODO | User-triggered screenshot and iOS share sheet. |
 | 85 | Recovery snapshot | PARTIAL | Versioned last-known-good snapshot now stores workspace, timestamp and up to eight window states; deterministic JSON round-trip self-check added, final-head CI pending. |
@@ -125,11 +125,15 @@ A feature is not `VERIFIED` until all applicable gates pass:
 ## Current priority order
 
 1. Complete resize handles + drag-edge snapping + preview while preserving pointer/drag reliability.
-2. Add native Files/PDF/document import and desktop capture/share.
+2. Finish Photos permission flow, richer Files organization/export, and desktop capture/share.
 3. Surface recovery/display-health UI and validate abnormal-termination restore behavior.
-4. Add browser tabs/bookmarks/downloads/reader mode + WebView sleeping.
+4. Add browser downloads/reader/pinning polish and WebView sleeping.
 5. Add trackpad tuning, safe-area calibration and accessibility presets.
 6. Complete hardware-keyboard close/cycle/layout shortcuts and keyboard command cheat sheet.
-7. Integrate existing remote host/dev-project/dictation capabilities into desktop windows.
+7. Keep legacy remote host/dev-project/dictation capabilities dormant unless shared regressions require work; normal launch remains Desktop-first.
 8. Finish AI quick panel, AI clipboard actions, Notes handoff and media controls.
 9. Finish polish, accessibility, RayNeo calibration and physical verification.
+
+## Rotation evidence
+
+- **2026-09-01 — Focus 8: Native desktop apps.** Persistent Files document library + native PDFKit viewing landed on feature head `678cf9c`. Apple Build and Apple Integration Smoke both passed on attempt 1. The normal launch remains Kamihi Desktop startup profiles; no Remote-for-Mac compartment was added or expanded. Next focus is **9 — performance/energy/WebView lifecycle**.
