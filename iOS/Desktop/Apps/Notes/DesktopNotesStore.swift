@@ -24,7 +24,17 @@ public final class DesktopNotesStore: ObservableObject {
     }
 
     @Published public private(set) var activeNoteID: UUID?
-    @Published public private(set) var text: String = ""
+    /// Writable phone-editor bridge. Direct edits are folded back into the active
+    /// note so the existing iPhone keyboard sheet remains compatible and durable.
+    @Published public var text: String = "" {
+        didSet {
+            guard let id = activeNoteID,
+                  let index = notes.firstIndex(where: { $0.id == id }),
+                  notes[index].body != text else { return }
+            notes[index].body = text
+            notes[index].updatedAt = Date()
+        }
+    }
 
     private let storageKey = "kamihi.desktop.notes.v2"
 
@@ -91,6 +101,7 @@ public final class DesktopNotesStore: ObservableObject {
 
     public func updateBody(id: UUID, body: String) {
         guard let index = notes.firstIndex(where: { $0.id == id }) else { return }
+        guard notes[index].body != body else { return }
         notes[index].body = body
         notes[index].updatedAt = Date()
         if activeNoteID == id { text = body }
