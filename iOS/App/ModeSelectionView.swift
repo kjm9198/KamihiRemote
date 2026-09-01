@@ -1,177 +1,148 @@
 import SwiftUI
 
-/// The launch experience of Kamihi: a clean, Apple-native Mode Chooser.
+/// Desktop-first launch experience. Startup choices are layouts, not separate products.
 struct ModeSelectionView: View {
     @EnvironmentObject private var router: AppModeRouter
-    @EnvironmentObject private var session: RemoteSession
+    @State private var selectedProfile = DesktopLaunchProfile.selected
+
+    private let columns = [
+        GridItem(.flexible(), spacing: KamihiTheme.Spacing.sm),
+        GridItem(.flexible(), spacing: KamihiTheme.Spacing.sm)
+    ]
 
     var body: some View {
         ZStack {
             KamihiTheme.AtmosphericBackground()
 
-            VStack(spacing: KamihiTheme.Spacing.lg) {
-                topBar
-                Spacer(minLength: 0)
-                headerSection
-                Spacer(minLength: 0)
-                cardsSection
-                Spacer(minLength: 0)
-                footerSection
-            }
-            .padding(.horizontal, KamihiTheme.Spacing.lg)
-            .padding(.vertical, KamihiTheme.Spacing.md)
-        }
-        .sheet(isPresented: $router.showsSettings) {
-            SettingsSheet().environmentObject(session)
-        }
-    }
+            ScrollView {
+                VStack(spacing: KamihiTheme.Spacing.lg) {
+                    headerSection
+                    featuredDesktopCard
 
-    private var topBar: some View {
-        HStack {
-            Spacer()
-            Button {
-                router.showsSettings = true
-            } label: {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.8))
-                    .padding(KamihiTheme.Spacing.sm)
-                    .glassEffect(.regular.interactive(), in: .circle)
+                    VStack(alignment: .leading, spacing: KamihiTheme.Spacing.sm) {
+                        Text("Choose how to start")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        Text("This only chooses the starting layout. Once Kamihi Desktop opens, you can launch any app, resize windows, change workspace, and use it like your own iOS desktop.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        LazyVGrid(columns: columns, spacing: KamihiTheme.Spacing.sm) {
+                            ForEach(DesktopLaunchProfile.allCases) { profile in
+                                profileCard(profile)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: 560)
+
+                    #if DEBUG
+                    Button {
+                        DesktopLaunchProfile.selected = selectedProfile
+                        router.startDesktopLab()
+                    } label: {
+                        Label("Open Desktop Lab", systemImage: "flask.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: 560)
+                    #endif
+                }
+                .padding(.horizontal, KamihiTheme.Spacing.lg)
+                .padding(.vertical, KamihiTheme.Spacing.xl)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Settings")
         }
     }
 
     private var headerSection: some View {
         VStack(spacing: KamihiTheme.Spacing.xs) {
-            Text("KAMIHI")
+            Text("KAMIHI DESKTOP")
                 .font(.system(size: 13, weight: .bold, design: .rounded))
-                .tracking(2.5)
-                .foregroundStyle(Color.cyan.opacity(0.9))
+                .tracking(2.2)
+                .foregroundStyle(.tint)
 
-            Text("What would you like to use?")
-                .font(.system(size: 26, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
+            Text("Your iPhone desktop")
+                .font(.system(size: 30, weight: .bold, design: .rounded))
                 .multilineTextAlignment(.center)
+
+            Text("Connect RayNeo or another external display and use the iPhone as the trackpad, keyboard, launcher, and secure touch surface.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 520)
         }
     }
 
-    private var cardsSection: some View {
-        VStack(spacing: KamihiTheme.Spacing.md) {
-            modeCard(
-                mode: .remoteMac,
-                badge: "Mac Control",
-                title: "Remote for Mac",
-                description: "Control your MacBook trackpad, keyboard, and apps from your iPhone.",
-                gradient: [Color(red: 0.12, green: 0.28, blue: 0.48), Color(red: 0.08, green: 0.16, blue: 0.28)],
-                icon: "laptopcomputer.and.iphone"
-            ) {
-                router.selectMode(.remoteMac)
+    private var featuredDesktopCard: some View {
+        HStack(spacing: KamihiTheme.Spacing.md) {
+            Image(systemName: "display.2")
+                .font(.system(size: 34, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.tint)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("One desktop. Use it however you want.")
+                    .font(.headline)
+                Text("No forced coding layout and no separate Mac-remote product in the normal app flow.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
 
-            modeCard(
-                mode: .externalDesktop,
-                badge: "External Display",
-                title: "Kamihi Desktop",
-                description: "Turn AR glasses or external monitors into an interactive workspace.",
-                gradient: [Color(red: 0.28, green: 0.14, blue: 0.44), Color(red: 0.14, green: 0.08, blue: 0.26)],
-                icon: "display.2"
-            ) {
-                router.selectMode(.externalDesktop)
-            }
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: 440)
+        .padding(KamihiTheme.Spacing.md)
+        .frame(maxWidth: 560)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: KamihiTheme.Radius.lg, style: .continuous))
     }
 
-    private func modeCard(
-        mode: AppMode,
-        badge: String,
-        title: String,
-        description: String,
-        gradient: [Color],
-        icon: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: KamihiTheme.Spacing.sm) {
+    private func profileCard(_ profile: DesktopLaunchProfile) -> some View {
+        let isSelected = selectedProfile == profile
+
+        return Button {
+            selectedProfile = profile
+            DesktopLaunchProfile.selected = profile
+            router.selectMode(.externalDesktop)
+        } label: {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text(badge.uppercased())
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .tracking(1.2)
-                        .foregroundStyle(Color.white.opacity(0.85))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.white.opacity(0.12), in: Capsule())
-
+                    Image(systemName: profile.systemImage)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(isSelected ? Color.accentColor : .primary)
                     Spacer()
-
-                    Image(systemName: icon)
-                        .font(.system(size: 24, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.9))
-                }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-
-                    Text(description)
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.72))
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                HStack {
-                    Spacer()
-                    HStack(spacing: 6) {
-                        Text("Open")
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 12, weight: .bold))
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.tint)
                     }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(Color.white.opacity(0.18), in: Capsule())
                 }
-                .padding(.top, 4)
+
+                Text(profile.title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text(profile.subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(4)
+                    .frame(maxWidth: .infinity, minHeight: 54, alignment: .topLeading)
             }
-            .padding(KamihiTheme.Spacing.md)
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
             .background(
-                LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
+                isSelected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.05),
+                in: RoundedRectangle(cornerRadius: KamihiTheme.Radius.md, style: .continuous)
             )
-            .clipShape(RoundedRectangle(cornerRadius: KamihiTheme.Radius.lg, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: KamihiTheme.Radius.lg, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.35), radius: 12, x: 0, y: 6)
+            .overlay {
+                RoundedRectangle(cornerRadius: KamihiTheme.Radius.md, style: .continuous)
+                    .stroke(isSelected ? Color.accentColor.opacity(0.8) : Color.primary.opacity(0.10), lineWidth: isSelected ? 1.5 : 1)
+            }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(title)
-        .accessibilityHint(description)
-    }
-
-    private var footerSection: some View {
-        HStack(spacing: KamihiTheme.Spacing.md) {
-            #if DEBUG
-            Button {
-                router.startDesktopLab()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "flask.fill")
-                    Text("Desktop Lab (Simulator)")
-                }
-                .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundStyle(.cyan.opacity(0.9))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color.cyan.opacity(0.12), in: Capsule())
-            }
-            .buttonStyle(.plain)
-            #endif
-        }
+        .accessibilityLabel(profile.title)
+        .accessibilityHint(profile.subtitle)
     }
 }
