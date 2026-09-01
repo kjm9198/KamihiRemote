@@ -54,7 +54,10 @@ final class DesktopSession: ObservableObject {
     private var resizeStartFrame: CGRect = .zero
     private var resizeStartCursor: CGPoint = .zero
 
+    /// Floating frames are retained while a window is snapped/maximized so a
+    /// drag away from the edge restores the user's previous size and position.
     private var restoreFrames: [UUID: CGRect] = [:]
+    private var snapTargets: [UUID: WindowSnapEngine.SnapTarget] = [:]
 
     private init() {}
 
@@ -92,6 +95,7 @@ final class DesktopSession: ObservableObject {
     func close(_ id: UUID) {
         windows.removeAll { $0.id == id }
         restoreFrames[id] = nil
+        snapTargets[id] = nil
         if activeWindowID == id {
             activeWindowID = windows.last?.id
         }
@@ -115,15 +119,42 @@ final class DesktopSession: ObservableObject {
                 windows[index].normalizedFrame = restore
             }
             restoreFrames[id] = nil
+            snapTargets[id] = nil
         } else {
-            restoreFrames[id] = windows[index].normalizedFrame
+            // If this window was already snapped, keep the original floating
+            // geometry instead of replacing it with the snap rectangle.
+            if restoreFrames[id] == nil {
+                restoreFrames[id] = windows[index].normalizedFrame
+            }
             windows[index].isMaximized = true
+            snapTargets[id] = nil
         }
         activate(id)
     }
 
     func restoreAndActivate(_ id: UUID) {
         mutateWindow(id) { $0.isMinimized = false }
+        activate(id)
+    }
+
+    /// Applies a snap target while preserving the last floating geometry.
+    /// Command-palette and drag-to-edge snapping share this path so restoring
+    /// behaves identically regardless of how the layout was entered.
+    func snapWindow(_ id: UUID, to target: WindowSnapEngine.SnapTarget) {
+        guard let index = windows.firstIndex(where: { $0.id == id }) else { return }
+
+        if restoreFrames[id] == nil && !windows[index].isMaximized {
+            restoreFrames[id] = windows[index].normalizedFrame
+        }
+
+        if target == .maximize {
+            windows[index].isMaximized = true
+            snapTargets[id] = nil
+        } else {
+            windows[index].isMaximized = false
+            windows[index].normalizedFrame = WindowSnapEngine.frame(for: target)
+            snapTargets[id] = target
+        }
         activate(id)
     }
 
@@ -156,18 +187,41 @@ final class DesktopSession: ObservableObject {
     func beginPrimaryDragIfPossible() -> Bool {
         guard dragWindowID == nil, resizeWindowID == nil,
               let id = topWindow(at: cursor),
-              let window = windows.first(where: { $0.id == id }),
-              !window.isMaximized else { return false }
+              let index = windows.firstIndex(where: { $0.id == id }) else { return false }
 
-        let titleBarHeight: CGFloat = 0.060
-        guard cursor.y >= window.normalizedFrame.minY,
-              cursor.y <= window.normalizedFrame.minY + titleBarHeight else { return false }
+        let visibleFrame = effectiveFrame(for: windows[index])
+        let titleBarHeight = DesktopWindowChrome.titleBarHeight(for: visibleFrame)
+        guard cursor.y >= visibleFrame.minY,
+              cursor.y <= visibleFrame.minY + titleBarHeight else { return false }
+
+        // Preserve where the pointer grabbed the title bar. When pulling a
+        // snapped/maximized window away from an edge, restore its previous
+        // floating size under that same pointer instead of dragging a huge
+        // half-screen rectangle around the desktop.
+        let horizontalAnchor = min(max((cursor.x - visibleFrame.minX) / max(visibleFrame.width, 0.001), 0.08), 0.92)
+        let titleAnchor = min(max((cursor.y - visibleFrame.minY) / max(titleBarHeight, 0.001), 0.10), 0.90)
+        let wasSpatiallyPlaced = windows[index].isMaximized || snapTargets[id] != nil
+
+        if wasSpatiallyPlaced, let floating = restoreFrames[id] {
+            var restored = floating
+            let restoredTitleHeight = DesktopWindowChrome.titleBarHeight(for: restored)
+            restored.origin.x = cursor.x - restored.width * horizontalAnchor
+            restored.origin.y = cursor.y - restoredTitleHeight * titleAnchor
+            restored.origin.x = min(max(restored.origin.x, 0.006), 0.994 - restored.width)
+            restored.origin.y = min(max(restored.origin.y, 0.045), 0.885 - restored.height)
+
+            windows[index].isMaximized = false
+            windows[index].normalizedFrame = restored
+            restoreFrames[id] = nil
+            snapTargets[id] = nil
+        }
 
         activate(id)
+        guard let active = windows.first(where: { $0.id == id }) else { return false }
         dragWindowID = id
         dragOffset = CGPoint(
-            x: cursor.x - window.normalizedFrame.minX,
-            y: cursor.y - window.normalizedFrame.minY
+            x: cursor.x - active.normalizedFrame.minX,
+            y: cursor.y - active.normalizedFrame.minY
         )
         cursorInteractionState = .dragging
         return true
@@ -189,22 +243,14 @@ final class DesktopSession: ObservableObject {
     }
 
     func endPrimaryDrag() {
-        guard dragWindowID != nil else {
+        guard let id = dragWindowID else {
             snapPreviewTarget = nil
             updateCursorAffordance()
             return
         }
 
-        if let target = snapPreviewTarget,
-           let id = dragWindowID,
-           let index = windows.firstIndex(where: { $0.id == id }) {
-            if target == .maximize {
-                restoreFrames[id] = windows[index].normalizedFrame
-                windows[index].isMaximized = true
-            } else {
-                windows[index].isMaximized = false
-                windows[index].normalizedFrame = WindowSnapEngine.frame(for: target)
-            }
+        if let target = snapPreviewTarget {
+            snapWindow(id, to: target)
         }
 
         dragWindowID = nil
@@ -218,6 +264,12 @@ final class DesktopSession: ObservableObject {
               let hit = resizeHit(at: cursor),
               let index = windows.firstIndex(where: { $0.id == hit.id }),
               !windows[index].isMaximized else { return false }
+
+        // Resizing a snapped window detaches it from the snap layout. Keep the
+        // visible snapped frame as the resize starting point; its next snap or
+        // maximize operation will capture the newly resized geometry.
+        snapTargets[hit.id] = nil
+        restoreFrames[hit.id] = nil
 
         activate(hit.id)
         resizeWindowID = hit.id
