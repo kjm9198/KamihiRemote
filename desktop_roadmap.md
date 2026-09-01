@@ -52,9 +52,9 @@ Status legend: `VERIFIED` = implemented and covered by available automated/CI ev
 | 39 | RayNeo Air 4 Pro profile | PARTIAL | 16:9/glasses display classifier exists; physical RayNeo calibration TODO. |
 | 40 | Display calibration | TODO | Safe-margin/scale test UI. |
 | 41 | Adaptive UI scaling | PARTIAL | Display metrics + recommended scale logic exists; automatic scene application TODO. |
-| 42 | Battery Saver Desktop Mode | PARTIAL | Low Power Mode/override/thermal state service exists; broader throttling TODO. |
-| 43 | WebView sleeping | TODO | Suspend/reload minimized inactive web apps conservatively. |
-| 44 | Thermal protection | PARTIAL | Live ProcessInfo thermal monitoring and saver trigger exist; media/background throttling TODO. |
+| 42 | Battery Saver Desktop Mode | PARTIAL | Low Power Mode/override/thermal state service exists; Focus 9 now unloads inactive web-backed windows while conservation is active, keeping the active app live. Long-idle policy and measured device thresholds remain TODO. |
+| 43 | WebView sleeping | PARTIAL | Focus 9 stops rendering minimized window content entirely and unloads inactive Browser/ChatGPT/YouTube content during battery/thermal conservation. Long-idle retained browser-tab eviction/recovery remains TODO. |
+| 44 | Thermal protection | PARTIAL | Live ProcessInfo thermal monitoring and saver trigger exist; serious/critical thermal pressure now participates in inactive web-window sleeping. Physical thermal profiling and richer media throttling remain TODO. |
 | 45 | Battery/time indicator | PARTIAL | Live battery level/state exists; taskbar estimate/session projection TODO. |
 | 46 | Smooth efficient cursor | PARTIAL | Software cursor exists; frame pacing/acceleration profiling on device TODO. |
 | 47 | Window animation system | PARTIAL | Snappy transitions + Reduce Motion/low-power disable exist; full transition vocabulary TODO. |
@@ -65,7 +65,7 @@ Status legend: `VERIFIED` = implemented and covered by available automated/CI ev
 | 52 | Downloads manager | TODO | WKDownload/document storage within app sandbox/document picker. |
 | 53 | Bookmark bar | TODO | Persisted user bookmarks and shortcuts. |
 | 54 | GitHub workspace | TODO | GitHub web view and/or connected authenticated workflow without exposing secrets. |
-| 55 | Remote Mac/PC window | PARTIAL | Existing KamihiRemote host/secure transport exists; embed as desktop app window TODO. |
+| 55 | Remote Mac/PC window | PARTIAL | Existing KamihiRemote host/secure transport exists; keep dormant for backward compatibility/regression unless explicitly required; do not expose as a normal launch compartment. |
 | 56 | Development project launcher | PARTIAL | Existing Vibe/project infrastructure exists; desktop launcher integration TODO. |
 | 57 | Dictated coding changes | PARTIAL | Existing speech workflow exists; active desktop target routing TODO. |
 | 58 | AI clipboard actions | PARTIAL | Quick paste and Add to Notes exist; Explain/Rewrite/Translate/Fix actions TODO. |
@@ -96,7 +96,7 @@ Status legend: `VERIFIED` = implemented and covered by available automated/CI ev
 | 78 | Continuous session autosave | VERIFIED | `AdvancedPhoneControllerView` saves on every desktop window-state change; recovery coordinator also refreshes last-known-good snapshots. Prior `5eca7498` CI is green; recovery-specific check added this run. |
 | 79 | External-display health banner | PARTIAL | Recovery coordinator exposes connected/recovered/disconnected health state; visible recovery/health banner still TODO. |
 | 80 | RayNeo safe-area calibration | TODO | User-adjustable overscan/safe margins and saved glasses profile. |
-| 81 | Web app lifecycle sleeping | TODO | Freeze or unload long-idle/minimized WebViews to reduce heat and battery drain. |
+| 81 | Web app lifecycle sleeping | PARTIAL | `074a64c` unloads all minimized window contents and, under Low Power/Battery Saver/serious thermal pressure, inactive Browser/ChatGPT/YouTube windows. Persistent WebKit website data and browser URL/session metadata remain outside the slept view. Long-idle tab eviction and physical memory/thermal profiling remain TODO. |
 | 82 | Document import center | PARTIAL | System document picker imports copies into a persistent Kamihi Application Support library with collision-safe names; organization/export/edit-in-place workflows remain. |
 | 83 | Quick Paste to active app | IMPLEMENTED / PHYSICAL TEST | Clipboard Center can inject text into the active supported WebKit/AI editor; physical external-display input validation required. |
 | 84 | Desktop capture/share | TODO | User-triggered screenshot and iOS share sheet. |
@@ -127,7 +127,7 @@ A feature is not `VERIFIED` until all applicable gates pass:
 1. Complete resize handles + drag-edge snapping + preview while preserving pointer/drag reliability.
 2. Finish Photos permission flow, richer Files organization/export, and desktop capture/share.
 3. Surface recovery/display-health UI and validate abnormal-termination restore behavior.
-4. Add browser downloads/reader/pinning polish and WebView sleeping.
+4. Add browser downloads/reader/pinning polish and long-idle retained-tab WebView eviction/recovery.
 5. Add trackpad tuning, safe-area calibration and accessibility presets.
 6. Complete hardware-keyboard close/cycle/layout shortcuts and keyboard command cheat sheet.
 7. Keep legacy remote host/dev-project/dictation capabilities dormant unless shared regressions require work; normal launch remains Desktop-first.
@@ -136,4 +136,6 @@ A feature is not `VERIFIED` until all applicable gates pass:
 
 ## Rotation evidence
 
-- **2026-09-01 — Focus 8: Native desktop apps.** Persistent Files document library + native PDFKit viewing landed on feature head `678cf9c`. Apple Build and Apple Integration Smoke both passed on attempt 1. The normal launch remains Kamihi Desktop startup profiles; no Remote-for-Mac compartment was added or expanded. Next focus is **9 — performance/energy/WebView lifecycle**.
+- **2026-09-01 — Focus 8: Native desktop apps.** Persistent Files document library + native PDFKit viewing landed on feature head `678cf9c`. Apple Build and Apple Integration Smoke both passed on attempt 1. The normal launch remains Kamihi Desktop startup profiles; no Remote-for-Mac compartment was added or expanded.
+- **2026-09-01 — Focus 9: Performance/energy/WebView lifecycle.** Added centralized `DesktopWindowEnergyPolicy`; minimized windows no longer retain fully hidden app/WebKit/media content, and Battery Saver/iOS Low Power Mode/serious-or-critical thermal pressure unload inactive Browser, ChatGPT and YouTube content while keeping the active window live. Login cookies stay in `WKWebsiteDataStore.default()` and Browser tab/URL metadata stays persisted, so sleeping does not read/store credentials. Feature head `074a64c`: iOS build, macOS regression build, Pages/deploy, and Apple Integration Smoke all passed; smoke passed on **attempt 1** with `exit_status=0`, one authenticated controller sync, and a visually clean Desktop Lab screenshot artifact. Real battery savings, memory pressure behavior, thermal response, media continuity and long-session stability remain `NEEDS PHYSICAL TEST`.
+- **Next rotation focus: 10 — keyboard/accessibility/polish.** Prioritize hardware shortcut discoverability, VoiceOver/focus order, Dynamic Type on phone UI, Reduce Motion/Transparency, contrast, large-pointer profiles and visual QA without changing the Desktop-first launch model.
