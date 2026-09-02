@@ -57,7 +57,7 @@ struct ContextualControllerToolbar: View {
             Spacer(minLength: 2)
 
             precisionButton
-
+            captureButton
             commandButton
         }
         .fixedSize(horizontal: true, vertical: false)
@@ -98,6 +98,16 @@ struct ContextualControllerToolbar: View {
             hint: "Opens searchable desktop commands and additional actions.",
             action: onOpenCommandPalette
         )
+    }
+
+    private var captureButton: some View {
+        compactButton(
+            symbol: "camera.viewfinder",
+            label: "Capture Desktop",
+            hint: "Captures only the Kamihi external desktop and opens the iOS share sheet."
+        ) {
+            captureDesktop()
+        }
     }
 
     private var precisionButton: some View {
@@ -240,6 +250,14 @@ struct ContextualControllerToolbar: View {
                 Label("Window Overview", systemImage: "square.2.layers.3d.top.filled")
             }
         }
+
+        Divider()
+
+        Button {
+            captureDesktop()
+        } label: {
+            Label("Capture Desktop", systemImage: "camera.viewfinder")
+        }
     }
 
     @ViewBuilder
@@ -348,5 +366,11 @@ struct ContextualControllerToolbar: View {
         .glassEffect(.regular.interactive(), in: .circle)
         .accessibilityLabel("Continue on iPhone")
         .accessibilityHint("Temporarily opens the active app on the phone for touch, typing, or authentication.")
+    }
+
+    private func captureDesktop() {
+        let didPresent = DesktopCaptureService.shared.captureAndShare()
+        guard didPresent, TrackpadSettings.shared.hapticsEnabled else { return }
+        Haptics.touchTap()
     }
 }
