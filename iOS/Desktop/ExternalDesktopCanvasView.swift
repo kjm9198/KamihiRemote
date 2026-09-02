@@ -6,6 +6,7 @@ struct ExternalDesktopCanvasView: View {
     @StateObject private var settings = TrackpadSettings.shared
     @StateObject private var display = ExternalDisplayCoordinator.shared
     @StateObject private var appearance = DesktopAppearanceSettings.shared
+    @StateObject private var power = DesktopPowerMonitor.shared
     @State private var showLauncher = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -61,7 +62,8 @@ struct ExternalDesktopCanvasView: View {
             )
             .zIndex(20)
         }
-        .animation(reduceMotion ? nil : KamihiTheme.Animation.fast, value: desktop.snapPreviewTarget)
+        .animation(shouldSuppressDecorativeMotion ? nil : KamihiTheme.Animation.fast, value: desktop.snapPreviewTarget)
+        .animation(shouldSuppressDecorativeMotion ? nil : KamihiTheme.Animation.fast, value: showLauncher)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(Rectangle())
         .overlay {
@@ -73,7 +75,11 @@ struct ExternalDesktopCanvasView: View {
                     .environmentObject(desktop)
                     .frame(maxWidth: 600, maxHeight: 420)
                     .clipShape(RoundedRectangle(cornerRadius: KamihiTheme.Radius.lg, style: .continuous))
-                    .shadow(color: .black.opacity(colorScheme == .dark ? 0.35 : 0.18), radius: 24, y: 12)
+                    .shadow(
+                        color: .black.opacity(shouldSuppressDecorativeMotion ? 0 : (colorScheme == .dark ? 0.35 : 0.18)),
+                        radius: shouldSuppressDecorativeMotion ? 0 : 24,
+                        y: shouldSuppressDecorativeMotion ? 0 : 12
+                    )
             }
         }
         .overlay {
@@ -84,6 +90,14 @@ struct ExternalDesktopCanvasView: View {
                     .accessibilityHidden(true)
             }
         }
+    }
+
+    /// Treat system Low Power Mode and serious/critical thermal pressure like
+    /// Reduce Motion for purely decorative desktop effects. Pointer movement,
+    /// window manipulation and WebKit remain responsive; only non-essential
+    /// transition/shadow work is suppressed until the system constraint clears.
+    private var shouldSuppressDecorativeMotion: Bool {
+        reduceMotion || power.lowPowerMode || power.thermalState == .serious || power.thermalState == .critical
     }
 
     private func snapPreview(for target: WindowSnapEngine.SnapTarget) -> some View {
