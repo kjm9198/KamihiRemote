@@ -39,6 +39,8 @@
 	<string>Kamihi uses the microphone so you can dictate prompts to agents on your Mac.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Kamihi uses Face ID to unlock your private desktop view on a connected display.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Kamihi can show photos you choose to view on your desktop display. Your photo library stays managed by iOS.</string>
 	<key>UIUserInterfaceStyle</key>
 	<string>Dark</string>
 	<key>UIStatusBarHidden</key>
