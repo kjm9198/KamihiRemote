@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import WebKit
 
 /// "Continue on iPhone" takeover sheet.
@@ -233,6 +234,34 @@ private struct TakeoverWebView: UIViewRepresentable {
 
         init(parent: TakeoverWebView) {
             self.parent = parent
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        ) {
+            guard let url = navigationAction.request.url,
+                  let scheme = url.scheme?.lowercased() else {
+                decisionHandler(.allow)
+                return
+            }
+
+            // Keep ordinary web and WebKit-owned navigations inside the secure
+            // takeover. OAuth/SSO providers can legitimately hand off to another
+            // installed app using a custom URL scheme; letting WebKit try to load
+            // that scheme produces a dead-end error. Hand it to iOS instead using
+            // the public UIApplication API without inspecting page/form contents.
+            let webKitSchemes: Set<String> = ["http", "https", "about", "blob", "data", "file"]
+            guard !webKitSchemes.contains(scheme) else {
+                decisionHandler(.allow)
+                return
+            }
+
+            decisionHandler(.cancel)
+            Task { @MainActor in
+                UIApplication.shared.open(url, options: [:], completionHandler: nil)
+            }
         }
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
