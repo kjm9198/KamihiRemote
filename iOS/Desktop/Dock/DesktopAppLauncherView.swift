@@ -3,9 +3,9 @@ import SwiftUI
 /// Launchpad / App Library grid for opening applications on Kamihi Desktop.
 struct DesktopAppLauncherView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @EnvironmentObject private var desktop: DesktopSession
     @State private var searchText = ""
-    @State private var selectedAppTitle: String?
 
     private struct AppItem: Identifiable {
         let id = UUID()
@@ -48,31 +48,23 @@ struct DesktopAppLauncherView: View {
     }
 
     private let columns = [
-        GridItem(.adaptive(minimum: 90, maximum: 110), spacing: KamihiTheme.Spacing.md)
+        GridItem(.adaptive(minimum: 96, maximum: 124), spacing: DesktopShellMetrics.standardSpacing)
     ]
 
     var body: some View {
         NavigationStack {
             ZStack {
-                KamihiTheme.Colors.surfaceBackground.ignoresSafeArea()
+                DesktopShellPalette.canvas.ignoresSafeArea()
 
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: KamihiTheme.Spacing.lg) {
+                    LazyVGrid(columns: columns, spacing: DesktopShellMetrics.sectionSpacing) {
                         ForEach(filteredApps) { app in
                             appTile(app)
                         }
                     }
-                    .padding(KamihiTheme.Spacing.lg)
+                    .padding(DesktopShellMetrics.sectionSpacing)
                 }
-            }
-            .safeAreaInset(edge: .bottom) {
-                Text("Single tap selects • double-tap opens")
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .padding(.bottom, 6)
+                .scrollIndicators(.hidden)
             }
             .searchable(text: $searchText, prompt: "Search Apps & Utilities")
             .navigationTitle("App Library")
@@ -80,51 +72,55 @@ struct DesktopAppLauncherView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
+                        .frame(minWidth: DesktopShellMetrics.minimumHitTarget, minHeight: DesktopShellMetrics.minimumHitTarget)
                 }
             }
         }
+        .desktopShellTheme()
     }
 
     private func appTile(_ app: AppItem) -> some View {
-        let selected = selectedAppTitle == app.title
-        return VStack(spacing: 8) {
-            Image(systemName: app.icon)
-                .font(.system(size: 26, weight: .semibold))
-                .foregroundStyle(app.color)
-                .frame(width: 60, height: 60)
-                .background(
-                    selected ? Color.primary.opacity(0.12) : Color.primary.opacity(0.06),
-                    in: RoundedRectangle(cornerRadius: KamihiTheme.Radius.md, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: KamihiTheme.Radius.md, style: .continuous)
-                        .strokeBorder(selected ? Color.accentColor.opacity(0.65) : Color.primary.opacity(0.10), lineWidth: selected ? 1.5 : 1)
-                )
+        Button {
+            launchApp(app.title)
+        } label: {
+            VStack(spacing: DesktopShellMetrics.compactSpacing) {
+                Image(systemName: app.icon)
+                    .font(.system(size: 27, weight: .semibold))
+                    .foregroundStyle(app.color)
+                    .frame(width: 64, height: 64)
+                    .background {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(reduceTransparency ? DesktopShellPalette.secondaryCanvas : DesktopShellPalette.elevatedCanvas.opacity(0.82))
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(DesktopShellPalette.separator.opacity(reduceTransparency ? 0.62 : 0.30), lineWidth: reduceTransparency ? 1 : 0.5)
+                    }
 
-            Text(app.title)
-                .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
+                Text(app.title)
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(DesktopShellPalette.label)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+
+                Text(app.category)
+                    .font(.caption2)
+                    .foregroundStyle(DesktopShellPalette.secondaryLabel)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity, minHeight: 108, alignment: .top)
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 4)
-        .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
-            launchApp(app.title)
-        }
-        .onTapGesture {
-            selectedAppTitle = app.title
-            if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
-        }
-        .accessibilityElement(children: .combine)
+        .buttonStyle(.plain)
         .accessibilityLabel(app.title)
-        .accessibilityHint("Double-tap to open")
+        .accessibilityHint("Opens \(app.title) on Kamihi Desktop")
         .accessibilityAddTraits(.isButton)
-        .accessibilityAction {
-            launchApp(app.title)
-        }
     }
 
     private func launchApp(_ title: String) {
+        if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+
         // New apps start centered at 60% of the desktop instead of appearing
         // oversized or touching display edges.
         let frame = CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60)
