@@ -28,16 +28,38 @@ struct RayNeoDisplaySettingsSheet: View {
                     LabeledContent("Status", value: display.isConnected ? "Connected" : "Waiting")
                     LabeledContent("Native output", value: display.capabilitySummary)
                     LabeledContent("UIKit canvas", value: display.scaleSummary)
+                    LabeledContent("Backing", value: display.backingSummary)
                     LabeledContent("Calibration", value: display.calibrationSummary)
 
                     if display.isConnected {
                         Label(
-                            display.isLikelyRayNeo2DTarget
-                                ? "Full-HD 16:9 class output detected"
-                                : "Use the mode iOS negotiated; Kamihi will not fake 1080p or 120 Hz.",
-                            systemImage: display.isLikelyRayNeo2DTarget ? "checkmark.circle.fill" : "info.circle"
+                            display.negotiatedModeSummary,
+                            systemImage: display.isLikelyRayNeo2DTarget && display.isNativeBackingAligned
+                                ? "checkmark.circle.fill"
+                                : "info.circle"
                         )
-                        .foregroundStyle(display.isLikelyRayNeo2DTarget ? .green : .secondary)
+                        .foregroundStyle(
+                            display.isLikelyRayNeo2DTarget && display.isNativeBackingAligned
+                                ? .green
+                                : .secondary
+                        )
+
+                        if !display.isNativeBackingAligned {
+                            Label(
+                                "The native pixel backing does not currently match UIKit's reported native scale. Inspect the connected mode before judging sharpness.",
+                                systemImage: "exclamationmark.triangle"
+                            )
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                        }
+
+                        Text("iOS currently exposes a maximum of \(display.maximumFramesPerSecond) frames per second for this screen. Kamihi uses what iOS negotiates and never claims or forces 120 Hz when the screen reports less.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Connect an external display to read its real native backing resolution, UIKit scale, and refresh ceiling. Placeholder values are not treated as measured hardware results.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
