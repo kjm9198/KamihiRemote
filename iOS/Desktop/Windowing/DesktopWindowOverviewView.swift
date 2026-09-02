@@ -7,6 +7,7 @@ import SwiftUI
 /// generic window management.
 struct DesktopWindowOverviewView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var desktop: DesktopSession
 
     private let columns = [
@@ -33,9 +34,13 @@ struct DesktopWindowOverviewView: View {
                         }
                         .padding(.top, 60)
                     } else {
-                        LazyVGrid(columns: columns, spacing: KamihiTheme.Spacing.md) {
-                            ForEach(desktop.windows) { window in
-                                windowCard(window)
+                        VStack(alignment: .leading, spacing: KamihiTheme.Spacing.md) {
+                            spatialDesktopMap
+
+                            LazyVGrid(columns: columns, spacing: KamihiTheme.Spacing.md) {
+                                ForEach(desktop.windows) { window in
+                                    windowCard(window)
+                                }
                             }
                         }
                         .padding(KamihiTheme.Spacing.md)
@@ -59,10 +64,120 @@ struct DesktopWindowOverviewView: View {
         }
     }
 
+    /// A single whole-desktop map keeps the user's spatial memory intact when
+    /// switching windows. Unlike live thumbnails it only renders geometry and
+    /// labels, so the overview does not wake WebViews or media just to preview them.
+    private var spatialDesktopMap: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "rectangle.3.group")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityHidden(true)
+
+                Text("Desktop Map")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+
+                Spacer()
+
+                Text("Tap a window to return")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            GeometryReader { geo in
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white.opacity(0.045))
+
+                    VStack(spacing: 0) {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.04))
+                            .frame(height: max(4, geo.size.height * 0.045))
+                        Spacer(minLength: 0)
+                        Rectangle()
+                            .fill(Color.white.opacity(0.04))
+                            .frame(height: max(7, geo.size.height * 0.115))
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .allowsHitTesting(false)
+
+                    ForEach(Array(desktop.windows.enumerated()), id: \.element.id) { index, window in
+                        spatialWindowButton(window, in: geo.size)
+                            .zIndex(desktop.activeWindowID == window.id ? 100 : Double(index))
+                    }
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+                }
+            }
+            .frame(height: 150)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Spatial desktop map")
+            .accessibilityHint("Contains all open windows positioned like the external desktop")
+        }
+        .padding(12)
+        .background(Color(red: 0.09, green: 0.11, blue: 0.15))
+        .clipShape(RoundedRectangle(cornerRadius: KamihiTheme.Radius.md, style: .continuous))
+    }
+
+    private func spatialWindowButton(
+        _ window: DesktopSession.DesktopWindow,
+        in canvasSize: CGSize
+    ) -> some View {
+        let desktopFrame = desktop.effectiveFrame(for: window)
+        let width = max(52, desktopFrame.width * canvasSize.width)
+        let height = max(34, desktopFrame.height * canvasSize.height)
+        let x = min(max(desktopFrame.midX * canvasSize.width, width / 2), canvasSize.width - width / 2)
+        let y = min(max(desktopFrame.midY * canvasSize.height, height / 2), canvasSize.height - height / 2)
+        let isActive = desktop.activeWindowID == window.id
+
+        return Button {
+            activateFromOverview(window.id)
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(
+                        isActive
+                            ? Color.accentColor.opacity(window.isMinimized ? 0.18 : 0.44)
+                            : Color.white.opacity(window.isMinimized ? 0.08 : 0.18)
+                    )
+
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(
+                        isActive ? Color.accentColor.opacity(0.95) : Color.white.opacity(0.30),
+                        style: StrokeStyle(
+                            lineWidth: isActive ? 2 : 1,
+                            dash: window.isMinimized ? [5, 4] : []
+                        )
+                    )
+
+                HStack(spacing: 4) {
+                    Image(systemName: appIcon(for: window.title))
+                        .font(.system(size: 9, weight: .semibold))
+                    Text(window.title)
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.78))
+                .padding(.horizontal, 5)
+            }
+            .frame(width: width, height: height)
+            .opacity(window.isMinimized ? 0.52 : 1)
+            .shadow(color: .black.opacity(isActive ? 0.24 : 0.10), radius: isActive ? 8 : 3, y: 2)
+        }
+        .buttonStyle(.plain)
+        .position(x: x, y: y)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: desktopFrame)
+        .accessibilityLabel("\(window.title), \(windowStateDescription(window))")
+        .accessibilityHint("Activates this window and closes Window Overview")
+    }
+
     private func windowCard(_ window: DesktopSession.DesktopWindow) -> some View {
         Button {
-            desktop.restoreAndActivate(window.id)
-            dismiss()
+            activateFromOverview(window.id)
         } label: {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -135,8 +250,6 @@ struct DesktopWindowOverviewView: View {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(Color.white.opacity(0.045))
 
-                // Safe desktop canvas guide: status area at the top and dock area
-                // at the bottom remain subtly visible in the miniature.
                 VStack(spacing: 0) {
                     Rectangle()
                         .fill(Color.white.opacity(0.04))
@@ -195,6 +308,11 @@ struct DesktopWindowOverviewView: View {
                 .padding(.vertical, 2)
                 .background(Color.accentColor.opacity(0.14), in: Capsule())
         }
+    }
+
+    private func activateFromOverview(_ id: UUID) {
+        desktop.restoreAndActivate(id)
+        dismiss()
     }
 
     private func restoreAllOpenWindows() {
