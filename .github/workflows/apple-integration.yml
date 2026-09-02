@@ -28,6 +28,9 @@ jobs:
       - name: Xcode version
         run: xcodebuild -version
 
+      - name: Verify trackpad-first controller contract
+        run: bash scripts/desktop-controller-contract-smoke.sh
+
       - name: Run iPhone + Mac integration smoke
         run: bash scripts/apple-integration-smoke.sh
 
