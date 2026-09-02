@@ -1,6 +1,105 @@
 import SwiftUI
 import UIKit
 
+/// User-initiated capture bridge for the Kamihi-owned external-display scene.
+///
+/// This snapshots only Kamihi's external UIWindow, at the backing scale iOS
+/// negotiated for that screen, then presents the standard iOS share sheet from
+/// the foreground phone scene. It never captures the normal iPhone screen,
+/// saves to Photos automatically, or requests broad photo-library access.
+@MainActor
+final class DesktopCaptureService {
+    static let shared = DesktopCaptureService()
+
+    private weak var externalWindow: UIWindow?
+
+    private init() {}
+
+    func attach(externalWindow: UIWindow) {
+        self.externalWindow = externalWindow
+    }
+
+    func detach(externalWindow: UIWindow?) {
+        guard self.externalWindow === externalWindow else { return }
+        self.externalWindow = nil
+    }
+
+    @discardableResult
+    func captureAndShare() -> Bool {
+        guard let image = captureExternalDesktop(),
+              let presenter = phonePresenter() else {
+            return false
+        }
+
+        let activity = UIActivityViewController(activityItems: [image], applicationActivities: nil)
+        if let popover = activity.popoverPresentationController {
+            popover.sourceView = presenter.view
+            popover.sourceRect = CGRect(
+                x: presenter.view.bounds.midX,
+                y: presenter.view.bounds.midY,
+                width: 1,
+                height: 1
+            )
+            popover.permittedArrowDirections = []
+        }
+        presenter.present(activity, animated: true)
+        return true
+    }
+
+    private func captureExternalDesktop() -> UIImage? {
+        guard let window = externalWindow,
+              window.bounds.width > 0,
+              window.bounds.height > 0 else {
+            return nil
+        }
+
+        window.layoutIfNeeded()
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = max(window.screen.nativeScale, 1)
+        format.opaque = true
+
+        let renderer = UIGraphicsImageRenderer(bounds: window.bounds, format: format)
+        return renderer.image { context in
+            // drawHierarchy preserves SwiftUI/WebKit visual composition when available.
+            // Fall back to CALayer rendering for deterministic native surfaces.
+            if !window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) {
+                window.layer.render(in: context.cgContext)
+            }
+        }
+    }
+
+    private func phonePresenter() -> UIViewController? {
+        let phoneScene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first {
+                $0.activationState == .foregroundActive &&
+                $0.session.role == .windowApplication
+            }
+
+        guard let root = phoneScene?.windows.first(where: { $0.isKeyWindow })?.rootViewController
+            ?? phoneScene?.windows.first(where: { !$0.isHidden })?.rootViewController else {
+            return nil
+        }
+
+        return topPresenter(from: root)
+    }
+
+    private func topPresenter(from controller: UIViewController) -> UIViewController {
+        if let presented = controller.presentedViewController {
+            return topPresenter(from: presented)
+        }
+        if let navigation = controller as? UINavigationController,
+           let visible = navigation.visibleViewController {
+            return topPresenter(from: visible)
+        }
+        if let tab = controller as? UITabBarController,
+           let selected = tab.selectedViewController {
+            return topPresenter(from: selected)
+        }
+        return controller
+    }
+}
+
 /// Scene delegate for the non-interactive external display window.
 final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
@@ -23,6 +122,7 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.rootViewController = controller
         window.makeKeyAndVisible()
         self.window = window
+        DesktopCaptureService.shared.attach(externalWindow: window)
 
         Task { @MainActor in
             ExternalDisplayCoordinator.shared.connect(screen: screen)
@@ -45,6 +145,7 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {
+        DesktopCaptureService.shared.detach(externalWindow: window)
         Task { @MainActor in
             DesktopFeatureState.shared.saveSession(desktop: DesktopSession.shared)
             ExternalDisplayCoordinator.shared.disconnect()
