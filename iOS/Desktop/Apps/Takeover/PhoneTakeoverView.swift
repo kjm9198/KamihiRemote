@@ -290,11 +290,13 @@ private struct TakeoverWebView: UIViewRepresentable {
             for navigationAction: WKNavigationAction,
             windowFeatures: WKWindowFeatures
         ) -> WKWebView? {
-            // OAuth providers and identity pages frequently use target=_blank.
-            // Keep those flows inside the takeover instead of creating an
-            // invisible second window that cannot be completed on the phone.
-            if navigationAction.targetFrame == nil, let requestURL = navigationAction.request.url {
-                webView.load(URLRequest(url: requestURL))
+            // OAuth providers and identity pages frequently use target=_blank or
+            // window.open(). Keep those flows inside the takeover instead of
+            // creating an invisible second window. Loading the original request
+            // preserves its HTTP method, body and headers without Kamihi reading,
+            // copying, logging or persisting any credential-bearing fields.
+            if navigationAction.targetFrame == nil {
+                webView.load(navigationAction.request)
             }
             return nil
         }
