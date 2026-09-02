@@ -233,11 +233,21 @@ struct DesktopBrowserView: View {
 final class DesktopBrowserController: ObservableObject {
     private var webViews: [UUID: WKWebView] = [:]
     private var delegates: [UUID: DesktopBrowserNavigationDelegate] = [:]
+    private var activationOrder: [UUID] = []
     private var activeTabID: UUID?
+
+    /// Keep a small warm set for instant switching, but do not let long browsing
+    /// sessions retain an unbounded number of WebKit renderer processes. Tab URL
+    /// metadata remains in DesktopBrowserState and website data remains in
+    /// WKWebsiteDataStore.default(), so an evicted tab can be recreated without
+    /// Kamihi reading or persisting credentials itself.
+    private let maximumRetainedWebViews = 6
 
     func present(tabID: UUID, url: URL?, in container: UIView, state: DesktopBrowserState) {
         let webView = webView(for: tabID, state: state)
         activeTabID = tabID
+        markTabActive(tabID)
+        trimRetainedWebViews(excluding: tabID)
 
         // Trackpad/phone-keyboard input always points at the retained active tab.
         DesktopWebInputRegistry.shared.register(webView, key: "Browser")
@@ -264,10 +274,8 @@ final class DesktopBrowserController: ObservableObject {
     }
 
     func closeTab(_ id: UUID) {
-        webViews[id]?.stopLoading()
-        webViews[id]?.removeFromSuperview()
-        webViews[id] = nil
-        delegates[id] = nil
+        releaseWebView(for: id)
+        activationOrder.removeAll(where: { $0 == id })
         if activeTabID == id { activeTabID = nil }
     }
 
@@ -328,6 +336,32 @@ final class DesktopBrowserController: ObservableObject {
         delegates[id] = delegate
         webViews[id] = webView
         return webView
+    }
+
+    private func markTabActive(_ id: UUID) {
+        activationOrder.removeAll(where: { $0 == id })
+        activationOrder.append(id)
+    }
+
+    private func trimRetainedWebViews(excluding activeID: UUID) {
+        while webViews.count > maximumRetainedWebViews {
+            guard let evictionID = activationOrder.first(where: {
+                $0 != activeID && webViews[$0] != nil
+            }) else {
+                return
+            }
+
+            activationOrder.removeAll(where: { $0 == evictionID })
+            releaseWebView(for: evictionID)
+        }
+    }
+
+    private func releaseWebView(for id: UUID) {
+        webViews[id]?.stopLoading()
+        webViews[id]?.navigationDelegate = nil
+        webViews[id]?.removeFromSuperview()
+        webViews[id] = nil
+        delegates[id] = nil
     }
 }
 
