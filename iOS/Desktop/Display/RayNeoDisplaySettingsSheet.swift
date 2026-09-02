@@ -6,6 +6,7 @@ struct RayNeoDisplaySettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var display = ExternalDisplayCoordinator.shared
     @StateObject private var appearance = DesktopAppearanceSettings.shared
+    @StateObject private var recovery = DesktopRecoveryCoordinator.shared
 
     var body: some View {
         NavigationStack {
@@ -58,6 +59,31 @@ struct RayNeoDisplaySettingsSheet: View {
                             .foregroundStyle(.secondary)
                     } else {
                         Text("Connect an external display to read its real native backing resolution, UIKit scale, and refresh ceiling. Placeholder values are not treated as measured hardware results.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Section("Reconnect & Recovery") {
+                    LabeledContent("Desktop state", value: recovery.displayHealth.label)
+
+                    if let lastSnapshotDate = recovery.lastSnapshotDate {
+                        LabeledContent("Last safety snapshot") {
+                            Text(lastSnapshotDate, style: .relative)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if recovery.recoveredAfterInterruption {
+                        Label("Kamihi restored the last safety snapshot after an interrupted desktop session.", systemImage: "arrow.clockwise.heart.fill")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else if display.isConnected {
+                        Label("This display scene is connected normally. Unplug/replug should preserve the saved desktop session without creating a duplicate session.", systemImage: "cable.connector")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Reconnect the external display to verify that the same desktop returns. The recovery status above distinguishes a normal connection from an interruption restore.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
