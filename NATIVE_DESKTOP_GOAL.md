@@ -55,7 +55,7 @@ Required: drag; all-edge/corner resize; minimum sizes; correct z-order; halves/t
 
 ## Phone controller quality gate
 
-Default structure stays approximately: compact status/header → large trackpad → small contextual bottom toolbar. Do not restore permanent Apps + Commands + Windows + Workspaces + URL + utility rows. Controls adapt to the active app.
+The normal connected controller is **trackpad-first to the point of feeling like a full-screen trackpad**. Keep only the always-needed Keyboard control plus one More/context control visible over the trackpad. Apps, windows, commands, settings, capture, Phone Takeover and other utilities stay behind contextual/on-demand surfaces until requested. Do not restore permanent preview panels, Apps + Commands + Windows + Workspaces + URL rows, or utility dashboards that reduce the usable trackpad area. The keyboard must reliably target the active desktop window and must never leak text to the wrong window after focus changes.
 
 ## Browser and web apps
 
@@ -130,7 +130,14 @@ Then repeat with the highest-impact unfinished issue in each category without du
 - **2026-09-02 — Focus 4 (current cycle): Window resize affordances.** Replaced the single bottom-right resize hint with eight lightweight active-window affordances covering all four edges and four corners. The marker for the edge/corner currently targeted by the shared DesktopSession cursor becomes stronger, while resize gesture ownership stays on the iPhone controller and maximized windows stay visually clean. Feature head `6be9289`; Apple Build and Apple Integration Smoke passed on attempt 1. Physical resize feel on iPhone + RayNeo remains `NEEDS PHYSICAL TEST`.
 - **2026-09-02 — Focus 5 (current cycle): Phone controller ergonomics.** Adapted the contextual controller rail for narrow iPhones: the full app toolbar remains on wider phones, while constrained layouts collapse app-specific Browser/YouTube/ChatGPT/Notes actions into one contextual menu without shrinking the large trackpad. Keyboard, app switching, Precision Mode and commands remain directly thumb-accessible with 44 pt primary targets. Feature head `d2857f8`; Apple Build, deploy and Apple Integration Smoke all passed on **attempt 1**.
 - **2026-09-02 — Focus 6 (current cycle): Browser/WebView lifecycle.** Replaced unbounded retained-tab WebView growth with a six-WebView most-recently-used warm pool. Inactive least-recent WebViews are stopped and released once the pool exceeds the cap; persistent tab URL/title metadata remains in `DesktopBrowserState`, and cookies/login/session data remain in `WKWebsiteDataStore.default()` rather than being copied through Kamihi. Re-selecting an evicted tab recreates its WebView from persisted tab state. Feature head `6917d68`; Apple Build, Pages, and Apple Integration Smoke all passed on **attempt 1**, including smoke evidence upload. Long-session memory/process-count benefit and real site session restoration remain `NEEDS PHYSICAL TEST`/device profiling.
-- **Next rotation focus: 7 — Phone Takeover/authentication.** Choose a high-impact unfinished authentication/handoff issue that is different from redirect synchronization and existing `target=_blank` handling; keep credentials entirely inside public iOS/WebKit flows.
+- **2026-09-02 — Focus 7 (current cycle): Phone Takeover/authentication.** Non-web OAuth/SSO custom URL schemes encountered inside the takeover WebView can now hand off to installed iOS apps through public `UIApplication.open`, while normal HTTP(S) and WebKit-owned navigation stay inside the visible secure takeover. Kamihi does not inspect, copy, log or persist passwords, passkeys, tokens or form values. Feature head `51f03723`; Apple Build, Pages and Apple Integration Smoke all passed on **attempt 1**. Provider-specific app handoff, Password AutoFill/passkeys, CAPTCHA/file picker and ChatGPT/YouTube login remain `NEEDS PHYSICAL TEST`.
+- **2026-09-02 — Focus 8 (current cycle): Native desktop apps.** Added user-triggered external-desktop capture/share from the phone controller. Kamihi captures only its external-display `UIWindow` at the iOS-negotiated backing scale and presents the standard iPhone share sheet without automatic Photos saving or broad photo-library access. Feature head `5a581dfb`; Apple Build, Pages and Apple Integration Smoke all passed on **attempt 1**. Real RayNeo capture sharpness, WebKit/video capture fidelity and share-sheet behavior remain `NEEDS PHYSICAL TEST`.
+- **2026-09-02 — Focus 9 (current cycle): Performance/energy.** External Desktop now observes live Low Power Mode and thermal pressure and suppresses purely decorative launcher/snap motion plus expensive launcher shadow work under conservation pressure while keeping pointer, window manipulation and WebKit interaction responsive. Feature head `2fe7600`; successor evidence head `cb9eb394` is green across Apple Build, Pages and Apple Integration Smoke, smoke first attempt. Physical battery/thermal benefit remains `NEEDS PHYSICAL TEST`.
+- **2026-09-02 — Focus 10 (current cycle): Keyboard/accessibility/polish.** Added a discoverable Keyboard & Gestures guide with Dynamic Type and cleaner VoiceOver command-row semantics, covering the actual phone trackpad gestures, window cycling, keyboard entry, Precision Mode and Continue-on-iPhone flow without advertising unverified hardware shortcuts. Feature head `ebd5b3d`; Apple Build, Pages and Apple Integration Smoke passed, smoke first attempt. Hardware-keyboard bindings and real VoiceOver/Dynamic Type feel remain device follow-up.
+- **2026-09-02 — Focus 1 (current cycle): RayNeo display fidelity.** Added the high-contrast on-canvas display calibration guide with physical outer border, corner marks, quarter/center grid, persisted safe-frame outline and exact iOS-reported resolution/maximum refresh ceiling. Feature head `d424f2a`; Apple Build, Pages and Apple Integration Smoke passed on **attempt 1**. Real RayNeo 1920×1080 negotiation, refresh, overscan/readability and USB-C reconnect remain `NEEDS PHYSICAL TEST`.
+- **2026-09-02 — Focus 2 (current cycle): iPadOS shell/design system.** Aligned the external-display dock with the shared semantic Kamihi shell: System/Light/Dark-compatible semantic surfaces, transparency-aware presentation, SF Symbols, accessible control sizing, clearer running/active state and display status. The full-trackpad phone controller remained untouched. Feature head `52255de`; Apple Build, Pages and Apple Integration Smoke all passed on **attempt 1**.
+- **2026-09-02 — Focus 3 (current cycle, latest): Trackpad/pointer.** Retuned only the stock Balanced full-screen-trackpad profile from sensitivity/acceleration `1.20/1.00` to `1.12/0.82`, reducing low-speed overshoot while preserving the existing velocity acceleration and adaptive smoothing. A versioned migration applies only when persisted values are still the old stock defaults; any custom pointer tuning is preserved exactly. Feature head `d270fc5`; Pages, Apple Build and Apple Integration Smoke all passed on **attempt 1**, including the simulator-host smoke and evidence upload. The Desktop Lab artifact was visually inspected: the 1920×1080 external canvas/calibration remains intact and the phone controller is still the simplified full-trackpad surface with only Keyboard and More. Real pointer latency and the final Balanced feel on iPhone + RayNeo remain `NEEDS PHYSICAL TEST`.
+- **Next rotation focus: 4 — Windowing and spatial animations.** Preserve the full-trackpad controller and choose the highest-impact unfinished windowing issue without repeating the existing eight-edge resize affordances or drag-edge snap-preview work.
 
 ## Physical-only checks
 
@@ -138,7 +145,7 @@ Do not mark these verified based only on CI/Simulator:
 
 - actual RayNeo 1920×1080 negotiation,
 - actual negotiated refresh rate,
-- perceived pointer latency,
+- perceived pointer latency and final Balanced-profile feel,
 - USB-C unplug/replug,
 - glasses readability/overscan,
 - HDR behavior,
@@ -146,6 +153,7 @@ Do not mark these verified based only on CI/Simulator:
 - ChatGPT/YouTube login/playback,
 - Bluetooth keyboard/mouse behavior,
 - native document-provider/PDF interaction on the external display,
+- desktop capture fidelity for WebKit/video content,
 - long-session battery/thermal behavior.
 
 ## Definition of done
