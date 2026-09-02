@@ -2,17 +2,15 @@ import SwiftUI
 import UIKit
 
 /// iPhone control surface for Kamihi Desktop.
-/// The full phone is the primary trackpad. Secondary desktop controls remain
-/// available from More instead of consuming the main gesture surface.
+/// The phone is intentionally a full-screen trackpad. Keyboard and More are the
+/// only persistent controls; every secondary action stays behind More.
 struct DesktopControllerView: View {
     @EnvironmentObject private var router: AppModeRouter
     @EnvironmentObject private var desktop: DesktopSession
     @StateObject private var engine = TrackpadEngine()
     @StateObject private var settings = TrackpadSettings.shared
-    @StateObject private var power = DesktopPowerMonitor.shared
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @AppStorage("kamihi.desktop.controller.fullTrackpad") private var fullTrackpadMode = false
 
     @State private var showLauncher = false
     @State private var showOverview = false
@@ -25,12 +23,9 @@ struct DesktopControllerView: View {
     @State private var takeoverWindowID: UUID?
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                KamihiTheme.surface.ignoresSafeArea()
-
-                fullTrackpadLayout
-            }
+        ZStack {
+            KamihiTheme.surface.ignoresSafeArea()
+            fullTrackpadLayout
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if showKeyboard {
@@ -66,7 +61,6 @@ struct DesktopControllerView: View {
                 .environmentObject(desktop)
         }
         .onAppear {
-            power.refresh()
             engine.onThreeFingerSwipeUp = { showOverview = true }
             engine.onThreeFingerSwipeLeft = { desktop.cycleWindow(forward: false) }
             engine.onThreeFingerSwipeRight = { desktop.cycleWindow(forward: true) }
@@ -91,65 +85,21 @@ struct DesktopControllerView: View {
         }
     }
 
-    private func normalLayout(in size: CGSize) -> some View {
-        let previewHeight = min(size.width * 9.0 / 16.0, max(150, size.height * 0.34))
-        let trackpadHeight = min(190, max(140, size.height * 0.25))
-
-        return VStack(spacing: 0) {
-            headerArea
-                .padding(.horizontal, KamihiTheme.Spacing.md)
-                .padding(.top, 7)
-                .padding(.bottom, 6)
-
-            DesktopControllerScreenPreview(desktop: desktop)
-                .frame(maxWidth: .infinity)
-                .frame(height: previewHeight)
-                .padding(.horizontal, 10)
-                .padding(.bottom, 8)
-                .onTapGesture(count: 2) {
-                    showLauncher = true
-                    if settings.hapticsEnabled { Haptics.touchTap() }
-                }
-                .accessibilityHint("Double-tap to open the App Library")
-
-            trackpadSurface(cornerRadius: KamihiTheme.Radius.lg)
-                .frame(maxWidth: .infinity)
-                .frame(height: trackpadHeight)
-                .padding(.horizontal, 8)
-                .padding(.bottom, 5)
-
-            Spacer(minLength: 0)
-
-            ContextualControllerToolbar(
-                engine: engine,
-                onOpenLauncher: { showLauncher = true },
-                onOpenOverview: { showOverview = true },
-                onOpenCommandPalette: { showCommandPalette = true },
-                onToggleKeyboard: { setKeyboardVisible(!showKeyboard) },
-                onContinueOnPhone: { windowID in takeoverWindowID = windowID }
-            )
-            .padding(.bottom, 6)
-        }
-    }
-
-    /// The phone is a dedicated trackpad by default. Everything that is not
-    /// required while moving the pointer lives under More, so no tool rail steals
-    /// working area or thumb reach.
+    /// Only two thumb targets float above the trackpad. Status, app switching,
+    /// settings, capture and takeover remain discoverable inside More so the
+    /// phone keeps the largest possible uninterrupted gesture surface.
     private var fullTrackpadLayout: some View {
-        ZStack(alignment: .top) {
+        ZStack(alignment: .topTrailing) {
             trackpadSurface(cornerRadius: 0)
                 .ignoresSafeArea()
 
             HStack(spacing: 8) {
-                activeDesktopStatus
-
-                Spacer(minLength: 8)
-
                 Button {
                     setKeyboardVisible(!showKeyboard)
                 } label: {
                     Image(systemName: "keyboard")
                         .frame(width: 44, height: 44)
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: .circle)
@@ -167,29 +117,34 @@ struct DesktopControllerView: View {
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: .circle)
                 .accessibilityLabel("More Desktop Controls")
-                .accessibilityHint("Opens apps, windows, settings, and other controls.")
+                .accessibilityValue(desktop.activeWindow?.title ?? "No active window")
+                .accessibilityHint("Opens apps, windows, status, settings, and other controls.")
             }
-            .padding(.horizontal, 12)
+            .padding(.trailing, 12)
             .padding(.top, 8)
         }
     }
 
-    private var activeDesktopStatus: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(desktop.activeWindow?.title ?? "Kamihi Desktop")
-                .font(.caption.weight(.semibold))
-                .lineLimit(1)
-            Text(desktop.isExternalDisplayConnected ? "Trackpad" : "Desktop Lab / waiting")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(desktop.activeWindow?.title ?? "Kamihi Desktop"), \(desktop.isExternalDisplayConnected ? "trackpad ready" : "waiting for an external display")")
-    }
-
     @ViewBuilder
     private var moreControllerActions: some View {
+        Button(action: {}) {
+            Label(
+                desktop.activeWindow?.title ?? "Kamihi Desktop",
+                systemImage: desktop.isExternalDisplayConnected ? "display" : "display.trianglebadge.exclamationmark"
+            )
+        }
+        .disabled(true)
+
+        Button(action: {}) {
+            Label(
+                desktop.isExternalDisplayConnected ? "External display connected" : "Desktop Lab / waiting",
+                systemImage: desktop.isExternalDisplayConnected ? "checkmark.circle" : "clock"
+            )
+        }
+        .disabled(true)
+
+        Divider()
+
         Button {
             showLauncher = true
         } label: {
@@ -247,77 +202,6 @@ struct DesktopControllerView: View {
             router.returnToChooser()
         } label: {
             Label("Exit Desktop", systemImage: "rectangle.portrait.and.arrow.right")
-        }
-    }
-
-    // MARK: - Header
-
-    private var headerArea: some View {
-        HStack(alignment: .center, spacing: 8) {
-            Button {
-                router.returnToChooser()
-            } label: {
-                Image(systemName: "chevron.backward")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 36, height: 36)
-                    .glassEffect(.regular.interactive(), in: .circle)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Back to startup profiles")
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(desktop.activeWindow?.title ?? "Kamihi Desktop")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(desktop.isExternalDisplayConnected ? Color.green : Color.orange)
-                        .frame(width: 5, height: 5)
-                    Text(desktop.isExternalDisplayConnected ? "External display" : "Desktop Lab / waiting")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Spacer(minLength: 8)
-
-            if power.batteryLevel >= 0 {
-                HStack(spacing: 4) {
-                    Image(systemName: (power.batteryState == .charging || power.batteryState == .full) ? "battery.100percent.bolt" : "battery.75percent")
-                    Text(power.batteryPercentageText)
-                        .monospacedDigit()
-                }
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-            }
-
-            Button {
-                fullTrackpadMode = true
-                if settings.hapticsEnabled { Haptics.touchTap() }
-            } label: {
-                Image(systemName: "rectangle.expand.vertical")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 36, height: 36)
-                    .glassEffect(.regular.interactive(), in: .circle)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Full Trackpad")
-
-            Button {
-                showTrackpadSettings = true
-            } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 36, height: 36)
-                    .glassEffect(.regular.interactive(), in: .circle)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Trackpad settings")
         }
     }
 
@@ -403,63 +287,6 @@ struct DesktopControllerView: View {
         guard let activeWindowID = desktop.activeWindowID else { return }
         keyboardWindowID = activeWindowID
         showKeyboard = true
-    }
-}
-
-private struct DesktopControllerScreenPreview: View {
-    @ObservedObject var desktop: DesktopSession
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                KamihiTheme.AtmosphericBackground()
-
-                if desktop.windows.filter({ !$0.isMinimized }).isEmpty {
-                    VStack(spacing: 6) {
-                        Image(systemName: "rectangle.dashed")
-                            .font(.system(size: 24, weight: .light))
-                        Text("Desktop ready")
-                            .font(.caption.weight(.semibold))
-                        Text("Double-tap here or use Apps to open something")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                    .foregroundStyle(.primary)
-                }
-
-                ForEach(desktop.windows.filter { !$0.isMinimized }) { window in
-                    let frame = desktop.effectiveFrame(for: window)
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(desktop.activeWindowID == window.id ? Color.accentColor.opacity(0.26) : Color.primary.opacity(0.10))
-                        .overlay(alignment: .topLeading) {
-                            Text(window.title)
-                                .font(.system(size: 7, weight: .semibold))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                                .padding(4)
-                        }
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .strokeBorder(desktop.activeWindowID == window.id ? Color.accentColor.opacity(0.75) : Color.primary.opacity(0.15), lineWidth: 0.8)
-                        )
-                        .frame(width: max(8, frame.width * geo.size.width), height: max(8, frame.height * geo.size.height))
-                        .position(x: frame.midX * geo.size.width, y: frame.midY * geo.size.height)
-                }
-
-                Circle()
-                    .fill(Color.primary)
-                    .frame(width: 5, height: 5)
-                    .shadow(radius: 2)
-                    .position(x: desktop.cursor.x * geo.size.width, y: desktop.cursor.y * geo.size.height)
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.14), lineWidth: 0.8)
-        )
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Desktop overview")
     }
 }
 
