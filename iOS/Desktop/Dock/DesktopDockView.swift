@@ -1,9 +1,12 @@
 import SwiftUI
 
 /// Floating iPadOS-inspired dock on the external display.
+/// Uses the shared semantic shell tokens so the dock follows System/Light/Dark,
+/// Reduce Transparency, and minimum touch-target conventions consistently.
 struct DesktopDockView: View {
     @EnvironmentObject private var desktop: DesktopSession
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var onOpenLauncher: () -> Void
 
     private let pinnedApps: [(title: String, icon: String, color: Color)] = [
@@ -15,47 +18,58 @@ struct DesktopDockView: View {
     ]
 
     var body: some View {
-        HStack(spacing: KamihiTheme.Spacing.xs) {
+        HStack(spacing: DesktopShellMetrics.compactSpacing) {
             Button(action: onOpenLauncher) {
                 Image(systemName: "square.grid.2x2.fill")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.system(size: DesktopShellMetrics.compactIcon, weight: .semibold))
                     .foregroundStyle(.primary)
-                    .frame(width: 38, height: 38)
-                    .background(KamihiTheme.Colors.activeControlFill, in: Circle())
+                    .frame(
+                        width: DesktopShellMetrics.minimumHitTarget,
+                        height: DesktopShellMetrics.minimumHitTarget
+                    )
+                    .background(
+                        DesktopShellPalette.elevatedCanvas.opacity(reduceTransparency ? 1 : 0.72),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    )
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Open App Library")
+            .accessibilityHint("Shows all Kamihi Desktop apps")
 
-            Divider().frame(height: 24)
+            Divider()
+                .frame(height: 28)
+                .accessibilityHidden(true)
 
             ForEach(pinnedApps, id: \.title) { app in
                 dockAppTile(title: app.title, icon: app.icon, color: app.color)
             }
 
-            Spacer(minLength: 12)
+            Spacer(minLength: DesktopShellMetrics.standardSpacing)
 
-            HStack(spacing: KamihiTheme.Spacing.xs) {
+            HStack(spacing: DesktopShellMetrics.compactSpacing) {
+                Image(systemName: "display")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+
                 Text(Date(), style: .time)
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
-
-                Circle()
-                    .fill(Color.green)
-                    .frame(width: 7, height: 7)
-                    .accessibilityHidden(true)
             }
-            .padding(.trailing, 6)
+            .frame(minHeight: DesktopShellMetrics.minimumHitTarget)
+            .padding(.trailing, 4)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("External display, current time")
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, DesktopShellMetrics.standardSpacing)
         .padding(.vertical, 6)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(KamihiTheme.Colors.subtleBorder, lineWidth: 1))
+        .desktopShellChrome(cornerRadius: 28)
         .shadow(
-            color: Color.black.opacity(colorScheme == .dark ? 0.34 : 0.16),
-            radius: 14,
+            color: Color.black.opacity(reduceTransparency ? 0 : (colorScheme == .dark ? 0.26 : 0.12)),
+            radius: reduceTransparency ? 0 : 12,
             x: 0,
-            y: 7
+            y: reduceTransparency ? 0 : 6
         )
     }
 
@@ -66,17 +80,29 @@ struct DesktopDockView: View {
 
         return VStack(spacing: 2) {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: DesktopShellMetrics.compactIcon, weight: .semibold))
                 .foregroundStyle(color)
-                .frame(width: 38, height: 38)
-                .background(
-                    isActive ? KamihiTheme.Colors.activeControlFill : KamihiTheme.Colors.controlFill,
-                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .frame(
+                    width: DesktopShellMetrics.minimumHitTarget,
+                    height: DesktopShellMetrics.minimumHitTarget
                 )
+                .background(
+                    isActive
+                        ? DesktopShellPalette.elevatedCanvas
+                        : DesktopShellPalette.secondaryCanvas.opacity(reduceTransparency ? 1 : 0.62),
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                )
+                .overlay {
+                    if isActive {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(DesktopShellPalette.accent.opacity(0.36), lineWidth: 1)
+                    }
+                }
 
-            Circle()
-                .fill(isRunning ? (isMinimized ? Color.orange : Color.primary) : Color.clear)
-                .frame(width: 4, height: 4)
+            Capsule()
+                .fill(isRunning ? (isMinimized ? Color.orange : DesktopShellPalette.label) : Color.clear)
+                .frame(width: isActive ? 10 : 5, height: 4)
+                .accessibilityHidden(true)
         }
         .contentShape(Rectangle())
         .onTapGesture(count: 2) {
