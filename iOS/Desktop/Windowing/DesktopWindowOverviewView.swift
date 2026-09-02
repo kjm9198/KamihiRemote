@@ -54,11 +54,24 @@ struct DesktopWindowOverviewView: View {
                     Button("Close") { dismiss() }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Button("Restore All") {
-                        restoreAllOpenWindows()
+                    Menu {
+                        Button {
+                            focusActiveWindow()
+                        } label: {
+                            Label("Focus Active Window", systemImage: "rectangle.inset.filled")
+                        }
+                        .disabled(!canFocusActiveWindow)
+
+                        Button {
+                            restoreAllOpenWindows()
+                        } label: {
+                            Label("Restore All Windows", systemImage: "rectangle.3.group")
+                        }
+                        .disabled(!desktop.windows.contains(where: { $0.isMinimized }))
+                    } label: {
+                        Label("Arrange", systemImage: "rectangle.3.group.bubble")
                     }
-                    .disabled(!desktop.windows.contains(where: { $0.isMinimized }))
-                    .accessibilityHint("Restores minimized windows without changing your apps or workspace")
+                    .accessibilityHint("Focus the active window or restore minimized windows without changing workspace")
                 }
             }
         }
@@ -310,9 +323,31 @@ struct DesktopWindowOverviewView: View {
         }
     }
 
+    private var canFocusActiveWindow: Bool {
+        guard let activeID = desktop.activeWindowID,
+              desktop.windows.contains(where: { $0.id == activeID && !$0.isMinimized }) else { return false }
+        return desktop.windows.contains(where: { $0.id != activeID && !$0.isMinimized })
+    }
+
     private func activateFromOverview(_ id: UUID) {
         desktop.restoreAndActivate(id)
         dismiss()
+    }
+
+    /// Minimizes only the other currently-visible windows. The active window keeps
+    /// its exact geometry/maximized state, and no workspace/profile is launched or
+    /// replaced. This makes a crowded desktop temporarily distraction-free while
+    /// preserving spatial state for Restore All.
+    private func focusActiveWindow() {
+        guard let activeID = desktop.activeWindowID else { return }
+        let otherVisibleIDs = desktop.windows
+            .filter { $0.id != activeID && !$0.isMinimized }
+            .map(\.id)
+
+        for id in otherVisibleIDs {
+            desktop.minimize(id)
+        }
+        desktop.restoreAndActivate(activeID)
     }
 
     private func restoreAllOpenWindows() {
