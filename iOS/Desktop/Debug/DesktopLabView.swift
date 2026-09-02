@@ -7,6 +7,8 @@ struct DesktopLabView: View {
     @EnvironmentObject private var router: AppModeRouter
     @EnvironmentObject private var desktop: DesktopSession
 
+    private let readinessKey = "kamihi.desktop.lab.ready"
+
     var body: some View {
         GeometryReader { geo in
             let landscape = geo.size.width > geo.size.height
@@ -45,6 +47,12 @@ struct DesktopLabView: View {
         .background(KamihiTheme.Colors.surfaceBackground.ignoresSafeArea())
         .onAppear {
             bootDesktopIfNeeded()
+            signalReadinessAfterInitialRender()
+        }
+        .onDisappear {
+            #if DEBUG
+            UserDefaults.standard.removeObject(forKey: readinessKey)
+            #endif
         }
     }
 
@@ -95,5 +103,21 @@ struct DesktopLabView: View {
         // Desktop Lab mirrors real startup behavior: no surprise Vibe/browser
         // windows. Resume may restore explicitly; every other profile stays clean.
         DesktopLaunchProfile.selected.apply(to: desktop)
+    }
+
+    /// The CI screenshot harness waits on this DEBUG-only marker instead of a
+    /// blind sleep. Yielding through two main-actor turns and a short delay gives
+    /// SwiftUI/CoreAnimation a deterministic opportunity to commit the first Lab
+    /// frame before simctl captures visual evidence.
+    private func signalReadinessAfterInitialRender() {
+        #if DEBUG
+        UserDefaults.standard.removeObject(forKey: readinessKey)
+        Task { @MainActor in
+            await Task.yield()
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(500))
+            UserDefaults.standard.set(true, forKey: readinessKey)
+        }
+        #endif
     }
 }
