@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import WebKit
 
 /// Desktop browser with persistent tabs and one retained WKWebView per tab.
@@ -235,13 +236,49 @@ final class DesktopBrowserController: ObservableObject {
     private var delegates: [UUID: DesktopBrowserNavigationDelegate] = [:]
     private var activationOrder: [UUID] = []
     private var activeTabID: UUID?
+    private var lifecycleObservers: [NSObjectProtocol] = []
 
     /// Keep a small warm set for instant switching, but do not let long browsing
-    /// sessions retain an unbounded number of WebKit renderer processes. Tab URL
+    /// sessions retain an unbounded number of WebKit renderer processes. Under
+    /// Low Power Mode we intentionally keep only two warm renderers. Tab URL
     /// metadata remains in DesktopBrowserState and website data remains in
     /// WKWebsiteDataStore.default(), so an evicted tab can be recreated without
     /// Kamihi reading or persisting credentials itself.
-    private let maximumRetainedWebViews = 6
+    private var maximumRetainedWebViews: Int {
+        ProcessInfo.processInfo.isLowPowerModeEnabled ? 2 : 6
+    }
+
+    init() {
+        let center = NotificationCenter.default
+        lifecycleObservers.append(
+            center.addObserver(
+                forName: UIApplication.didReceiveMemoryWarningNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.releaseInactiveWebViews()
+                }
+            }
+        )
+        lifecycleObservers.append(
+            center.addObserver(
+                forName: UIApplication.didEnterBackgroundNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.releaseInactiveWebViews()
+                }
+            }
+        )
+    }
+
+    deinit {
+        for observer in lifecycleObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
 
     func present(tabID: UUID, url: URL?, in container: UIView, state: DesktopBrowserState) {
         let webView = webView(for: tabID, state: state)
@@ -353,6 +390,18 @@ final class DesktopBrowserController: ObservableObject {
 
             activationOrder.removeAll(where: { $0 == evictionID })
             releaseWebView(for: evictionID)
+        }
+    }
+
+    /// Memory pressure and backgrounding should not keep inactive WebKit renderer
+    /// processes alive. Keep the active page intact so foregrounding remains fast;
+    /// inactive tabs retain only their persisted URL/title/session metadata and are
+    /// lazily recreated on selection.
+    private func releaseInactiveWebViews() {
+        let inactiveIDs = webViews.keys.filter { $0 != activeTabID }
+        for id in inactiveIDs {
+            activationOrder.removeAll(where: { $0 == id })
+            releaseWebView(for: id)
         }
     }
 
