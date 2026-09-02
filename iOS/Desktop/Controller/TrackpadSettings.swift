@@ -21,7 +21,7 @@ public enum DesktopPointerProfile: String, CaseIterable, Identifiable {
     public var sensitivity: Double {
         switch self {
         case .precision: return 0.92
-        case .balanced: return 1.20
+        case .balanced: return 1.12
         case .fast: return 1.55
         }
     }
@@ -29,7 +29,7 @@ public enum DesktopPointerProfile: String, CaseIterable, Identifiable {
     public var acceleration: Double {
         switch self {
         case .precision: return 0.45
-        case .balanced: return 1.00
+        case .balanced: return 0.82
         case .fast: return 1.35
         }
     }
@@ -85,13 +85,31 @@ public final class TrackpadSettings: ObservableObject {
     private init() {
         let defaults = UserDefaults.standard
 
+        // Pointer tuning v2 is optimized for the trackpad-first phone layout. It
+        // lowers only the old stock Balanced values so slow targeting feels more
+        // direct while fast sweeps still receive velocity acceleration. Any user
+        // who customized either value keeps that custom tuning unchanged.
+        let oldBalancedSensitivity = 1.20
+        let oldBalancedAcceleration = 1.00
+        let pointerTuningVersion = defaults.integer(forKey: "kamihi.desktop.pointerTuningVersion")
+        let savedSensitivity = defaults.object(forKey: "kamihi.desktop.pointerSensitivity") as? Double
+        let savedAcceleration = defaults.object(forKey: "kamihi.desktop.pointerAcceleration") as? Double
+        let shouldMigrateStockBalanced = pointerTuningVersion < 2 &&
+            (savedSensitivity == nil || abs((savedSensitivity ?? oldBalancedSensitivity) - oldBalancedSensitivity) < 0.001) &&
+            (savedAcceleration == nil || abs((savedAcceleration ?? oldBalancedAcceleration) - oldBalancedAcceleration) < 0.001)
+
+        let resolvedSensitivity = shouldMigrateStockBalanced
+            ? DesktopPointerProfile.balanced.sensitivity
+            : (savedSensitivity ?? DesktopPointerProfile.balanced.sensitivity)
+        let resolvedAcceleration = shouldMigrateStockBalanced
+            ? DesktopPointerProfile.balanced.acceleration
+            : (savedAcceleration ?? DesktopPointerProfile.balanced.acceleration)
+
         // Clamp persisted values on load. This protects the Desktop controller from
         // stale/bad defaults (including values written by older development builds)
         // that could otherwise make the software pointer effectively unusable.
-        let savedSensitivity = defaults.object(forKey: "kamihi.desktop.pointerSensitivity") as? Double
-        let savedAcceleration = defaults.object(forKey: "kamihi.desktop.pointerAcceleration") as? Double
-        self.pointerSensitivity = Self.normalizedPointerSensitivity(savedSensitivity ?? DesktopPointerProfile.balanced.sensitivity)
-        self.pointerAcceleration = Self.normalizedPointerAcceleration(savedAcceleration ?? DesktopPointerProfile.balanced.acceleration)
+        self.pointerSensitivity = Self.normalizedPointerSensitivity(resolvedSensitivity)
+        self.pointerAcceleration = Self.normalizedPointerAcceleration(resolvedAcceleration)
 
         // v2 raises the baseline scroll travel so short two-finger strokes feel
         // useful on a desktop canvas. Existing faster custom values are kept.
@@ -118,6 +136,9 @@ public final class TrackpadSettings: ObservableObject {
             self.cursorStyle = .kamihiDot
         }
 
+        if pointerTuningVersion < 2 {
+            defaults.set(2, forKey: "kamihi.desktop.pointerTuningVersion")
+        }
         if scrollTuningVersion < 2 {
             defaults.set(2, forKey: "kamihi.desktop.scrollTuningVersion")
         }
