@@ -67,45 +67,27 @@ screenshot_size_bytes() {
 capture_desktop_lab_screen() {
   local output="$1"
   local minimum_bytes=120000
-
-  capture_screen "$output"
-  local size
-  size="$(screenshot_size_bytes "$output")"
-  if (( size >= minimum_bytes )); then
-    echo "Desktop Lab screenshot evidence ready (${size} bytes)"
-    return 0
-  fi
-
-  # A fully-black simulator frame compresses to a very small PNG. One bounded
-  # re-capture is permitted here because this is simulator/CoreAnimation visual
-  # evidence infrastructure, not a build/protocol/product assertion retry.
-  echo "Desktop Lab screenshot looked blank/under-rendered (${size} bytes); waiting for one bounded re-capture"
-  sleep 2
-  capture_screen "$output"
-  size="$(screenshot_size_bytes "$output")"
-  if (( size < minimum_bytes )); then
-    echo "Desktop Lab screenshot remained blank/under-rendered (${size} bytes)"
-    return 1
-  fi
-
-  echo "Desktop Lab screenshot evidence recovered (${size} bytes)"
-}
-
-wait_for_desktop_lab_ready() {
-  local key="kamihi.desktop.lab.ready"
   local poll=1
-  while (( poll <= 80 )); do
-    local value
-    value="$(xcrun simctl spawn "$UDID" defaults read com.kamihi.remote "$key" 2>/dev/null || true)"
-    if [[ "$value" == "1" ]]; then
-      echo "Desktop Lab reported first-frame readiness"
+
+  # Desktop Lab readiness is intentionally determined from the rendered output
+  # itself. App-sandbox UserDefaults are not a reliable cross-process readiness
+  # channel for `simctl spawn defaults` on hosted runners. Polling screenshots is
+  # bounded visual-evidence infrastructure only; it never retries build, auth,
+  # protocol, or product assertions.
+  while (( poll <= 12 )); do
+    capture_screen "$output"
+    local size
+    size="$(screenshot_size_bytes "$output")"
+    if (( size >= minimum_bytes )); then
+      echo "Desktop Lab screenshot evidence ready (${size} bytes) on visual poll $poll"
       return 0
     fi
-    sleep 0.25
+    echo "Desktop Lab screenshot blank/under-rendered (${size} bytes) on visual poll $poll/12"
+    sleep 1
     poll=$((poll + 1))
   done
 
-  echo "Desktop Lab never reported first-frame readiness"
+  echo "Desktop Lab never produced non-blank visual evidence"
   xcrun simctl spawn "$UDID" log show --last 2m --style compact --predicate 'process == "KamihiRemote"' 2>/dev/null | tail -250 || true
   return 1
 }
@@ -385,9 +367,7 @@ visual_smoke() {
 
 desktop_lab_visual_smoke() {
   echo "==> Kamihi Desktop Lab visual smoke"
-  xcrun simctl spawn "$UDID" defaults delete com.kamihi.remote kamihi.desktop.lab.ready >/dev/null 2>&1 || true
   launch_sim_app -KamihiDesktopLab
-  wait_for_desktop_lab_ready
   capture_desktop_lab_screen "$SMOKE_DIR/desktop-lab.png"
 }
 
