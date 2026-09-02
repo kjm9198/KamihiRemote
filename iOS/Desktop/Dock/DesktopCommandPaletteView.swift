@@ -5,6 +5,7 @@ struct DesktopCommandPaletteView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var desktop: DesktopSession
     @State private var query = ""
+    @State private var showInputGuide = false
 
     private struct CommandItem: Identifiable {
         let id = UUID()
@@ -68,6 +69,7 @@ struct DesktopCommandPaletteView: View {
                                     .font(.system(size: 16, weight: .semibold))
                                     .foregroundStyle(Color.cyan)
                                     .frame(width: 28)
+                                    .accessibilityHidden(true)
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(command.title)
@@ -83,9 +85,12 @@ struct DesktopCommandPaletteView: View {
                                 Image(systemName: "arrow.turn.down.left")
                                     .font(.system(size: 11))
                                     .foregroundStyle(.white.opacity(0.3))
+                                    .accessibilityHidden(true)
                             }
                             .padding(.vertical, 4)
                         }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityHint("Runs this desktop command")
                         .listRowBackground(Color(red: 0.12, green: 0.14, blue: 0.19))
                     }
                 }
@@ -98,7 +103,108 @@ struct DesktopCommandPaletteView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
+
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showInputGuide = true
+                    } label: {
+                        Image(systemName: "keyboard.badge.ellipsis")
+                    }
+                    .accessibilityLabel("Keyboard and gesture guide")
+                    .accessibilityHint("Shows the available phone gestures and hardware keyboard controls for Kamihi Desktop")
+                }
+            }
+            .sheet(isPresented: $showInputGuide) {
+                DesktopInputGuideView()
             }
         }
+    }
+}
+
+/// Discoverable, VoiceOver-friendly reference for the normal Kamihi Desktop input model.
+/// Keep this limited to controls that are actually available in the Desktop-first flow.
+private struct DesktopInputGuideView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    private struct GuideItem: Identifiable {
+        let id = UUID()
+        let symbol: String
+        let title: String
+        let detail: String
+    }
+
+    private let trackpadItems = [
+        GuideItem(symbol: "hand.point.up.left", title: "One finger", detail: "Move the pointer. Drag a title bar to move a window."),
+        GuideItem(symbol: "hand.draw", title: "Two fingers", detail: "Scroll horizontally or vertically. Drag on a window edge to resize."),
+        GuideItem(symbol: "cursorarrow.click.2", title: "Two-finger tap", detail: "Open the context menu for the item under the pointer."),
+        GuideItem(symbol: "rectangle.stack", title: "Three fingers up", detail: "Open Window Overview."),
+        GuideItem(symbol: "arrow.left.and.right", title: "Three fingers left or right", detail: "Cycle backward or forward through open desktop windows.")
+    ]
+
+    private let phoneItems = [
+        GuideItem(symbol: "square.grid.2x2", title: "Desktop preview", detail: "Double-tap the preview to open the App Library."),
+        GuideItem(symbol: "keyboard", title: "Keyboard", detail: "Use the Keyboard control to type into the active supported desktop app."),
+        GuideItem(symbol: "scope", title: "Precision Mode", detail: "Reduce pointer speed when selecting small desktop targets."),
+        GuideItem(symbol: "iphone.and.arrow.forward", title: "Continue on iPhone", detail: "Use touch on the phone for authentication, CAPTCHA, file picking, and other iOS-owned flows.")
+    ]
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(trackpadItems) { item in
+                        guideRow(item)
+                    }
+                } header: {
+                    Text("Trackpad gestures")
+                } footer: {
+                    Text("Gesture actions operate only inside Kamihi Desktop. They do not take over iOS system input.")
+                }
+
+                Section("Phone controls") {
+                    ForEach(phoneItems) { item in
+                        guideRow(item)
+                    }
+                }
+
+                Section {
+                    Label("Open the Command Palette to search available app, window, and workspace actions.", systemImage: "command")
+                        .font(.body)
+                        .accessibilityElement(children: .combine)
+                } header: {
+                    Text("Hardware keyboard")
+                } footer: {
+                    Text("Kamihi uses public iOS keyboard routing. System-reserved shortcuts remain owned by iOS.")
+                }
+            }
+            .navigationTitle("Keyboard & Gestures")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func guideRow(_ item: GuideItem) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: item.symbol)
+                .font(.title3)
+                .frame(width: 30)
+                .foregroundStyle(.tint)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.title)
+                    .font(.headline)
+                Text(item.detail)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
     }
 }
