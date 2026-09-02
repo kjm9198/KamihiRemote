@@ -59,6 +59,57 @@ capture_screen() {
   return 1
 }
 
+screenshot_size_bytes() {
+  local path="$1"
+  stat -f '%z' "$path" 2>/dev/null || stat -c '%s' "$path"
+}
+
+capture_desktop_lab_screen() {
+  local output="$1"
+  local minimum_bytes=120000
+
+  capture_screen "$output"
+  local size
+  size="$(screenshot_size_bytes "$output")"
+  if (( size >= minimum_bytes )); then
+    echo "Desktop Lab screenshot evidence ready (${size} bytes)"
+    return 0
+  fi
+
+  # A fully-black simulator frame compresses to a very small PNG. One bounded
+  # re-capture is permitted here because this is simulator/CoreAnimation visual
+  # evidence infrastructure, not a build/protocol/product assertion retry.
+  echo "Desktop Lab screenshot looked blank/under-rendered (${size} bytes); waiting for one bounded re-capture"
+  sleep 2
+  capture_screen "$output"
+  size="$(screenshot_size_bytes "$output")"
+  if (( size < minimum_bytes )); then
+    echo "Desktop Lab screenshot remained blank/under-rendered (${size} bytes)"
+    return 1
+  fi
+
+  echo "Desktop Lab screenshot evidence recovered (${size} bytes)"
+}
+
+wait_for_desktop_lab_ready() {
+  local key="kamihi.desktop.lab.ready"
+  local poll=1
+  while (( poll <= 80 )); do
+    local value
+    value="$(xcrun simctl spawn "$UDID" defaults read com.kamihi.remote "$key" 2>/dev/null || true)"
+    if [[ "$value" == "1" ]]; then
+      echo "Desktop Lab reported first-frame readiness"
+      return 0
+    fi
+    sleep 0.25
+    poll=$((poll + 1))
+  done
+
+  echo "Desktop Lab never reported first-frame readiness"
+  xcrun simctl spawn "$UDID" log show --last 2m --style compact --predicate 'process == "KamihiRemote"' 2>/dev/null | tail -250 || true
+  return 1
+}
+
 launch_sim_app() {
   local attempt=1
   xcrun simctl terminate "$UDID" com.kamihi.remote >/dev/null 2>&1 || true
@@ -332,9 +383,17 @@ visual_smoke() {
   capture_screen "$SMOKE_DIR/$screenshot"
 }
 
+desktop_lab_visual_smoke() {
+  echo "==> Kamihi Desktop Lab visual smoke"
+  xcrun simctl spawn "$UDID" defaults delete com.kamihi.remote kamihi.desktop.lab.ready >/dev/null 2>&1 || true
+  launch_sim_app -KamihiDesktopLab
+  wait_for_desktop_lab_ready
+  capture_desktop_lab_screen "$SMOKE_DIR/desktop-lab.png"
+}
+
 # First-class user-facing surfaces.
 visual_smoke "Mode chooser visual smoke" 2 "mode-chooser.png" -KamihiModeChooser
-visual_smoke "Kamihi Desktop Lab visual smoke" 4 "desktop-lab.png" -KamihiDesktopLab
+desktop_lab_visual_smoke
 
 # Hidden legacy Remote-for-Mac paths stay covered as regression protection even
 # though they are no longer normal product-launch compartments.
