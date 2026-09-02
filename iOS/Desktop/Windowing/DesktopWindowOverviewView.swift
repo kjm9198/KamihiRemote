@@ -52,7 +52,7 @@ struct DesktopWindowOverviewView: View {
                     Button("Restore All") {
                         restoreAllOpenWindows()
                     }
-                    .disabled(!desktop.windows.contains(where: \ .isMinimized))
+                    .disabled(!desktop.windows.contains(where: { $0.isMinimized }))
                     .accessibilityHint("Restores minimized windows without changing your apps or workspace")
                 }
             }
