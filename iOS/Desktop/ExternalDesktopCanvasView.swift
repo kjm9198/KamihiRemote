@@ -8,6 +8,7 @@ struct ExternalDesktopCanvasView: View {
     @StateObject private var appearance = DesktopAppearanceSettings.shared
     @StateObject private var power = DesktopPowerMonitor.shared
     @State private var showLauncher = false
+    @State private var showDisplayCalibrationGuides = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
@@ -25,9 +26,26 @@ struct ExternalDesktopCanvasView: View {
                     .padding(.leading, insets.leading)
                     .padding(.bottom, insets.bottom)
                     .padding(.trailing, insets.trailing)
+
+                if shouldShowDisplayCalibrationGuides {
+                    DisplayCalibrationGuideView(
+                        safeInsets: insets,
+                        capabilitySummary: display.capabilitySummary,
+                        calibrationSummary: display.calibrationSummary
+                    )
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                    .zIndex(100)
+                }
             }
         }
         .preferredColorScheme(appearance.preferredColorScheme)
+        .onAppear {
+            presentDisplayCalibrationGuides()
+        }
+        .onChange(of: display.metricsRevision) { _, _ in
+            presentDisplayCalibrationGuides()
+        }
     }
 
     private var desktopSurface: some View {
@@ -92,6 +110,27 @@ struct ExternalDesktopCanvasView: View {
         }
     }
 
+    /// Show an explicit edge/corner test pattern briefly whenever the desktop canvas
+    /// appears or iOS reports new display metrics. Persisted safe margins keep the
+    /// guide visible so a user can tune overscan while watching the external display.
+    /// This never changes the negotiated resolution or refresh rate.
+    private var shouldShowDisplayCalibrationGuides: Bool {
+        showDisplayCalibrationGuides
+            || display.horizontalSafeMargin > 0
+            || display.verticalSafeMargin > 0
+    }
+
+    private func presentDisplayCalibrationGuides() {
+        let revision = display.metricsRevision
+        showDisplayCalibrationGuides = true
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(8))
+            guard display.metricsRevision == revision else { return }
+            showDisplayCalibrationGuides = false
+        }
+    }
+
     /// Treat system Low Power Mode and serious/critical thermal pressure like
     /// Reduce Motion for purely decorative desktop effects. Pointer movement,
     /// window manipulation and WebKit remain responsive; only non-essential
@@ -143,6 +182,92 @@ struct ExternalDesktopCanvasView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(KamihiTheme.Colors.surfaceBackground)
+        }
+    }
+}
+
+/// High-contrast pattern for checking whether iOS-negotiated external output is
+/// fully visible through the glasses. It is intentionally geometry-only: no mode
+/// switching, refresh forcing, or RayNeo-private API assumptions.
+private struct DisplayCalibrationGuideView: View {
+    let safeInsets: EdgeInsets
+    let capabilitySummary: String
+    let calibrationSummary: String
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                calibrationGrid(in: geo.size)
+                    .stroke(Color.white.opacity(0.34), style: StrokeStyle(lineWidth: 1, dash: [7, 7]))
+
+                Rectangle()
+                    .strokeBorder(Color.black.opacity(0.75), lineWidth: 5)
+                    .overlay {
+                        Rectangle()
+                            .strokeBorder(Color.white.opacity(0.96), lineWidth: 2)
+                    }
+
+                cornerMarks(in: geo.size)
+                    .stroke(Color.white, style: StrokeStyle(lineWidth: 3, lineCap: .square))
+                    .shadow(color: .black.opacity(0.8), radius: 1)
+
+                Rectangle()
+                    .strokeBorder(Color.white.opacity(0.72), style: StrokeStyle(lineWidth: 2, dash: [10, 6]))
+                    .padding(.top, safeInsets.top)
+                    .padding(.leading, safeInsets.leading)
+                    .padding(.bottom, safeInsets.bottom)
+                    .padding(.trailing, safeInsets.trailing)
+
+                VStack(spacing: 4) {
+                    Text("DISPLAY CHECK")
+                        .font(.caption.weight(.bold))
+                    Text(capabilitySummary)
+                        .font(.caption2.monospacedDigit())
+                    Text(calibrationSummary)
+                        .font(.caption2)
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.black.opacity(0.72), in: Capsule())
+                .padding(.top, 14)
+                .frame(maxHeight: .infinity, alignment: .top)
+            }
+        }
+    }
+
+    private func calibrationGrid(in size: CGSize) -> Path {
+        Path { path in
+            for fraction in [0.25, 0.5, 0.75] as [CGFloat] {
+                let x = size.width * fraction
+                path.move(to: CGPoint(x: x, y: 0))
+                path.addLine(to: CGPoint(x: x, y: size.height))
+
+                let y = size.height * fraction
+                path.move(to: CGPoint(x: 0, y: y))
+                path.addLine(to: CGPoint(x: size.width, y: y))
+            }
+        }
+    }
+
+    private func cornerMarks(in size: CGSize) -> Path {
+        let length: CGFloat = min(42, min(size.width, size.height) * 0.08)
+        let inset: CGFloat = 5
+
+        return Path { path in
+            let corners: [(CGPoint, CGFloat, CGFloat)] = [
+                (CGPoint(x: inset, y: inset), 1, 1),
+                (CGPoint(x: size.width - inset, y: inset), -1, 1),
+                (CGPoint(x: inset, y: size.height - inset), 1, -1),
+                (CGPoint(x: size.width - inset, y: size.height - inset), -1, -1)
+            ]
+
+            for (point, xDirection, yDirection) in corners {
+                path.move(to: point)
+                path.addLine(to: CGPoint(x: point.x + length * xDirection, y: point.y))
+                path.move(to: point)
+                path.addLine(to: CGPoint(x: point.x, y: point.y + length * yDirection))
+            }
         }
     }
 }
