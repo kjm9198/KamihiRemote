@@ -80,27 +80,46 @@ enum DesktopShellPalette {
 }
 
 struct DesktopShellChromeModifier: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var cornerRadius: CGFloat = DesktopShellMetrics.chromeCornerRadius
 
     func body(content: Content) -> some View {
         content
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .background {
+                if reduceTransparency {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(DesktopShellPalette.secondaryCanvas)
+                } else {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(.regularMaterial)
+                }
+            }
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(DesktopShellPalette.separator.opacity(0.45), lineWidth: 0.5)
+                    .stroke(
+                        DesktopShellPalette.separator.opacity(reduceTransparency ? 0.72 : 0.45),
+                        lineWidth: reduceTransparency ? 1 : 0.5
+                    )
             }
     }
 }
 
 struct DesktopShellElevatedSurfaceModifier: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var cornerRadius: CGFloat = DesktopShellMetrics.windowCornerRadius
 
     func body(content: Content) -> some View {
         content
-            .background(DesktopShellPalette.secondaryCanvas, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .background(
+                reduceTransparency ? DesktopShellPalette.canvas : DesktopShellPalette.secondaryCanvas,
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(DesktopShellPalette.separator.opacity(0.35), lineWidth: 0.5)
+                    .stroke(
+                        DesktopShellPalette.separator.opacity(reduceTransparency ? 0.62 : 0.35),
+                        lineWidth: reduceTransparency ? 1 : 0.5
+                    )
             }
     }
 }
@@ -125,6 +144,8 @@ enum DesktopShellDesignSystemSelfCheck {
         precondition(DesktopShellMetrics.minimumHitTarget >= 44)
         precondition(Set(DesktopShellAppearance.Theme.allCases.map(\.rawValue)).count == 3)
         precondition(DesktopShellAppearance.Theme.system.preferredColorScheme == nil)
+        precondition(DesktopShellMetrics.chromeCornerRadius > 0)
+        precondition(DesktopShellMetrics.windowCornerRadius >= DesktopShellMetrics.chromeCornerRadius)
         print("[DesktopShellDesignSystemSelfCheck] PASS")
     }
 }
