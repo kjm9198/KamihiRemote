@@ -27,13 +27,19 @@ struct ContextualControllerToolbar: View {
     }
 
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            expandedToolbar
+            narrowToolbar
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .frame(minHeight: controlSize + 8)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var expandedToolbar: some View {
         HStack(spacing: 7) {
-            compactButton(
-                symbol: "keyboard",
-                label: "Keyboard",
-                hint: "Shows or hides the phone keyboard for the active desktop app.",
-                action: onToggleKeyboard
-            )
+            keyboardButton
 
             compactButton(
                 symbol: "square.grid.2x2.fill",
@@ -50,33 +56,66 @@ struct ContextualControllerToolbar: View {
 
             Spacer(minLength: 2)
 
-            Button {
-                engine.isPrecisionMode.toggle()
-                if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
-            } label: {
-                Image(systemName: engine.isPrecisionMode ? "scope" : "circle.dotted")
-                    .font(.system(size: symbolSize, weight: .semibold))
-                    .foregroundStyle(engine.isPrecisionMode ? Color.accentColor : Color.primary.opacity(0.82))
-                    .frame(width: controlSize, height: controlSize)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: .circle)
-            .accessibilityLabel(engine.isPrecisionMode ? "Disable Precision Mode" : "Enable Precision Mode")
-            .accessibilityValue(engine.isPrecisionMode ? "On" : "Off")
-            .accessibilityHint("Precision Mode reduces pointer speed for small desktop targets.")
+            precisionButton
 
-            compactButton(
-                symbol: "ellipsis",
-                label: "Command Palette and Actions",
-                hint: "Opens searchable desktop commands and additional actions.",
-                action: onOpenCommandPalette
-            )
+            commandButton
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .frame(minHeight: controlSize + 8)
-        .accessibilityElement(children: .contain)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    /// Preserves full-size 44 pt controls when the phone is too narrow for the
+    /// expanded rail. App-specific actions collapse into one contextual menu
+    /// instead of shrinking or pushing controls beyond the screen edge.
+    private var narrowToolbar: some View {
+        HStack(spacing: 7) {
+            keyboardButton
+            windowSwitcher
+
+            Spacer(minLength: 2)
+
+            contextualMenu
+
+            Spacer(minLength: 2)
+
+            precisionButton
+            commandButton
+        }
+    }
+
+    private var keyboardButton: some View {
+        compactButton(
+            symbol: "keyboard",
+            label: "Keyboard",
+            hint: "Shows or hides the phone keyboard for the active desktop app.",
+            action: onToggleKeyboard
+        )
+    }
+
+    private var commandButton: some View {
+        compactButton(
+            symbol: "ellipsis",
+            label: "Command Palette and Actions",
+            hint: "Opens searchable desktop commands and additional actions.",
+            action: onOpenCommandPalette
+        )
+    }
+
+    private var precisionButton: some View {
+        Button {
+            engine.isPrecisionMode.toggle()
+            if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+        } label: {
+            Image(systemName: engine.isPrecisionMode ? "scope" : "circle.dotted")
+                .font(.system(size: symbolSize, weight: .semibold))
+                .foregroundStyle(engine.isPrecisionMode ? Color.accentColor : Color.primary.opacity(0.82))
+                .frame(width: controlSize, height: controlSize)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .circle)
+        .accessibilityLabel(engine.isPrecisionMode ? "Disable Precision Mode" : "Enable Precision Mode")
+        .accessibilityValue(engine.isPrecisionMode ? "On" : "Off")
+        .accessibilityHint("Precision Mode reduces pointer speed for small desktop targets.")
     }
 
     private var windowSwitcher: some View {
@@ -131,6 +170,76 @@ struct ContextualControllerToolbar: View {
         .accessibilityLabel("Switch Desktop Window")
         .accessibilityValue(openWindows.isEmpty ? "No open windows" : "\(openWindows.count) open")
         .accessibilityHint("Switches directly to an open window or shows all windows.")
+    }
+
+    private var contextualMenu: some View {
+        Menu {
+            contextualMenuItems
+        } label: {
+            Image(systemName: contextualMenuSymbol)
+                .font(.system(size: symbolSize, weight: .semibold))
+                .foregroundStyle(Color.primary.opacity(0.86))
+                .frame(width: controlSize, height: controlSize)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .circle)
+        .accessibilityLabel("Active App Actions")
+        .accessibilityHint("Shows compact actions for the active desktop app without reducing touch target size.")
+    }
+
+    private var contextualMenuSymbol: String {
+        switch desktop.activeWindow?.title {
+        case "Browser": return "safari"
+        case "YouTube": return "play.rectangle.fill"
+        case "ChatGPT": return "text.bubble.fill"
+        case "Notes": return "note.text"
+        default: return "rectangle.on.rectangle"
+        }
+    }
+
+    @ViewBuilder
+    private var contextualMenuItems: some View {
+        if let active = desktop.activeWindow {
+            switch active.title {
+            case "Browser":
+                Button { desktop.goBackInActiveBrowser() } label: {
+                    Label("Back", systemImage: "chevron.left")
+                }
+                Button { desktop.goForwardInActiveBrowser() } label: {
+                    Label("Forward", systemImage: "chevron.right")
+                }
+                Button { onContinueOnPhone(active.id) } label: {
+                    Label("Continue on iPhone", systemImage: "iphone.and.arrow.forward")
+                }
+            case "YouTube":
+                Button { desktop.clickAtCursor() } label: {
+                    Label("Play or Pause", systemImage: "playpause.fill")
+                }
+                Button { onContinueOnPhone(active.id) } label: {
+                    Label("Continue on iPhone", systemImage: "iphone.and.arrow.forward")
+                }
+            case "ChatGPT":
+                Button(action: onToggleKeyboard) {
+                    Label("Prompt Keyboard", systemImage: "character.cursor.ibeam")
+                }
+                Button { onContinueOnPhone(active.id) } label: {
+                    Label("Continue on iPhone", systemImage: "iphone.and.arrow.forward")
+                }
+            case "Notes":
+                Button(action: onToggleKeyboard) {
+                    Label("Edit Note", systemImage: "pencil.line")
+                }
+            default:
+                Button(action: onOpenOverview) {
+                    Label("Window Overview", systemImage: "square.2.layers.3d.top.filled")
+                }
+            }
+        } else {
+            Button(action: onOpenOverview) {
+                Label("Window Overview", systemImage: "square.2.layers.3d.top.filled")
+            }
+        }
     }
 
     @ViewBuilder
