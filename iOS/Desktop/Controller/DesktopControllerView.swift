@@ -2,8 +2,8 @@ import SwiftUI
 import UIKit
 
 /// iPhone control surface for Kamihi Desktop.
-/// Normal mode prioritizes a readable desktop overview plus a compact trackpad;
-/// Full Trackpad mode turns almost the whole phone into the gesture surface.
+/// The full phone is the primary trackpad. Secondary desktop controls remain
+/// available from More instead of consuming the main gesture surface.
 struct DesktopControllerView: View {
     @EnvironmentObject private var router: AppModeRouter
     @EnvironmentObject private var desktop: DesktopSession
@@ -19,6 +19,9 @@ struct DesktopControllerView: View {
     @State private var showCommandPalette = false
     @State private var showTrackpadSettings = false
     @State private var showKeyboard = false
+    /// Keyboard input belongs to one explicit desktop window. If focus changes,
+    /// close it rather than accidentally sending the next character elsewhere.
+    @State private var keyboardWindowID: UUID?
     @State private var takeoverWindowID: UUID?
 
     var body: some View {
@@ -26,24 +29,20 @@ struct DesktopControllerView: View {
             ZStack {
                 KamihiTheme.surface.ignoresSafeArea()
 
-                if fullTrackpadMode {
-                    fullTrackpadLayout
-                } else {
-                    normalLayout(in: geo.size)
-                }
+                fullTrackpadLayout
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if showKeyboard {
-                DesktopKeyboardInputBar {
-                    setKeyboardVisible(false)
-                }
+                DesktopKeyboardInputBar(
+                    windowID: keyboardWindowID,
+                    onDismiss: { setKeyboardVisible(false) }
+                )
                 .environmentObject(desktop)
                 .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(reduceMotion ? nil : KamihiTheme.Animation.fast, value: showKeyboard)
-        .animation(reduceMotion ? nil : KamihiTheme.Animation.fast, value: fullTrackpadMode)
         .sheet(isPresented: $showLauncher) {
             DesktopAppLauncherView()
                 .environmentObject(desktop)
@@ -71,12 +70,20 @@ struct DesktopControllerView: View {
             engine.onThreeFingerSwipeUp = { showOverview = true }
             engine.onThreeFingerSwipeLeft = { desktop.cycleWindow(forward: false) }
             engine.onThreeFingerSwipeRight = { desktop.cycleWindow(forward: true) }
-            if desktop.wantsPhoneKeyboard { showKeyboard = true }
+            if desktop.wantsPhoneKeyboard { setKeyboardVisible(true) }
         }
         .onChange(of: desktop.wantsPhoneKeyboard) { _, wantsKeyboard in
-            if wantsKeyboard != showKeyboard {
-                showKeyboard = wantsKeyboard
+            if wantsKeyboard && !showKeyboard {
+                setKeyboardVisible(true)
+            } else if !wantsKeyboard && showKeyboard {
+                setKeyboardVisible(false)
             }
+        }
+        .onChange(of: desktop.activeWindowID) { oldValue, newValue in
+            guard oldValue != newValue, showKeyboard else { return }
+            // A visible software keyboard should never silently redirect text
+            // after a window switch.
+            setKeyboardVisible(false)
         }
         .onDisappear {
             engine.handleGestureCancelled(desktop: desktop)
@@ -125,46 +132,121 @@ struct DesktopControllerView: View {
         }
     }
 
+    /// The phone is a dedicated trackpad by default. Everything that is not
+    /// required while moving the pointer lives under More, so no tool rail steals
+    /// working area or thumb reach.
     private var fullTrackpadLayout: some View {
         ZStack(alignment: .top) {
             trackpadSurface(cornerRadius: 0)
                 .ignoresSafeArea()
 
             HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Full Trackpad")
-                        .font(.caption.weight(.semibold))
-                    Text(desktop.activeWindow?.title ?? "Kamihi Desktop")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+                activeDesktopStatus
 
-                Spacer()
+                Spacer(minLength: 8)
 
                 Button {
                     setKeyboardVisible(!showKeyboard)
                 } label: {
                     Image(systemName: "keyboard")
-                        .frame(width: 40, height: 40)
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: .circle)
-                .accessibilityLabel("Keyboard")
+                .accessibilityLabel(showKeyboard ? "Hide Keyboard" : "Keyboard")
+                .accessibilityHint("Types into the active desktop window.")
+                .disabled(desktop.activeWindow == nil)
 
-                Button {
-                    fullTrackpadMode = false
-                    if settings.hapticsEnabled { Haptics.touchTap() }
+                Menu {
+                    moreControllerActions
                 } label: {
-                    Image(systemName: "rectangle.compress.vertical")
-                        .frame(width: 40, height: 40)
+                    Image(systemName: "ellipsis")
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: .circle)
-                .accessibilityLabel("Exit Full Trackpad")
+                .accessibilityLabel("More Desktop Controls")
+                .accessibilityHint("Opens apps, windows, settings, and other controls.")
             }
             .padding(.horizontal, 12)
             .padding(.top, 8)
+        }
+    }
+
+    private var activeDesktopStatus: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(desktop.activeWindow?.title ?? "Kamihi Desktop")
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+            Text(desktop.isExternalDisplayConnected ? "Trackpad" : "Desktop Lab / waiting")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(desktop.activeWindow?.title ?? "Kamihi Desktop"), \(desktop.isExternalDisplayConnected ? "trackpad ready" : "waiting for an external display")")
+    }
+
+    @ViewBuilder
+    private var moreControllerActions: some View {
+        Button {
+            showLauncher = true
+        } label: {
+            Label("Apps", systemImage: "square.grid.2x2.fill")
+        }
+
+        Button {
+            showOverview = true
+        } label: {
+            Label("Windows", systemImage: "rectangle.stack.fill")
+        }
+
+        Button {
+            showCommandPalette = true
+        } label: {
+            Label("Commands", systemImage: "command")
+        }
+
+        Divider()
+
+        Button {
+            engine.isPrecisionMode.toggle()
+            if settings.hapticsEnabled { Haptics.touchTap() }
+        } label: {
+            Label(
+                engine.isPrecisionMode ? "Turn Off Precision Mode" : "Turn On Precision Mode",
+                systemImage: engine.isPrecisionMode ? "scope" : "circle.dotted"
+            )
+        }
+
+        Button {
+            showTrackpadSettings = true
+        } label: {
+            Label("Trackpad Settings", systemImage: "slider.horizontal.3")
+        }
+
+        if let active = desktop.activeWindow {
+            Button {
+                takeoverWindowID = active.id
+            } label: {
+                Label("Continue on iPhone", systemImage: "iphone.and.arrow.forward")
+            }
+        }
+
+        Button {
+            let didPresent = DesktopCaptureService.shared.captureAndShare()
+            if didPresent && settings.hapticsEnabled { Haptics.touchTap() }
+        } label: {
+            Label("Capture Desktop", systemImage: "camera.viewfinder")
+        }
+
+        Divider()
+
+        Button(role: .destructive) {
+            router.returnToChooser()
+        } label: {
+            Label("Exit Desktop", systemImage: "rectangle.portrait.and.arrow.right")
         }
     }
 
@@ -311,10 +393,16 @@ struct DesktopControllerView: View {
     }
 
     private func setKeyboardVisible(_ visible: Bool) {
-        showKeyboard = visible
-        if !visible {
+        guard visible else {
+            showKeyboard = false
+            keyboardWindowID = nil
             desktop.dismissPhoneKeyboardRequest()
+            return
         }
+
+        guard let activeWindowID = desktop.activeWindowID else { return }
+        keyboardWindowID = activeWindowID
+        showKeyboard = true
     }
 }
 
@@ -379,31 +467,35 @@ private struct DesktopKeyboardInputBar: View {
     @EnvironmentObject private var desktop: DesktopSession
     @FocusState private var focused: Bool
     @State private var text = ""
+    @State private var isClearingAfterSubmit = false
 
+    /// Captured at the moment the keyboard opens. Text is never redirected to a
+    /// newly active window if the user switches windows while the keyboard is up.
+    let windowID: UUID?
     let onDismiss: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "keyboard")
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
 
-            TextField(placeholder, text: $text)
+            TextField(placeholder, text: $text, axis: .vertical)
                 .textFieldStyle(.plain)
+                .lineLimit(1...3)
                 .focused($focused)
                 .submitLabel(.return)
-                .onSubmit {
-                    desktop.pressEnterInActiveDesktopField()
-                }
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled(true)
+                .onSubmit(submit)
                 .onChange(of: text) { oldValue, newValue in
                     routeEdit(from: oldValue, to: newValue)
                 }
                 .accessibilityLabel("Type into \(desktop.activeWindow?.title ?? "desktop")")
 
-            Button {
-                desktop.pressEnterInActiveDesktopField()
-            } label: {
+            Button(action: submit) {
                 Image(systemName: "arrow.turn.down.left")
-                    .frame(width: 36, height: 36)
+                    .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Return")
@@ -413,6 +505,7 @@ private struct DesktopKeyboardInputBar: View {
                 onDismiss()
             }
             .font(.subheadline.weight(.semibold))
+            .frame(minHeight: 44)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
@@ -420,7 +513,7 @@ private struct DesktopKeyboardInputBar: View {
         .overlay(alignment: .top) { Divider() }
         .onAppear {
             text = ""
-            Task { @MainActor in focused = true }
+            focusKeyboard()
         }
     }
 
@@ -429,8 +522,42 @@ private struct DesktopKeyboardInputBar: View {
         return "Type on desktop…"
     }
 
+    private var targetsCapturedWindow: Bool {
+        guard let windowID else { return desktop.activeWindowID != nil }
+        return desktop.activeWindowID == windowID
+    }
+
+    private func focusKeyboard() {
+        // A second asynchronous focus pass survives the safe-area insertion
+        // animation, which otherwise occasionally leaves the hardware keyboard
+        // visible without a focused text field.
+        Task { @MainActor in
+            focused = true
+            try? await Task.sleep(for: .milliseconds(120))
+            focused = true
+        }
+    }
+
+    private func submit() {
+        guard targetsCapturedWindow else {
+            onDismiss()
+            return
+        }
+        desktop.pressEnterInActiveDesktopField()
+        // The local TextField is only an input proxy. Clearing it after Return
+        // keeps subsequent typing and backspace diffs short and deterministic;
+        // suppress the local clearing change so it never deletes remote text.
+        isClearingAfterSubmit = true
+        text = ""
+    }
+
     private func routeEdit(from oldValue: String, to newValue: String) {
-        guard oldValue != newValue else { return }
+        if isClearingAfterSubmit {
+            isClearingAfterSubmit = false
+            return
+        }
+        guard targetsCapturedWindow, oldValue != newValue else { return }
+
         let oldChars = Array(oldValue)
         let newChars = Array(newValue)
         var common = 0
