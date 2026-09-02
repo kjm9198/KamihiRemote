@@ -1,4 +1,5 @@
 import SwiftUI
+import Photos
 
 /// Renders the complete desktop environment on the external display (or simulated in Desktop Lab).
 struct ExternalDesktopCanvasView: View {
@@ -174,6 +175,8 @@ struct ExternalDesktopCanvasView: View {
             DesktopNotesView()
         case "Files":
             DesktopFilesView()
+        case "Photos":
+            DesktopPhotosView()
         default:
             VStack {
                 Text(title)
@@ -182,6 +185,183 @@ struct ExternalDesktopCanvasView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(KamihiTheme.Colors.surfaceBackground)
+        }
+    }
+}
+
+/// PhotoKit-backed viewer for Kamihi Desktop. Opening Photos is the explicit user
+/// action that can trigger iOS' standard permission sheet on the iPhone. Kamihi
+/// reads only the assets iOS grants (including Limited Library selections) and does
+/// not copy, persist, log, or upload the user's photo library.
+private struct DesktopPhotosView: View {
+    @StateObject private var model = DesktopPhotosModel()
+
+    private let columns = [
+        GridItem(.adaptive(minimum: 110, maximum: 190), spacing: 8)
+    ]
+
+    var body: some View {
+        Group {
+            switch model.authorizationStatus {
+            case .authorized, .limited:
+                if model.assets.isEmpty {
+                    photosState(
+                        symbol: "photo.on.rectangle.angled",
+                        title: "No photos available",
+                        detail: model.authorizationStatus == .limited
+                            ? "iOS is sharing a limited selection with Kamihi."
+                            : "Your photo library does not currently contain images."
+                    )
+                } else {
+                    ScrollView {
+                        LazyVGrid(columns: columns, spacing: 8) {
+                            ForEach(model.assets, id: \.localIdentifier) { asset in
+                                DesktopPhotoThumbnail(asset: asset)
+                                    .aspectRatio(1, contentMode: .fit)
+                            }
+                        }
+                        .padding(10)
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        if model.authorizationStatus == .limited {
+                            Label("Limited Photos", systemImage: "checkmark.shield.fill")
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 6)
+                                .background(.ultraThinMaterial, in: Capsule())
+                                .padding(10)
+                                .accessibilityLabel("Limited Photos access")
+                        }
+                    }
+                }
+            case .denied, .restricted:
+                photosState(
+                    symbol: "photo.badge.exclamationmark",
+                    title: "Photos access is off",
+                    detail: "Kamihi cannot read the photo library. Change Photos access for Kamihi in iPhone Settings to use this window."
+                )
+            case .notDetermined:
+                photosState(
+                    symbol: "photo.stack",
+                    title: "Choose Photos access on iPhone",
+                    detail: "iOS will ask whether Kamihi may show your photos on the connected desktop. Limited access is supported."
+                )
+            @unknown default:
+                photosState(
+                    symbol: "photo.stack",
+                    title: "Photos unavailable",
+                    detail: "iOS returned an unknown Photos permission state."
+                )
+            }
+        }
+        .background(KamihiTheme.Colors.surfaceBackground)
+        .task {
+            await model.start()
+        }
+    }
+
+    private func photosState(symbol: String, title: String, detail: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 34, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text(title)
+                .font(.headline)
+                .multilineTextAlignment(.center)
+            Text(detail)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 430)
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+@MainActor
+private final class DesktopPhotosModel: ObservableObject {
+    @Published private(set) var authorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+    @Published private(set) var assets: [PHAsset] = []
+
+    func start() async {
+        let current = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        authorizationStatus = current
+
+        if current == .notDetermined {
+            // This request follows an explicit Photos launch from Kamihi's App
+            // Library. The system owns the permission UI and credential/privacy
+            // boundary; Kamihi never attempts to bypass or simulate it.
+            authorizationStatus = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+        }
+
+        reloadGrantedAssets()
+    }
+
+    private func reloadGrantedAssets() {
+        guard authorizationStatus == .authorized || authorizationStatus == .limited else {
+            assets = []
+            return
+        }
+
+        let options = PHFetchOptions()
+        options.fetchLimit = 60
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        let result = PHAsset.fetchAssets(with: .image, options: options)
+        var nextAssets: [PHAsset] = []
+        result.enumerateObjects { asset, _, _ in
+            nextAssets.append(asset)
+        }
+        assets = nextAssets
+    }
+}
+
+private struct DesktopPhotoThumbnail: View {
+    let asset: PHAsset
+    @State private var image: UIImage?
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(0.055))
+
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                ProgressView()
+                    .controlSize(.small)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Photo")
+        .onAppear(perform: loadThumbnail)
+    }
+
+    private func loadThumbnail() {
+        guard image == nil else { return }
+
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .opportunistic
+        options.resizeMode = .fast
+        options.isNetworkAccessAllowed = true
+
+        PHImageManager.default().requestImage(
+            for: asset,
+            targetSize: CGSize(width: 360, height: 360),
+            contentMode: .aspectFill,
+            options: options
+        ) { result, _ in
+            guard let result else { return }
+            DispatchQueue.main.async {
+                image = result
+            }
         }
     }
 }
