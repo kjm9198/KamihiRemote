@@ -74,12 +74,10 @@ struct DesktopWindowView<Content: View>: View {
                         lineWidth: isActive ? 1.1 : 0.7
                     )
             }
-            .overlay(alignment: .bottomTrailing) {
+            .overlay {
                 if isActive && !window.isMaximized {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(.secondary.opacity(0.55))
-                        .padding(7)
+                    DesktopResizeAffordances(activeEdge: desktop.resizeEdgeAtCursor())
+                        .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }
             }
@@ -198,5 +196,62 @@ struct DesktopWindowView<Content: View>: View {
         case "Clipboard": return "doc.on.clipboard.fill"
         default: return "app.fill"
         }
+    }
+}
+
+/// External displays are noninteractive, so resize input continues to be owned by
+/// the iPhone trackpad. These eight lightweight markers make that existing all-edge
+/// resize model visible and highlight the exact edge/corner currently targeted by
+/// the shared DesktopSession cursor. There is no timer/display-link work here.
+private struct DesktopResizeAffordances: View {
+    let activeEdge: DesktopSession.ResizeEdge?
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            let height = geo.size.height
+            let horizontalLength = min(max(width * 0.18, 34), 82)
+            let verticalLength = min(max(height * 0.18, 28), 70)
+
+            ZStack {
+                edge(.top, width: horizontalLength, height: 3)
+                    .position(x: width / 2, y: 2)
+                edge(.bottom, width: horizontalLength, height: 3)
+                    .position(x: width / 2, y: height - 2)
+                edge(.left, width: 3, height: verticalLength)
+                    .position(x: 2, y: height / 2)
+                edge(.right, width: 3, height: verticalLength)
+                    .position(x: width - 2, y: height / 2)
+
+                corner(.topLeft)
+                    .position(x: 7, y: 7)
+                corner(.topRight)
+                    .position(x: width - 7, y: 7)
+                corner(.bottomLeft)
+                    .position(x: 7, y: height - 7)
+                corner(.bottomRight)
+                    .position(x: width - 7, y: height - 7)
+            }
+        }
+    }
+
+    private func edge(_ edge: DesktopSession.ResizeEdge, width: CGFloat, height: CGFloat) -> some View {
+        Capsule(style: .continuous)
+            .fill(Color.primary.opacity(opacity(for: edge)))
+            .frame(width: width, height: height)
+    }
+
+    private func corner(_ edge: DesktopSession.ResizeEdge) -> some View {
+        RoundedRectangle(cornerRadius: 3, style: .continuous)
+            .strokeBorder(Color.primary.opacity(opacity(for: edge)), lineWidth: isActive(edge) ? 2.4 : 1.2)
+            .frame(width: 12, height: 12)
+    }
+
+    private func isActive(_ edge: DesktopSession.ResizeEdge) -> Bool {
+        activeEdge == edge
+    }
+
+    private func opacity(for edge: DesktopSession.ResizeEdge) -> Double {
+        isActive(edge) ? 0.78 : 0.18
     }
 }
