@@ -163,8 +163,17 @@ final class DesktopSession: ObservableObject {
     }
 
     func movePointer(delta: CGSize, sensitivity: CGFloat = 1.0) {
-        let dx = delta.width / 430 * sensitivity
-        let dy = delta.height / 800 * sensitivity
+        // Preserve sub-pixel precision for small motions while giving deliberate
+        // fast swipes enough gain to traverse a 1080p-class desktop without
+        // repeated thumb lifts. The bounded curve is stateless, so it adds no
+        // smoothing latency and keeps drag/resize ownership deterministic.
+        let distance = hypot(delta.width, delta.height)
+        let normalizedSpeed = min(max((distance - 2) / 22, 0), 1)
+        let acceleration = 0.82 + (0.78 * normalizedSpeed)
+        let effectiveSensitivity = sensitivity * acceleration
+
+        let dx = delta.width / 430 * effectiveSensitivity
+        let dy = delta.height / 800 * effectiveSensitivity
         cursor.x = min(max(cursor.x + dx, 0.006), 0.994)
         cursor.y = min(max(cursor.y + dy, 0.006), 0.994)
         updateCursorAffordance()
