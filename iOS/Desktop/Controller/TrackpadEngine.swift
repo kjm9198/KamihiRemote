@@ -384,16 +384,27 @@ final class TrackpadEngine: ObservableObject {
                 width: min(max(initialVelocity.width, -2600), 2600),
                 height: min(max(initialVelocity.height, -2600), 2600)
             )
-            let frameDuration: CGFloat = 1.0 / 60.0
+
+            // Momentum is the only part of the trackpad that needs an active
+            // cadence after fingers lift. Run it at the iPhone controller's
+            // available refresh rate (capped at 120 Hz) and stop the task as
+            // soon as velocity settles. This improves ProMotion smoothness
+            // without introducing an idle display-link loop or making any claim
+            // about the external display's independently negotiated refresh rate.
+            let refreshRate = min(max(UIScreen.main.maximumFramesPerSecond, 60), 120)
+            let frameDuration = 1.0 / Double(refreshRate)
+            let sleepMilliseconds = refreshRate >= 100 ? 8 : 16
+            let decayPer60HzFrame = 0.93
+            let decay = CGFloat(pow(decayPer60HzFrame, frameDuration / (1.0 / 60.0)))
 
             while !Task.isCancelled && hypot(velocity.width, velocity.height) > 12 {
                 desktop.scrollActiveWindow(
-                    deltaX: velocity.width * frameDuration,
-                    deltaY: velocity.height * frameDuration
+                    deltaX: velocity.width * CGFloat(frameDuration),
+                    deltaY: velocity.height * CGFloat(frameDuration)
                 )
-                velocity.width *= 0.93
-                velocity.height *= 0.93
-                try? await Task.sleep(for: .milliseconds(16))
+                velocity.width *= decay
+                velocity.height *= decay
+                try? await Task.sleep(for: .milliseconds(sleepMilliseconds))
             }
 
             if self.activeFingers == 0 && self.state == .scrolling {
