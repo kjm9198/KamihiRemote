@@ -80,9 +80,58 @@ final class DesktopSession: ObservableObject {
             return
         }
 
-        let window = DesktopWindow(title: "Browser")
+        let window = DesktopWindow(
+            title: "Browser",
+            normalizedFrame: preferredFloatingFrame(size: CGSize(width: 0.60, height: 0.60))
+        )
         windows.append(window)
         activeWindowID = window.id
+    }
+
+    /// Picks a useful floating location instead of blindly stacking a newly
+    /// opened app over the same rectangle. Candidate positions stay within the
+    /// usable desktop bounds and are ranked by visible-window overlap. This is
+    /// deterministic, timer-free, and preserves explicit workspace/snap frames.
+    func preferredFloatingFrame(size: CGSize) -> CGRect {
+        let leftBound: CGFloat = 0.006
+        let rightBound: CGFloat = 0.994
+        let topBound: CGFloat = 0.045
+        let bottomBound: CGFloat = 0.885
+        let width = min(max(size.width, 0.24), rightBound - leftBound)
+        let height = min(max(size.height, 0.22), bottomBound - topBound)
+
+        let origins = [
+            CGPoint(x: 0.20, y: 0.165),
+            CGPoint(x: 0.10, y: 0.08),
+            CGPoint(x: 0.29, y: 0.09),
+            CGPoint(x: 0.08, y: 0.245),
+            CGPoint(x: 0.30, y: 0.235),
+            CGPoint(x: 0.16, y: 0.125)
+        ]
+
+        let candidates = origins.map { origin -> CGRect in
+            let x = min(max(origin.x, leftBound), rightBound - width)
+            let y = min(max(origin.y, topBound), bottomBound - height)
+            return CGRect(x: x, y: y, width: width, height: height)
+        }
+        let visibleFrames = windows
+            .filter { !$0.isMinimized }
+            .map(effectiveFrame(for:))
+
+        guard !visibleFrames.isEmpty else { return candidates[0] }
+
+        return candidates.min { lhs, rhs in
+            overlapScore(for: lhs, against: visibleFrames) < overlapScore(for: rhs, against: visibleFrames)
+        } ?? candidates[0]
+    }
+
+    private func overlapScore(for candidate: CGRect, against frames: [CGRect]) -> CGFloat {
+        let area = max(candidate.width * candidate.height, 0.0001)
+        return frames.reduce(CGFloat.zero) { score, frame in
+            let intersection = candidate.intersection(frame)
+            guard !intersection.isNull else { return score }
+            return score + (intersection.width * intersection.height / area)
+        }
     }
 
     func activate(_ id: UUID) {
