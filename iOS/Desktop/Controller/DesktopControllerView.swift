@@ -86,15 +86,17 @@ struct DesktopControllerView: View {
         }
     }
 
-    /// Only two thumb targets float above the trackpad. Status, app switching,
-    /// settings, capture and takeover remain discoverable inside More so the
-    /// phone keeps the largest possible uninterrupted gesture surface.
+    /// Only two thumb targets float above the trackpad. They stay at the
+    /// thumb-reachable bottom edge (and can swap sides) while status, app
+    /// switching, settings, capture and takeover remain discoverable in More.
     private var fullTrackpadLayout: some View {
         ZStack {
             trackpadSurface(cornerRadius: 0)
                 .ignoresSafeArea()
 
             VStack {
+                Spacer(minLength: 0)
+
                 HStack(spacing: 8) {
                     if !controlsLeading { Spacer(minLength: 0) }
 
@@ -127,9 +129,7 @@ struct DesktopControllerView: View {
                     if controlsLeading { Spacer(minLength: 0) }
                 }
                 .padding(.horizontal, 12)
-                .padding(.top, 8)
-
-                Spacer(minLength: 0)
+                .padding(.bottom, 12)
             }
         }
     }
