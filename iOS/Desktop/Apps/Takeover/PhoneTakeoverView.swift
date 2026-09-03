@@ -133,13 +133,11 @@ struct PhoneTakeoverView: View {
                 Text(currentURL?.host ?? "Web")
                     .font(.caption.weight(.semibold))
                     .lineLimit(1)
-                if let currentURL {
-                    Text(currentURL.absoluteString)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
+                Text(safeDisplayOrigin)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
@@ -147,6 +145,23 @@ struct PhoneTakeoverView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(.ultraThinMaterial)
+    }
+
+    /// The takeover chrome intentionally never renders the complete navigation URL.
+    /// OAuth callbacks can carry short-lived authorization codes, state values or
+    /// tokens in their query/fragment. WebKit keeps using the full URL internally,
+    /// while Kamihi only exposes the non-sensitive origin in its own UI.
+    private var safeDisplayOrigin: String {
+        guard let currentURL,
+              let scheme = currentURL.scheme?.lowercased(),
+              let host = currentURL.host else {
+            return "Secure WebKit session"
+        }
+
+        if let port = currentURL.port {
+            return "\(scheme)://\(host):\(port)"
+        }
+        return "\(scheme)://\(host)"
     }
 
     private func initialURL(for title: String) -> URL? {
