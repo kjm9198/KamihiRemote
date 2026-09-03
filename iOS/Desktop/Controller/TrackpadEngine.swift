@@ -376,7 +376,8 @@ final class TrackpadEngine: ObservableObject {
 
     private func startMomentum(initialVelocity: CGSize, desktop: DesktopSession) {
         stopMomentum()
-        guard hypot(initialVelocity.width, initialVelocity.height) > 35 else { return }
+        guard hypot(initialVelocity.width, initialVelocity.height) > 35,
+              let momentumWindowID = desktop.activeWindowID else { return }
 
         momentumTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -397,7 +398,9 @@ final class TrackpadEngine: ObservableObject {
             let decayPer60HzFrame = 0.93
             let decay = CGFloat(pow(decayPer60HzFrame, frameDuration / (1.0 / 60.0)))
 
-            while !Task.isCancelled && hypot(velocity.width, velocity.height) > 12 {
+            while !Task.isCancelled &&
+                    desktop.activeWindowID == momentumWindowID &&
+                    hypot(velocity.width, velocity.height) > 12 {
                 desktop.scrollActiveWindow(
                     deltaX: velocity.width * CGFloat(frameDuration),
                     deltaY: velocity.height * CGFloat(frameDuration)
