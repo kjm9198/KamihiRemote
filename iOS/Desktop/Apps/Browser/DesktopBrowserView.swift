@@ -168,6 +168,18 @@ struct DesktopBrowserView: View {
                 showLibrary = true
             }
 
+            if let url = state.activeTab?.url {
+                ShareLink(item: url) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.primary)
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Share Page")
+            }
+
             if let onContinueOnPhone {
                 Button(action: onContinueOnPhone) {
                     Image(systemName: "iphone.and.arrow.forward")
