@@ -5,6 +5,7 @@ import SwiftUI
 /// changing gesture semantics or relying on private pointer APIs.
 public enum DesktopPointerProfile: String, CaseIterable, Identifiable {
     case precision
+    case direct
     case balanced
     case fast
 
@@ -13,6 +14,7 @@ public enum DesktopPointerProfile: String, CaseIterable, Identifiable {
     public var title: String {
         switch self {
         case .precision: return "Precision"
+        case .direct: return "Direct"
         case .balanced: return "Balanced"
         case .fast: return "Fast"
         }
@@ -21,6 +23,7 @@ public enum DesktopPointerProfile: String, CaseIterable, Identifiable {
     public var sensitivity: Double {
         switch self {
         case .precision: return 0.92
+        case .direct: return 1.08
         case .balanced: return 1.12
         case .fast: return 1.55
         }
@@ -29,6 +32,7 @@ public enum DesktopPointerProfile: String, CaseIterable, Identifiable {
     public var acceleration: Double {
         switch self {
         case .precision: return 0.45
+        case .direct: return 0.15
         case .balanced: return 0.82
         case .fast: return 1.35
         }
