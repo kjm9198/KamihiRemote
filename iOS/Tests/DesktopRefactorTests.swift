@@ -1,7 +1,7 @@
 import Foundation
 import CoreGraphics
 
-/// Automated runtime self-checks for the Kamihi product refactor architecture.
+/// Automated runtime self-checks for the Kamihi Desktop architecture.
 public enum DesktopRefactorTests {
     public struct TestResult {
         public let name: String
@@ -13,24 +13,24 @@ public enum DesktopRefactorTests {
     public static func runSelfChecks() -> [TestResult] {
         var results: [TestResult] = []
 
-        // Test 1: Mode Router Transitions (legacy remote remains regression-only).
+        // Test 1: Kamihi Desktop is the only product mode.
         do {
             let router = AppModeRouter()
-            router.selectMode(.remoteMac)
-            guard router.currentMode == .remoteMac else {
-                throw NSError(domain: "Test", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to switch to remoteMac"])
-            }
             router.selectMode(.externalDesktop)
             guard router.currentMode == .externalDesktop else {
-                throw NSError(domain: "Test", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to switch to externalDesktop"])
+                throw NSError(domain: "Test", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to switch to Kamihi Desktop"])
             }
             router.returnToChooser()
             guard router.currentMode == .none else {
-                throw NSError(domain: "Test", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to return to chooser"])
+                throw NSError(domain: "Test", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to return to startup profiles"])
             }
-            results.append(TestResult(name: "AppModeRouter State Transitions", passed: true, message: "OK"))
+            router.startDesktopLab()
+            guard router.currentMode == .externalDesktop, router.isDesktopLabActive else {
+                throw NSError(domain: "Test", code: 3, userInfo: [NSLocalizedDescriptionKey: "Desktop Lab did not enter Kamihi Desktop"])
+            }
+            results.append(TestResult(name: "Kamihi Desktop Router State Transitions", passed: true, message: "OK"))
         } catch {
-            results.append(TestResult(name: "AppModeRouter State Transitions", passed: false, message: error.localizedDescription))
+            results.append(TestResult(name: "Kamihi Desktop Router State Transitions", passed: false, message: error.localizedDescription))
         }
 
         // Test 2: Window Snap Geometry Invariants
