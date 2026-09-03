@@ -43,6 +43,12 @@ struct KamihiRemoteApp: App {
             .environmentObject(session)
             .environmentObject(desktop)
             .environmentObject(desktopRecovery)
+            .overlay {
+                if router.currentMode == .externalDesktop {
+                    DesktopHardwareShortcutLayer()
+                        .environmentObject(desktop)
+                }
+            }
             .statusBarHidden(false)
             .onChange(of: desktop.isExternalDisplayConnected) { _, connected in
                 if connected {
