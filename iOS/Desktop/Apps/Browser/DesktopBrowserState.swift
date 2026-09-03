@@ -94,7 +94,8 @@ public final class DesktopBrowserState: ObservableObject {
 
     private init() {
         let defaults = UserDefaults.standard
-        let restoredTabs: [Tab] = Self.decode([Tab].self, from: defaults.data(forKey: "kamihi.desktop.browser.tabs.v1")) ?? []
+        let decodedTabs: [Tab] = Self.decode([Tab].self, from: defaults.data(forKey: "kamihi.desktop.browser.tabs.v1")) ?? []
+        let restoredTabs = decodedTabs.map(Self.persistenceSafeTab)
         let initialTabs = restoredTabs.isEmpty ? [Tab()] : restoredTabs.map {
             var tab = $0
             tab.isLoading = false
@@ -127,8 +128,10 @@ public final class DesktopBrowserState: ObservableObject {
         bookmarks = restoredBookmarks
         history = restoredHistory
 
-        // Rewrite older history entries through the same privacy filter so an
-        // upgrade removes any previously persisted fragments/auth-like values.
+        // Rewrite older persisted state through the same privacy filter so an
+        // upgrade removes OAuth codes/tokens/fragments from saved tabs as well as
+        // history. Live WebKit navigation still keeps the complete in-memory URL.
+        persistTabs()
         persistLibrary()
     }
 
@@ -245,11 +248,11 @@ public final class DesktopBrowserState: ObservableObject {
         }
     }
 
-    /// Returns the URL shape that is safe to persist in local browser history.
-    /// Navigation itself keeps the full in-memory URL; this only affects the
-    /// history record. Fragments are always removed, non-http(s) schemes are not
-    /// stored, and common auth/session query values are discarded so OAuth codes,
-    /// tokens, passwords, and similar credentials never land in UserDefaults.
+    /// Returns the URL shape that is safe to persist locally.
+    /// Navigation itself keeps the full in-memory URL; this only affects saved
+    /// state. Fragments are always removed, non-http(s) schemes are not stored,
+    /// and common auth/session query values are discarded so OAuth codes, tokens,
+    /// passwords, and similar credentials never land in UserDefaults.
     static func historySafeURL(_ url: URL) -> URL? {
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
             return nil
@@ -270,6 +273,15 @@ public final class DesktopBrowserState: ObservableObject {
             components.queryItems = safeItems.isEmpty ? nil : safeItems
         }
         return components.url
+    }
+
+    private static func persistenceSafeTab(_ tab: Tab) -> Tab {
+        var sanitized = tab
+        if let url = tab.url {
+            sanitized.url = historySafeURL(url)
+        }
+        sanitized.isLoading = false
+        return sanitized
     }
 
     private func syncActiveMetadata() {
@@ -293,7 +305,8 @@ public final class DesktopBrowserState: ObservableObject {
     }
 
     private func persistTabs() {
-        defaults.set(try? encoder.encode(tabs), forKey: tabsKey)
+        let persistedTabs = tabs.map(Self.persistenceSafeTab)
+        defaults.set(try? encoder.encode(persistedTabs), forKey: tabsKey)
         defaults.set(activeTabID.uuidString, forKey: activeTabKey)
     }
 
