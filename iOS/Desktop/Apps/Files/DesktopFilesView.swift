@@ -400,10 +400,6 @@ private struct NativePDFPreview: UIViewRepresentable {
 private struct QuickLookPreview: UIViewControllerRepresentable {
     let url: URL
 
-    var body: some View {
-        EmptyView()
-    }
-
     func makeCoordinator() -> Coordinator {
         Coordinator(url: url)
     }
