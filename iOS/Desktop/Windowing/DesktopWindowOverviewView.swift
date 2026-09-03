@@ -350,10 +350,20 @@ struct DesktopWindowOverviewView: View {
         desktop.restoreAndActivate(activeID)
     }
 
+    /// Restores minimized windows without letting the restore loop steal focus.
+    /// The user's active window remains active whenever it still exists; otherwise
+    /// the most recently restored window becomes the fallback active window.
     private func restoreAllOpenWindows() {
-        let ids = desktop.windows.filter(\.isMinimized).map(\.id)
-        for id in ids {
+        let previouslyActiveID = desktop.activeWindowID
+        let minimizedIDs = desktop.windows.filter(\.isMinimized).map(\.id)
+
+        for id in minimizedIDs {
             desktop.restoreAndActivate(id)
+        }
+
+        if let previouslyActiveID,
+           desktop.windows.contains(where: { $0.id == previouslyActiveID }) {
+            desktop.restoreAndActivate(previouslyActiveID)
         }
     }
 
