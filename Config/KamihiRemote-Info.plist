@@ -9,7 +9,7 @@
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Kamihi</string>
+	<string>Kamihi Desktop</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleShortVersionString</key>
@@ -19,28 +19,11 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSApplicationCategoryType</key>
-	<string>public.app-category.utilities</string>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_kamihiremote._tcp</string>
-		<string>_kamihiremote._udp</string>
-	</array>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Kamihi Remote uses your Wi-Fi to move the cursor on your Mac.</string>
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Kamihi Remote can use Bluetooth as a nearby fallback when Wi-Fi is weak.</string>
-	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>Kamihi Remote can use Bluetooth as a nearby fallback when Wi-Fi is weak.</string>
-	<key>NSMotionUsageDescription</key>
-	<string>Kamihi Remote uses Motion only for the optional Air Mouse.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Kamihi uses speech recognition so you can dictate prompts to Cursor or ChatGPT on your Mac.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Kamihi uses the microphone so you can dictate prompts to agents on your Mac.</string>
+	<string>public.app-category.productivity</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>Kamihi uses Face ID to unlock your private desktop view on a connected display.</string>
+	<string>Kamihi Desktop uses Face ID to unlock your private desktop view.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Kamihi can show photos you choose to view on your desktop display. Your photo library stays managed by iOS.</string>
+	<string>Kamihi Desktop can show photos you choose to view on your external desktop. Your photo library stays managed by iOS.</string>
 	<key>UIUserInterfaceStyle</key>
 	<string>Dark</string>
 	<key>UIStatusBarHidden</key>
@@ -59,7 +42,7 @@
 			<array>
 				<dict>
 					<key>UISceneConfigurationName</key>
-					<string>Kamihi External Display</string>
+					<string>Kamihi Desktop External Display</string>
 					<key>UISceneClassName</key>
 					<string>UIWindowScene</string>
 					<key>UISceneDelegateClassName</key>

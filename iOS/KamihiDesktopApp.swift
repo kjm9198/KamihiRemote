@@ -9,17 +9,15 @@ struct KamihiDesktopApp: App {
     init() {
         #if DEBUG
         Task { @MainActor in
-            let gesturePassed = GestureEngineTests.runSelfChecks()
             let servicesPassed = DesktopServicesTests.runSelfChecks()
             let refactor = DesktopRefactorTests.runSelfChecks()
             print("=== KAMIHI DESKTOP RUNTIME SELF-CHECKS ===")
-            print("Gesture checks: \(gesturePassed ? "PASSED ✓" : "FAILED ✗")")
             print("Desktop service checks: \(servicesPassed ? "PASSED ✓" : "FAILED ✗")")
-            print("Refactor architecture checks: \(refactor.filter { $0.passed }.count)/\(refactor.count) passed")
-            for r in refactor {
-                print("  [\(r.passed ? "PASS" : "FAIL")] \(r.name): \(r.message)")
+            print("Desktop architecture checks: \(refactor.filter { $0.passed }.count)/\(refactor.count) passed")
+            for result in refactor {
+                print("  [\(result.passed ? "PASS" : "FAIL")] \(result.name): \(result.message)")
             }
-            print("=====================================")
+            print("==========================================")
         }
         #endif
     }

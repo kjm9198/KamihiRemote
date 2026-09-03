@@ -22,6 +22,6 @@ jobs:
             exit 0
           fi
           gh release create "$TAG" \
-            --title "Kamihi Remote $TAG" \
+            --title "Kamihi Desktop $TAG" \
             --generate-notes \
             --latest
