@@ -99,6 +99,17 @@ struct RayNeoDisplaySettingsSheet: View {
                         value: $display.verticalSafeMargin
                     )
 
+                    DisclosureGroup("Fine-tune individual edges") {
+                        trimSlider(title: "Left", value: $display.leftSafeTrim)
+                        trimSlider(title: "Right", value: $display.rightSafeTrim)
+                        trimSlider(title: "Top", value: $display.topSafeTrim)
+                        trimSlider(title: "Bottom", value: $display.bottomSafeTrim)
+
+                        Text("Use these only when one side is cropped more than its opposite edge. Fine trim adjusts the symmetric baseline without changing the resolution or display mode negotiated by iOS.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
                     Text("Start at 0%. Increase only if the glasses crop an edge or the extreme corners are uncomfortable to see. Kamihi keeps the external scene at the native mode negotiated by iOS and moves only desktop content inward.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -141,5 +152,23 @@ struct RayNeoDisplaySettingsSheet: View {
             }
             Slider(value: value, in: 0...0.08, step: 0.005)
         }
+    }
+
+    private func trimSlider(title: String, value: Binding<Double>) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(signedPercent(value.wrappedValue))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+            Slider(value: value, in: -0.04...0.04, step: 0.0025)
+        }
+    }
+
+    private func signedPercent(_ value: Double) -> String {
+        let percent = Int((value * 100).rounded())
+        return percent > 0 ? "+\(percent)%" : "\(percent)%"
     }
 }
