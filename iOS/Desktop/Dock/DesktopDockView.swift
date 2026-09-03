@@ -105,7 +105,7 @@ struct DesktopDockView: View {
                 .accessibilityHidden(true)
         }
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
+        .onTapGesture {
             if isRunning, let window = desktop.windows.first(where: { $0.title == title }) {
                 desktop.restoreAndActivate(window.id)
             } else {
@@ -118,7 +118,7 @@ struct DesktopDockView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
         .accessibilityValue(isActive ? "Active" : (isRunning ? "Running" : "Not running"))
-        .accessibilityHint("Double-tap to open")
+        .accessibilityHint("Opens or activates this app")
         .accessibilityAddTraits(.isButton)
     }
 }
