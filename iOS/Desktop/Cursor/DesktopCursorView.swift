@@ -93,18 +93,37 @@ struct DesktopCursorView: View {
         }
     }
 
+    /// Two-layer SF Symbol rendering keeps the arrow visible on both very light
+    /// webpages and dark media without relying on an expensive animated effect.
     private var arrowCursor: some View {
-        Image(systemName: "cursorarrow")
-            .font(.system(size: 19, weight: .semibold))
-            .foregroundStyle(.white)
-            .shadow(color: .black.opacity(0.65), radius: 2.5, x: 0, y: 1)
-            .offset(x: 6, y: 6)
+        ZStack {
+            Image(systemName: "cursorarrow")
+                .font(.system(size: 21, weight: .heavy))
+                .foregroundStyle(.black.opacity(0.92))
+            Image(systemName: "cursorarrow")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white)
+        }
+        .shadow(color: .black.opacity(0.38), radius: 2, x: 0, y: 1)
+        .offset(x: 6, y: 6)
     }
 
+    /// Precision mode needs a stable center mark even over white documents.
+    /// Draw a dark backing cross first, then the thin light cross on top.
     private var crosshairCursor: some View {
         ZStack {
             Circle()
-                .strokeBorder(.white.opacity(0.8), lineWidth: 1)
+                .strokeBorder(.black.opacity(0.86), lineWidth: 3)
+                .frame(width: 20, height: 20)
+            Rectangle()
+                .fill(.black.opacity(0.88))
+                .frame(width: 3, height: 26)
+            Rectangle()
+                .fill(.black.opacity(0.88))
+                .frame(width: 26, height: 3)
+
+            Circle()
+                .strokeBorder(.white.opacity(0.96), lineWidth: 1)
                 .frame(width: 18, height: 18)
             Rectangle()
                 .fill(.white)
@@ -113,15 +132,21 @@ struct DesktopCursorView: View {
                 .fill(.white)
                 .frame(width: 24, height: 1)
         }
-        .shadow(color: .black.opacity(0.5), radius: 2)
     }
 
+    /// The accessibility cursor uses a true contrasting silhouette instead of
+    /// only a shadow, so its edge remains readable across mixed desktop content.
     private var largeAccessibilityCursor: some View {
-        Image(systemName: "cursorarrow")
-            .font(.system(size: 30, weight: .bold))
-            .foregroundStyle(.white)
-            .shadow(color: .black.opacity(0.9), radius: 4, x: 0, y: 2)
-            .offset(x: 10, y: 10)
+        ZStack {
+            Image(systemName: "cursorarrow")
+                .font(.system(size: 33, weight: .heavy))
+                .foregroundStyle(.black.opacity(0.94))
+            Image(systemName: "cursorarrow")
+                .font(.system(size: 29, weight: .bold))
+                .foregroundStyle(.white)
+        }
+        .shadow(color: .black.opacity(0.46), radius: 2.5, x: 0, y: 1)
+        .offset(x: 10, y: 10)
     }
 
     private var dotDiameter: CGFloat {
