@@ -20,7 +20,22 @@ final class DesktopWebInputRegistry {
     private init() {}
 
     func register(_ webView: WKWebView, key: String) {
+        pruneReleasedEntries()
         webViews[key] = WeakWebView(webView)
+    }
+
+    /// Remove only registrations that still point at this exact WebView. This
+    /// avoids a dismantled SwiftUI representable accidentally clearing a newer
+    /// replacement registered under the same app key.
+    func unregister(_ webView: WKWebView) {
+        webViews = webViews.filter { _, holder in
+            guard let value = holder.value else { return false }
+            return value !== webView
+        }
+    }
+
+    private func pruneReleasedEntries() {
+        webViews = webViews.filter { $0.value.value != nil }
     }
 
     func click(key: String, x: CGFloat, y: CGFloat, completion: @escaping (Bool) -> Void) {
@@ -232,6 +247,17 @@ struct WKWebViewRepresentable: UIViewRepresentable {
         }
         guard let url, webView.url != url else { return }
         webView.load(URLRequest(url: url))
+    }
+
+    static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
+        // Closing/replacing a standalone web app should stop network/media work
+        // immediately instead of waiting for WebKit/ARC to eventually tear the
+        // renderer down. Persistent cookies/session state stay in the default
+        // WKWebsiteDataStore and are not copied or deleted here.
+        webView.stopLoading()
+        webView.uiDelegate = nil
+        DesktopWebInputRegistry.shared.unregister(webView)
+        webView.removeFromSuperview()
     }
 
     final class Coordinator: NSObject, WKUIDelegate {
