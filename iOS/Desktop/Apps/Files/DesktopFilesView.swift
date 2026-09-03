@@ -122,6 +122,10 @@ struct DesktopFilesView: View {
                         .padding(.vertical, 2)
                         .tag(file)
                         .contextMenu {
+                            ShareLink(item: file) {
+                                Label("Share or Export", systemImage: "square.and.arrow.up")
+                            }
+
                             Button(role: .destructive) {
                                 remove(file)
                             } label: {
@@ -167,6 +171,14 @@ struct DesktopFilesView: View {
                             .padding(.vertical, 5)
                             .background(.thinMaterial, in: Capsule())
                     }
+
+                    ShareLink(item: file) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .accessibilityHint("Opens the iPhone share sheet to export this Kamihi-owned copy")
 
                     Button {
                         showDocumentPicker = true
@@ -387,6 +399,10 @@ private struct NativePDFPreview: UIViewRepresentable {
 
 private struct QuickLookPreview: UIViewControllerRepresentable {
     let url: URL
+
+    var body: some View {
+        EmptyView()
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(url: url)
