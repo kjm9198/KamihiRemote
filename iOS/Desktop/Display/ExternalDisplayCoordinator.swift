@@ -27,8 +27,6 @@ public final class ExternalDisplayCoordinator: ObservableObject {
     @Published public private(set) var displayName: String = "External Display"
     @Published public private(set) var metricsRevision: Int = 0
 
-    /// Fraction of the desktop width reserved on each left/right edge.
-    /// This is an app-level comfort/calibration margin; it does not alter the mode negotiated by iOS.
     @Published public var horizontalSafeMargin: Double {
         didSet {
             horizontalSafeMargin = min(max(horizontalSafeMargin, 0), 0.08)
@@ -36,7 +34,6 @@ public final class ExternalDisplayCoordinator: ObservableObject {
         }
     }
 
-    /// Fraction of the desktop height reserved on each top/bottom edge.
     @Published public var verticalSafeMargin: Double {
         didSet {
             verticalSafeMargin = min(max(verticalSafeMargin, 0), 0.08)
@@ -44,9 +41,6 @@ public final class ExternalDisplayCoordinator: ObservableObject {
         }
     }
 
-    /// Per-edge fine trims let glasses/adapter combinations compensate for asymmetric cropping
-    /// without throwing away the simple symmetric baseline. Each trim is intentionally small and
-    /// the final effective margin is always clamped to the same safe 0...8% range.
     @Published public var leftSafeTrim: Double {
         didSet {
             leftSafeTrim = min(max(leftSafeTrim, -0.04), 0.04)
@@ -75,11 +69,8 @@ public final class ExternalDisplayCoordinator: ObservableObject {
         }
     }
 
-    /// Backward-compatible display size. Prefer nativePixelSize for diagnostics and logicalSize for layout.
     public var displaySize: CGSize { nativePixelSize }
 
-    /// Orientation-independent native pixel size. RayNeo is normally landscape, but diagnostics should
-    /// not incorrectly report a mode mismatch if UIKit momentarily reports swapped dimensions.
     public var landscapeNativePixelSize: CGSize {
         CGSize(
             width: max(nativePixelSize.width, nativePixelSize.height),
@@ -100,15 +91,17 @@ public final class ExternalDisplayCoordinator: ObservableObject {
         landscapeNativePixelSize.width >= 1920 && landscapeNativePixelSize.height >= 1080
     }
 
-    /// RayNeo Air 4 Pro's normal 2D target is a 16:9 Full-HD-class input. This is deliberately
-    /// capability-based rather than device-name-based because iOS does not provide a reliable model name.
+    /// Exact first-class 2D target for RayNeo Air 4 Pro. This is only an observation of the mode
+    /// iOS negotiated; Kamihi never selects or forces a UIScreen mode.
+    public var isExactRayNeo1080pTarget: Bool {
+        abs(landscapeNativePixelSize.width - 1920) < 0.5
+            && abs(landscapeNativePixelSize.height - 1080) < 0.5
+    }
+
     public var isLikelyRayNeo2DTarget: Bool {
         isFullHDClass && isSixteenNineClass
     }
 
-    /// Effective backing ratios derived from the exact logical canvas and native backing dimensions.
-    /// Keeping these visible makes it possible to detect accidental app-side downscaling without
-    /// pretending Kamihi can choose a hardware mode that iOS did not negotiate.
     public var effectiveBackingScaleX: CGFloat {
         guard logicalSize.width > 0 else { return nativeScale }
         return nativePixelSize.width / logicalSize.width
@@ -142,7 +135,27 @@ public final class ExternalDisplayCoordinator: ObservableObject {
         )
     }
 
+    public var rayNeoTargetSummary: String {
+        guard isConnected else { return "Connect display to measure" }
+        if isExactRayNeo1080pTarget {
+            return "Exact 1920×1080 2D target"
+        }
+        return "iOS negotiated \(Int(landscapeNativePixelSize.width))×\(Int(landscapeNativePixelSize.height))"
+    }
+
+    /// Text makes the refresh ceiling explicit without implying Kamihi can force 120 Hz.
+    public var refreshNegotiationSummary: String {
+        guard isConnected else { return "Not measured" }
+        if maximumFramesPerSecond >= 120 {
+            return "iOS exposes up to \(maximumFramesPerSecond) Hz"
+        }
+        return "iOS currently exposes up to \(maximumFramesPerSecond) Hz"
+    }
+
     public var negotiatedModeSummary: String {
+        if isExactRayNeo1080pTarget && isNativeBackingAligned {
+            return "Exact RayNeo 1080p 16:9 target with native-aligned backing"
+        }
         if isLikelyRayNeo2DTarget && isNativeBackingAligned {
             return "1080p-class 16:9 native backing detected"
         }
@@ -196,7 +209,6 @@ public final class ExternalDisplayCoordinator: ObservableObject {
         bottomSafeTrim = min(max(UserDefaults.standard.double(forKey: DefaultsKey.bottomSafeTrim), -0.04), 0.04)
     }
 
-    /// Called by the active external-display scene delegate when iOS creates the display scene.
     public func connect(screen: UIScreen) {
         let wasConnected = isConnected
         isConnected = true
@@ -207,9 +219,6 @@ public final class ExternalDisplayCoordinator: ObservableObject {
         }
     }
 
-    /// Refresh metrics after an already-connected display changes mode/geometry.
-    /// Identical UIKit scene updates are intentionally ignored so a 1080p external canvas does not
-    /// invalidate multiple SwiftUI surfaces when the negotiated display metrics have not changed.
     public func refreshMetrics(from screen: UIScreen) {
         let newLogicalSize = screen.bounds.size
         let newNativePixelSize = screen.nativeBounds.size
@@ -233,7 +242,6 @@ public final class ExternalDisplayCoordinator: ObservableObject {
         metricsRevision &+= 1
     }
 
-    /// Called by the active external-display scene delegate when iOS tears down the display scene.
     public func disconnect() {
         guard isConnected else { return }
         isConnected = false
