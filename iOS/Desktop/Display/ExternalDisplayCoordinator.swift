@@ -143,13 +143,28 @@ public final class ExternalDisplayCoordinator: ObservableObject {
     }
 
     /// Refresh metrics after an already-connected display changes mode/geometry.
-    /// This deliberately does not emit another session-connect event.
+    /// Identical UIKit scene updates are intentionally ignored so a 1080p external canvas does not
+    /// invalidate multiple SwiftUI surfaces when the negotiated display metrics have not changed.
     public func refreshMetrics(from screen: UIScreen) {
-        logicalSize = screen.bounds.size
-        nativePixelSize = screen.nativeBounds.size
-        nativeScale = screen.nativeScale
-        maximumFramesPerSecond = screen.maximumFramesPerSecond
-        displayName = "External Display • \(Int(nativePixelSize.width))×\(Int(nativePixelSize.height))"
+        let newLogicalSize = screen.bounds.size
+        let newNativePixelSize = screen.nativeBounds.size
+        let newNativeScale = screen.nativeScale
+        let newMaximumFramesPerSecond = screen.maximumFramesPerSecond
+        let newDisplayName = "External Display • \(Int(newNativePixelSize.width))×\(Int(newNativePixelSize.height))"
+
+        guard logicalSize != newLogicalSize
+            || nativePixelSize != newNativePixelSize
+            || abs(nativeScale - newNativeScale) > 0.0001
+            || maximumFramesPerSecond != newMaximumFramesPerSecond
+            || displayName != newDisplayName else {
+            return
+        }
+
+        logicalSize = newLogicalSize
+        nativePixelSize = newNativePixelSize
+        nativeScale = newNativeScale
+        maximumFramesPerSecond = newMaximumFramesPerSecond
+        displayName = newDisplayName
         metricsRevision &+= 1
     }
 
