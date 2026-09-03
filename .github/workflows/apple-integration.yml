@@ -9,15 +9,14 @@ on:
 permissions:
   contents: read
 
-# Every commit gets a complete smoke result. A newer push must never cancel an
-# older in-progress integration run and turn healthy code into a misleading
-# cancelled/failed notification.
+# Every commit gets a complete first-attempt desktop smoke result. Newer pushes
+# never cancel an older SHA's validation.
 concurrency:
   group: apple-integration-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
-  simulator-host-smoke:
+  desktop-simulator-smoke:
     runs-on: macos-26
     timeout-minutes: 35
     env:
@@ -31,16 +30,14 @@ jobs:
       - name: Verify trackpad-first controller contract
         run: bash scripts/desktop-controller-contract-smoke.sh
 
-      - name: Run iPhone + Mac integration smoke
+      - name: Run Kamihi Desktop simulator smoke
         run: bash scripts/apple-integration-smoke.sh
 
       - name: Upload smoke evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          # run_attempt avoids artifact-name collisions when GitHub reruns the
-          # same workflow run after an infrastructure failure.
-          name: kamihi-integration-smoke-${{ github.run_attempt }}
+          name: kamihi-desktop-smoke-${{ github.run_attempt }}
           if-no-files-found: ignore
           retention-days: 7
           path: |

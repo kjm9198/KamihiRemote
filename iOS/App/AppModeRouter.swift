@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Coordinates the top-level product mode navigation in Kamihi Remote.
+/// Coordinates Kamihi Desktop startup-profile navigation and Desktop Lab.
 @MainActor
 public final class AppModeRouter: ObservableObject {
     @Published public var currentMode: AppMode

@@ -23,7 +23,7 @@ jobs:
       - name: Xcode version
         run: xcodebuild -version
 
-      - name: Build iOS remote
+      - name: Build Kamihi Desktop for iOS Simulator
         shell: bash
         run: |
           set -o pipefail
@@ -35,19 +35,6 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee "$RUNNER_TEMP/kamihi-apple-build/ios-build.log"
-
-      - name: Build macOS host
-        shell: bash
-        run: |
-          set -o pipefail
-          mkdir -p "$RUNNER_TEMP/kamihi-apple-build"
-          xcodebuild \
-            -project KamihiRemote.xcodeproj \
-            -scheme KamihiRemoteHost \
-            -configuration Debug \
-            -sdk macosx \
-            CODE_SIGNING_ALLOWED=NO \
-            build 2>&1 | tee "$RUNNER_TEMP/kamihi-apple-build/macos-build.log"
 
       - name: Upload Apple build diagnostics
         if: always()

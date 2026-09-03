@@ -1,55 +1,42 @@
 import Foundation
 
-/// Defines the top-level product mode selected by the user.
+/// Kamihi Desktop has one product experience: the iPhone-powered external desktop.
 public enum AppMode: String, CaseIterable, Identifiable, Codable {
     case none
-    case remoteMac
     case externalDesktop
 
     public var id: String { rawValue }
 
     public var title: String {
         switch self {
-        case .none: return "Mode Chooser"
-        case .remoteMac: return "Remote for Mac"
+        case .none: return "Startup Profiles"
         case .externalDesktop: return "Kamihi Desktop"
         }
     }
 
     public var subtitle: String {
         switch self {
-        case .none: return "Choose your product experience"
-        case .remoteMac: return "Control your MacBook from your iPhone"
-        case .externalDesktop: return "Turn an external display into your workspace"
+        case .none: return "Choose how Kamihi Desktop should start"
+        case .externalDesktop: return "Turn an external display into your iPhone-powered workspace"
         }
     }
 
     public var systemImage: String {
         switch self {
-        case .none: return "square.grid.2x2"
-        case .remoteMac: return "laptopcomputer.and.iphone"
+        case .none: return "rectangle.grid.2x2"
         case .externalDesktop: return "display.2"
         }
     }
 
-    /// Evaluates debug launch arguments to determine initial mode.
+    /// Debug launch arguments may open Desktop Lab directly; all other launches
+    /// start at the Kamihi Desktop startup-profile picker.
     public static func initialModeFromArguments() -> (mode: AppMode, isLab: Bool) {
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-KamihiDesktopLab") {
             return (.externalDesktop, true)
         }
-        if args.contains("-KamihiModeRemote") ||
-           args.contains("-pairingCode") ||
-           args.contains("-hostAddress") ||
-           args.contains("-KamihiUITestTab") ||
-           args.contains("-KamihiUITestDeckGallery") {
-            return (.remoteMac, false)
-        }
         if args.contains("-KamihiModeDesktop") {
             return (.externalDesktop, false)
-        }
-        if args.contains("-KamihiModeChooser") {
-            return (.none, false)
         }
         return (.none, false)
     }
