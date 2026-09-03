@@ -18,6 +18,23 @@ struct DesktopDockView: View {
         ("Files", "folder.fill", Color(red: 0.42, green: 0.68, blue: 0.94))
     ]
 
+    private var pinnedTitles: Set<String> {
+        Set(pinnedApps.map(\.title))
+    }
+
+    /// Keep every running desktop app reachable even when it is not one of the
+    /// five default pinned apps. This makes the dock act like a real taskbar
+    /// instead of allowing Calculator, Settings, Photos, PDFs, custom web apps,
+    /// etc. to become invisible once another window covers them.
+    private var unpinnedRunningTitles: [String] {
+        var seen = Set<String>()
+        return desktop.windows.compactMap { window in
+            let title = window.title
+            guard !pinnedTitles.contains(title), seen.insert(title).inserted else { return nil }
+            return title
+        }
+    }
+
     var body: some View {
         HStack(spacing: DesktopShellMetrics.compactSpacing) {
             Button(action: onOpenLauncher) {
@@ -43,6 +60,20 @@ struct DesktopDockView: View {
 
             ForEach(pinnedApps, id: \.title) { app in
                 dockAppTile(title: app.title, icon: app.icon, color: app.color)
+            }
+
+            if !unpinnedRunningTitles.isEmpty {
+                Divider()
+                    .frame(height: 28)
+                    .accessibilityHidden(true)
+
+                ForEach(unpinnedRunningTitles, id: \.self) { title in
+                    dockAppTile(
+                        title: title,
+                        icon: symbolForRunningApp(title),
+                        color: DesktopShellPalette.secondaryLabel
+                    )
+                }
             }
 
             Spacer(minLength: DesktopShellMetrics.standardSpacing)
@@ -158,6 +189,17 @@ struct DesktopDockView: View {
         return "\(power.batteryPercentageText), \(state)"
     }
 
+    private func symbolForRunningApp(_ title: String) -> String {
+        let normalized = title.lowercased()
+        if normalized.contains("setting") { return "gearshape.fill" }
+        if normalized.contains("calculator") { return "plus.forwardslash.minus" }
+        if normalized.contains("photo") { return "photo.on.rectangle.angled" }
+        if normalized.contains("pdf") { return "doc.richtext.fill" }
+        if normalized.contains("clipboard") { return "doc.on.clipboard.fill" }
+        if normalized.contains("browser") || normalized.contains("web") { return "globe" }
+        return "app.fill"
+    }
+
     private func dockAppTile(title: String, icon: String, color: Color) -> some View {
         let isRunning = desktop.windows.contains(where: { $0.title == title })
         let isMinimized = desktop.windows.first(where: { $0.title == title })?.isMinimized ?? false
@@ -202,7 +244,7 @@ struct DesktopDockView: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
-        .accessibilityValue(isActive ? "Active" : (isRunning ? "Running" : "Not running"))
+        .accessibilityValue(isActive ? "Active" : (isMinimized ? "Minimized" : (isRunning ? "Running" : "Not running")))
         .accessibilityHint("Opens or activates this app")
         .accessibilityAddTraits(.isButton)
     }
