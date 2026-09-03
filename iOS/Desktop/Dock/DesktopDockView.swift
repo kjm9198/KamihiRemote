@@ -5,6 +5,7 @@ import SwiftUI
 /// Reduce Transparency, and minimum touch-target conventions consistently.
 struct DesktopDockView: View {
     @EnvironmentObject private var desktop: DesktopSession
+    @StateObject private var power = DesktopPowerMonitor.shared
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var onOpenLauncher: () -> Void
@@ -46,21 +47,7 @@ struct DesktopDockView: View {
 
             Spacer(minLength: DesktopShellMetrics.standardSpacing)
 
-            HStack(spacing: DesktopShellMetrics.compactSpacing) {
-                Image(systemName: "display")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-
-                Text(Date(), style: .time)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
-            .frame(minHeight: DesktopShellMetrics.minimumHitTarget)
-            .padding(.trailing, 4)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("External display, current time")
+            statusSurface
         }
         .padding(.horizontal, DesktopShellMetrics.standardSpacing)
         .padding(.vertical, 6)
@@ -71,6 +58,104 @@ struct DesktopDockView: View {
             x: 0,
             y: reduceTransparency ? 0 : 6
         )
+    }
+
+    private var statusSurface: some View {
+        HStack(spacing: 10) {
+            Label {
+                Text("External")
+                    .font(.caption2.weight(.semibold))
+            } icon: {
+                Image(systemName: "display")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(.secondary)
+            .labelStyle(.titleAndIcon)
+
+            Divider()
+                .frame(height: 18)
+                .accessibilityHidden(true)
+
+            HStack(spacing: 5) {
+                Image(systemName: batterySymbol)
+                    .font(.system(size: 13, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(batteryTint)
+                    .accessibilityHidden(true)
+
+                Text(power.batteryPercentageText)
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("iPhone battery")
+            .accessibilityValue(batteryAccessibilityValue)
+
+            Divider()
+                .frame(height: 18)
+                .accessibilityHidden(true)
+
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                Text(context.date, style: .time)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .accessibilityLabel("Current time")
+            }
+        }
+        .frame(minHeight: DesktopShellMetrics.minimumHitTarget)
+        .padding(.horizontal, 10)
+        .background(
+            DesktopShellPalette.elevatedCanvas.opacity(reduceTransparency ? 1 : 0.50),
+            in: Capsule()
+        )
+        .overlay {
+            Capsule()
+                .strokeBorder(DesktopShellPalette.separator.opacity(reduceTransparency ? 0.62 : 0.30), lineWidth: reduceTransparency ? 1 : 0.5)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var batterySymbol: String {
+        switch power.batteryState {
+        case .charging:
+            return "battery.100percent.bolt"
+        case .full:
+            return "battery.100percent"
+        case .unknown, .unplugged:
+            guard power.batteryLevel >= 0 else { return "battery.0percent" }
+            switch power.batteryLevel {
+            case 0.76...: return "battery.100percent"
+            case 0.51..<0.76: return "battery.75percent"
+            case 0.26..<0.51: return "battery.50percent"
+            case 0.11..<0.26: return "battery.25percent"
+            default: return "battery.0percent"
+            }
+        @unknown default:
+            return "battery.0percent"
+        }
+    }
+
+    private var batteryTint: Color {
+        if power.batteryState == .charging || power.batteryState == .full {
+            return .green
+        }
+        if power.batteryLevel >= 0 && power.batteryLevel <= 0.20 {
+            return .orange
+        }
+        return DesktopShellPalette.secondaryLabel
+    }
+
+    private var batteryAccessibilityValue: String {
+        let state: String
+        switch power.batteryState {
+        case .charging: state = "charging"
+        case .full: state = "fully charged"
+        case .unplugged: state = "on battery"
+        case .unknown: state = "state unknown"
+        @unknown default: state = "state unknown"
+        }
+        return "\(power.batteryPercentageText), \(state)"
     }
 
     private func dockAppTile(title: String, icon: String, color: Color) -> some View {
