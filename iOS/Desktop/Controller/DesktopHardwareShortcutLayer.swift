@@ -56,6 +56,13 @@ struct DesktopHardwareShortcutLayer: View {
                 modifiers: [.command, .control],
                 action: toggleActiveWindowMaximize
             )
+
+            shortcutButton(
+                "Arrange Visible Windows",
+                key: "a",
+                modifiers: [.command, .control],
+                action: arrangeVisibleWindows
+            )
         }
         .frame(width: 1, height: 1)
         .opacity(0.001)
@@ -97,5 +104,39 @@ struct DesktopHardwareShortcutLayer: View {
     private func toggleActiveWindowMaximize() {
         guard let id = desktop.activeWindowID else { return }
         desktop.toggleMaximize(id)
+    }
+
+    /// Tiles the currently visible working set without launching, closing, or
+    /// restoring any other app. Two windows become halves, three become thirds,
+    /// and four become quarters. Larger sets are deliberately left unchanged so
+    /// a shortcut can never unexpectedly hide or overlap extra work.
+    private func arrangeVisibleWindows() {
+        let visibleIDs = desktop.windows
+            .filter { !$0.isMinimized }
+            .map(\.id)
+
+        let targets: [WindowSnapEngine.SnapTarget]
+        switch visibleIDs.count {
+        case 2:
+            targets = [.leftHalf, .rightHalf]
+        case 3:
+            targets = [.leftThird, .centerThird, .rightThird]
+        case 4:
+            targets = [.topLeftQuarter, .topRightQuarter, .bottomLeftQuarter, .bottomRightQuarter]
+        default:
+            return
+        }
+
+        let previouslyActiveID = desktop.activeWindowID
+        desktop.dismissPhoneKeyboardRequest()
+
+        for (id, target) in zip(visibleIDs, targets) {
+            desktop.snapWindow(id, to: target)
+        }
+
+        if let previouslyActiveID,
+           visibleIDs.contains(previouslyActiveID) {
+            desktop.restoreAndActivate(previouslyActiveID)
+        }
     }
 }
