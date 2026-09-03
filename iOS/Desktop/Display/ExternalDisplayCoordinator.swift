@@ -11,6 +11,10 @@ public final class ExternalDisplayCoordinator: ObservableObject {
     private enum DefaultsKey {
         static let horizontalSafeMargin = "kamihi.desktop.display.horizontalSafeMargin"
         static let verticalSafeMargin = "kamihi.desktop.display.verticalSafeMargin"
+        static let leftSafeTrim = "kamihi.desktop.display.leftSafeTrim"
+        static let rightSafeTrim = "kamihi.desktop.display.rightSafeTrim"
+        static let topSafeTrim = "kamihi.desktop.display.topSafeTrim"
+        static let bottomSafeTrim = "kamihi.desktop.display.bottomSafeTrim"
     }
 
     @Published public private(set) var isConnected: Bool = false
@@ -37,6 +41,37 @@ public final class ExternalDisplayCoordinator: ObservableObject {
         didSet {
             verticalSafeMargin = min(max(verticalSafeMargin, 0), 0.08)
             UserDefaults.standard.set(verticalSafeMargin, forKey: DefaultsKey.verticalSafeMargin)
+        }
+    }
+
+    /// Per-edge fine trims let glasses/adapter combinations compensate for asymmetric cropping
+    /// without throwing away the simple symmetric baseline. Each trim is intentionally small and
+    /// the final effective margin is always clamped to the same safe 0...8% range.
+    @Published public var leftSafeTrim: Double {
+        didSet {
+            leftSafeTrim = min(max(leftSafeTrim, -0.04), 0.04)
+            UserDefaults.standard.set(leftSafeTrim, forKey: DefaultsKey.leftSafeTrim)
+        }
+    }
+
+    @Published public var rightSafeTrim: Double {
+        didSet {
+            rightSafeTrim = min(max(rightSafeTrim, -0.04), 0.04)
+            UserDefaults.standard.set(rightSafeTrim, forKey: DefaultsKey.rightSafeTrim)
+        }
+    }
+
+    @Published public var topSafeTrim: Double {
+        didSet {
+            topSafeTrim = min(max(topSafeTrim, -0.04), 0.04)
+            UserDefaults.standard.set(topSafeTrim, forKey: DefaultsKey.topSafeTrim)
+        }
+    }
+
+    @Published public var bottomSafeTrim: Double {
+        didSet {
+            bottomSafeTrim = min(max(bottomSafeTrim, -0.04), 0.04)
+            UserDefaults.standard.set(bottomSafeTrim, forKey: DefaultsKey.bottomSafeTrim)
         }
     }
 
@@ -120,7 +155,33 @@ public final class ExternalDisplayCoordinator: ObservableObject {
         return "1080p-class output detected; backing scale needs inspection"
     }
 
+    public var effectiveLeftSafeMargin: Double { effectiveMargin(base: horizontalSafeMargin, trim: leftSafeTrim) }
+    public var effectiveRightSafeMargin: Double { effectiveMargin(base: horizontalSafeMargin, trim: rightSafeTrim) }
+    public var effectiveTopSafeMargin: Double { effectiveMargin(base: verticalSafeMargin, trim: topSafeTrim) }
+    public var effectiveBottomSafeMargin: Double { effectiveMargin(base: verticalSafeMargin, trim: bottomSafeTrim) }
+
+    public var hasAsymmetricCalibration: Bool {
+        abs(leftSafeTrim) > 0.0001
+            || abs(rightSafeTrim) > 0.0001
+            || abs(topSafeTrim) > 0.0001
+            || abs(bottomSafeTrim) > 0.0001
+    }
+
+    public var hasCalibration: Bool {
+        horizontalSafeMargin > 0
+            || verticalSafeMargin > 0
+            || hasAsymmetricCalibration
+    }
+
     public var calibrationSummary: String {
+        if hasAsymmetricCalibration {
+            let left = Int((effectiveLeftSafeMargin * 100).rounded())
+            let right = Int((effectiveRightSafeMargin * 100).rounded())
+            let top = Int((effectiveTopSafeMargin * 100).rounded())
+            let bottom = Int((effectiveBottomSafeMargin * 100).rounded())
+            return "Safe L \(left)% • R \(right)% • T \(top)% • B \(bottom)%"
+        }
+
         let h = Int((horizontalSafeMargin * 100).rounded())
         let v = Int((verticalSafeMargin * 100).rounded())
         return h == 0 && v == 0 ? "Full canvas" : "Safe margins H \(h)% • V \(v)%"
@@ -129,6 +190,10 @@ public final class ExternalDisplayCoordinator: ObservableObject {
     private init() {
         horizontalSafeMargin = min(max(UserDefaults.standard.double(forKey: DefaultsKey.horizontalSafeMargin), 0), 0.08)
         verticalSafeMargin = min(max(UserDefaults.standard.double(forKey: DefaultsKey.verticalSafeMargin), 0), 0.08)
+        leftSafeTrim = min(max(UserDefaults.standard.double(forKey: DefaultsKey.leftSafeTrim), -0.04), 0.04)
+        rightSafeTrim = min(max(UserDefaults.standard.double(forKey: DefaultsKey.rightSafeTrim), -0.04), 0.04)
+        topSafeTrim = min(max(UserDefaults.standard.double(forKey: DefaultsKey.topSafeTrim), -0.04), 0.04)
+        bottomSafeTrim = min(max(UserDefaults.standard.double(forKey: DefaultsKey.bottomSafeTrim), -0.04), 0.04)
     }
 
     /// Called by the active external-display scene delegate when iOS creates the display scene.
@@ -178,11 +243,22 @@ public final class ExternalDisplayCoordinator: ObservableObject {
     public func resetCalibration() {
         horizontalSafeMargin = 0
         verticalSafeMargin = 0
+        leftSafeTrim = 0
+        rightSafeTrim = 0
+        topSafeTrim = 0
+        bottomSafeTrim = 0
     }
 
     public func safeInsets(for size: CGSize) -> EdgeInsets {
-        let horizontal = size.width * CGFloat(horizontalSafeMargin)
-        let vertical = size.height * CGFloat(verticalSafeMargin)
-        return EdgeInsets(top: vertical, leading: horizontal, bottom: vertical, trailing: horizontal)
+        EdgeInsets(
+            top: size.height * CGFloat(effectiveTopSafeMargin),
+            leading: size.width * CGFloat(effectiveLeftSafeMargin),
+            bottom: size.height * CGFloat(effectiveBottomSafeMargin),
+            trailing: size.width * CGFloat(effectiveRightSafeMargin)
+        )
+    }
+
+    private func effectiveMargin(base: Double, trim: Double) -> Double {
+        min(max(base + trim, 0), 0.08)
     }
 }
