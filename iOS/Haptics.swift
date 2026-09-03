@@ -1,4 +1,13 @@
 import Foundation
+
+/// Kamihi Desktop's local haptic intensity preference. This is deliberately
+/// independent of the retired Remote transport/settings stack.
+enum HapticLevel {
+    case off
+    case light
+    case normal
+}
+
 #if canImport(UIKit)
 import UIKit
 
