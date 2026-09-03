@@ -1,6 +1,13 @@
 import SwiftUI
 import UIKit
 
+/// Startup profiles are a one-time process launch decision, not a cable-reconnect
+/// policy. Keeping this state outside the scene delegate matters because iOS may
+/// destroy and recreate the external-display scene when USB-C glasses/monitors are
+/// unplugged and reattached while the Kamihi process remains alive.
+@MainActor
+private var hasAppliedInitialDesktopLaunchProfile = false
+
 /// User-initiated capture bridge for the Kamihi-owned external-display scene.
 ///
 /// This snapshots only Kamihi's external UIWindow, at the backing scale iOS
@@ -126,7 +133,15 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         Task { @MainActor in
             ExternalDisplayCoordinator.shared.connect(screen: screen)
-            DesktopLaunchProfile.selected.apply(to: DesktopSession.shared)
+
+            // Apply Clean/Resume/Work/Browse/Media/Vibe only for the first
+            // external-display connection of this app process. A USB-C unplug /
+            // reconnect must retain the current windows, workspace and active app
+            // instead of re-running the startup profile over the live session.
+            if !hasAppliedInitialDesktopLaunchProfile {
+                hasAppliedInitialDesktopLaunchProfile = true
+                DesktopLaunchProfile.selected.apply(to: DesktopSession.shared)
+            }
         }
     }
 
