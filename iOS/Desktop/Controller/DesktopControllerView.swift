@@ -11,6 +11,7 @@ struct DesktopControllerView: View {
     @StateObject private var settings = TrackpadSettings.shared
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("desktop.controller.controlsLeading") private var controlsLeading = false
 
     @State private var showLauncher = false
     @State private var showOverview = false
@@ -89,39 +90,47 @@ struct DesktopControllerView: View {
     /// settings, capture and takeover remain discoverable inside More so the
     /// phone keeps the largest possible uninterrupted gesture surface.
     private var fullTrackpadLayout: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             trackpadSurface(cornerRadius: 0)
                 .ignoresSafeArea()
 
-            HStack(spacing: 8) {
-                Button {
-                    setKeyboardVisible(!showKeyboard)
-                } label: {
-                    Image(systemName: "keyboard")
-                        .frame(width: 44, height: 44)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: .circle)
-                .accessibilityLabel(showKeyboard ? "Hide Keyboard" : "Keyboard")
-                .accessibilityHint("Types into the active desktop window.")
-                .disabled(desktop.activeWindow == nil)
+            VStack {
+                HStack(spacing: 8) {
+                    if !controlsLeading { Spacer(minLength: 0) }
 
-                Menu {
-                    moreControllerActions
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .frame(width: 44, height: 44)
-                        .contentShape(Circle())
+                    Button {
+                        setKeyboardVisible(!showKeyboard)
+                    } label: {
+                        Image(systemName: "keyboard")
+                            .frame(width: 44, height: 44)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .accessibilityLabel(showKeyboard ? "Hide Keyboard" : "Keyboard")
+                    .accessibilityHint("Types into the active desktop window.")
+                    .disabled(desktop.activeWindow == nil)
+
+                    Menu {
+                        moreControllerActions
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .frame(width: 44, height: 44)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .accessibilityLabel("More Desktop Controls")
+                    .accessibilityValue(desktop.activeWindow?.title ?? "No active window")
+                    .accessibilityHint("Opens apps, windows, status, settings, and other controls.")
+
+                    if controlsLeading { Spacer(minLength: 0) }
                 }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: .circle)
-                .accessibilityLabel("More Desktop Controls")
-                .accessibilityValue(desktop.activeWindow?.title ?? "No active window")
-                .accessibilityHint("Opens apps, windows, status, settings, and other controls.")
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+
+                Spacer(minLength: 0)
             }
-            .padding(.trailing, 12)
-            .padding(.top, 8)
         }
     }
 
@@ -164,6 +173,16 @@ struct DesktopControllerView: View {
         }
 
         Divider()
+
+        Button {
+            controlsLeading.toggle()
+            if settings.hapticsEnabled { Haptics.touchTap() }
+        } label: {
+            Label(
+                controlsLeading ? "Move Controls to Right" : "Move Controls to Left",
+                systemImage: controlsLeading ? "hand.point.right.fill" : "hand.point.left.fill"
+            )
+        }
 
         Button {
             engine.isPrecisionMode.toggle()
