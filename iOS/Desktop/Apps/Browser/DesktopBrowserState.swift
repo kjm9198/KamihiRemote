@@ -76,6 +76,22 @@ public final class DesktopBrowserState: ObservableObject {
     private let historyKey = "kamihi.desktop.browser.history.v1"
     private let encoder = JSONEncoder()
 
+    private static let sensitiveHistoryQueryNames: Set<String> = [
+        "access_token",
+        "auth",
+        "authorization",
+        "code",
+        "credential",
+        "id_token",
+        "key",
+        "password",
+        "passwd",
+        "secret",
+        "session",
+        "session_id",
+        "token"
+    ]
+
     private init() {
         let defaults = UserDefaults.standard
         let restoredTabs: [Tab] = Self.decode([Tab].self, from: defaults.data(forKey: "kamihi.desktop.browser.tabs.v1")) ?? []
@@ -95,7 +111,13 @@ public final class DesktopBrowserState: ObservableObject {
 
         let active = initialTabs.first(where: { $0.id == resolvedActiveTabID }) ?? initialTabs[0]
         let restoredBookmarks = Self.decode([Bookmark].self, from: defaults.data(forKey: "kamihi.desktop.browser.bookmarks.v1")) ?? []
-        let restoredHistory = Self.decode([HistoryItem].self, from: defaults.data(forKey: "kamihi.desktop.browser.history.v1")) ?? []
+        let decodedHistory = Self.decode([HistoryItem].self, from: defaults.data(forKey: "kamihi.desktop.browser.history.v1")) ?? []
+        let restoredHistory = decodedHistory.compactMap { item -> HistoryItem? in
+            guard let safeURL = Self.historySafeURL(item.url) else { return nil }
+            var sanitized = item
+            sanitized.url = safeURL
+            return sanitized
+        }
 
         tabs = initialTabs
         activeTabID = resolvedActiveTabID
@@ -104,6 +126,10 @@ public final class DesktopBrowserState: ObservableObject {
         title = active.title
         bookmarks = restoredBookmarks
         history = restoredHistory
+
+        // Rewrite older history entries through the same privacy filter so an
+        // upgrade removes any previously persisted fragments/auth-like values.
+        persistLibrary()
     }
 
     public var activeTab: Tab? {
@@ -219,6 +245,33 @@ public final class DesktopBrowserState: ObservableObject {
         }
     }
 
+    /// Returns the URL shape that is safe to persist in local browser history.
+    /// Navigation itself keeps the full in-memory URL; this only affects the
+    /// history record. Fragments are always removed, non-http(s) schemes are not
+    /// stored, and common auth/session query values are discarded so OAuth codes,
+    /// tokens, passwords, and similar credentials never land in UserDefaults.
+    static func historySafeURL(_ url: URL) -> URL? {
+        guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
+            return nil
+        }
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+
+        components.fragment = nil
+        if let queryItems = components.queryItems {
+            let safeItems = queryItems.filter { item in
+                let normalizedName = item.name.lowercased().replacingOccurrences(of: "-", with: "_")
+                return !sensitiveHistoryQueryNames.contains(normalizedName)
+                    && !normalizedName.hasSuffix("_token")
+                    && !normalizedName.hasSuffix("_secret")
+                    && !normalizedName.hasSuffix("_password")
+            }
+            components.queryItems = safeItems.isEmpty ? nil : safeItems
+        }
+        return components.url
+    }
+
     private func syncActiveMetadata() {
         guard let tab = activeTab else { return }
         urlInput = tab.url?.absoluteString ?? ""
@@ -230,8 +283,9 @@ public final class DesktopBrowserState: ObservableObject {
     }
 
     private func recordHistory(title: String, url: URL) {
-        history.removeAll(where: { $0.url == url })
-        history.insert(HistoryItem(title: title, url: url), at: 0)
+        guard let persistedURL = Self.historySafeURL(url) else { return }
+        history.removeAll(where: { $0.url == persistedURL })
+        history.insert(HistoryItem(title: title, url: persistedURL), at: 0)
         if history.count > 100 {
             history.removeLast(history.count - 100)
         }
