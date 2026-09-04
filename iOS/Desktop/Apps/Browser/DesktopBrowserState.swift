@@ -209,9 +209,21 @@ public final class DesktopBrowserState: ObservableObject {
         recordVisit: Bool = false
     ) {
         guard let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }
-        if let url { tabs[index].url = url }
-        if let pageTitle, !pageTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+
+        // WebKit calls this several times for one navigation (start, commit,
+        // finish, failure). Loading/back-forward state is transient and is not
+        // restored from disk, so avoid re-encoding/writing the whole tab list for
+        // those callbacks. Persist only when durable tab metadata actually changes.
+        var durableTabStateChanged = false
+        if let url, tabs[index].url != url {
+            tabs[index].url = url
+            durableTabStateChanged = true
+        }
+        if let pageTitle,
+           !pageTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           tabs[index].title != pageTitle {
             tabs[index].title = pageTitle
+            durableTabStateChanged = true
         }
         tabs[index].isLoading = isLoading
 
@@ -227,7 +239,9 @@ public final class DesktopBrowserState: ObservableObject {
         if recordVisit, let visitedURL = tabs[index].url {
             recordHistory(title: tabs[index].title, url: visitedURL)
         }
-        persistTabs()
+        if durableTabStateChanged {
+            persistTabs()
+        }
     }
 
     public func toggleBookmarkForActivePage() {
