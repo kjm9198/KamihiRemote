@@ -24,6 +24,12 @@ final class TrackpadEngine: ObservableObject {
         var opacity: Double
     }
 
+    /// Window movement must be a deliberate title-bar hold, never a side effect
+    /// of ordinary pointer travel. Keeping this time-based gate deterministic
+    /// avoids adding a timer/display-link while still requiring a clear pause.
+    private static let windowDragHoldDuration: TimeInterval = 1.50
+    private static let windowDragPreHoldMovementTolerance: CGFloat = 8.0
+
     @Published private(set) var state: State = .idle
     @Published private(set) var activeFingers: Int = 0
     @Published var isPrecisionMode: Bool = false
@@ -38,6 +44,7 @@ final class TrackpadEngine: ObservableObject {
     private var gestureFingerCount: Int = 0
     private var lastObservedFingerCount: Int = 0
     private var secondTapCandidate = false
+    private var dragHoldEligible = true
     private var threeFingerActionFired = false
     /// Three-finger controller gestures must begin only after the third finger is
     /// actually present. Reusing the original one-finger centroid can inherit
@@ -74,6 +81,7 @@ final class TrackpadEngine: ObservableObject {
             lastCentroid = center
             totalMovementDistance = 0
             gestureFingerCount = 1
+            dragHoldEligible = true
             threeFingerActionFired = false
             threeFingerStartCentroid = nil
             scrollVelocity = .zero
@@ -223,6 +231,7 @@ final class TrackpadEngine: ObservableObject {
         gestureFingerCount = 0
         totalMovementDistance = 0
         secondTapCandidate = false
+        dragHoldEligible = true
         threeFingerActionFired = false
         threeFingerStartCentroid = nil
         scrollVelocity = .zero
@@ -237,6 +246,7 @@ final class TrackpadEngine: ObservableObject {
         lastObservedFingerCount = 0
         totalMovementDistance = 0
         secondTapCandidate = false
+        dragHoldEligible = true
         threeFingerActionFired = false
         threeFingerStartCentroid = nil
         scrollVelocity = .zero
@@ -305,11 +315,22 @@ final class TrackpadEngine: ObservableObject {
         }
 
         let heldDuration = now - gestureStartTime
-        let wantsManipulation =
-            (secondTapCandidate && totalMovementDistance > 3.0) ||
-            (heldDuration > 0.34 && totalMovementDistance > 5.0)
+
+        // Ordinary one-finger pointer travel permanently disqualifies this touch
+        // from becoming a window drag. The user must first park the cursor over
+        // a title bar, hold nearly still, then move after the hold threshold.
+        if heldDuration < Self.windowDragHoldDuration,
+           totalMovementDistance > Self.windowDragPreHoldMovementTolerance {
+            dragHoldEligible = false
+        }
+
+        let wantsManipulation = dragHoldEligible &&
+            heldDuration >= Self.windowDragHoldDuration &&
+            totalMovementDistance > 1.0
 
         if wantsManipulation, desktop.beginWindowDrag() {
+            // Drag Lock remains available only through an equally deliberate
+            // second-tap-and-hold. A normal long hold behaves like direct drag.
             state = secondTapCandidate && settings.dragLock ? .dragLocked : .dragging
             resetPointerSmoothing()
             if settings.hapticsEnabled { Haptics.touchTap() }
