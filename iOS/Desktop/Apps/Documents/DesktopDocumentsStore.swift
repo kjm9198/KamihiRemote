@@ -27,7 +27,9 @@ final class DesktopDocumentsStore: ObservableObject {
     @Published private(set) var documents: [Document] = [] {
         didSet { save() }
     }
-    @Published private(set) var activeDocumentID: UUID?
+    @Published private(set) var activeDocumentID: UUID? {
+        didSet { save() }
+    }
 
     private let storageKey = "kamihi.desktop.documents.v1"
 
@@ -37,7 +39,7 @@ final class DesktopDocumentsStore: ObservableObject {
             let document = Document(title: "Untitled Document")
             documents = [document]
             activeDocumentID = document.id
-        } else {
+        } else if activeDocumentID == nil {
             activeDocumentID = documents.first?.id
         }
     }
@@ -148,10 +150,8 @@ final class DesktopDocumentsStore: ObservableObject {
 
     private func refreshAutomaticTitle(_ document: inout Document) {
         guard document.title.hasPrefix("Untitled Document") else { return }
-        let firstLine = document.body
-            .split(whereSeparator: \.isNewline)
-            .first?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard let rawFirstLine = document.body.split(whereSeparator: \.isNewline).first else { return }
+        let firstLine = String(rawFirstLine).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !firstLine.isEmpty else { return }
         document.title = String(firstLine.prefix(48))
     }
@@ -162,6 +162,8 @@ final class DesktopDocumentsStore: ObservableObject {
         }
         if let activeDocumentID {
             UserDefaults.standard.set(activeDocumentID.uuidString, forKey: storageKey + ".active")
+        } else {
+            UserDefaults.standard.removeObject(forKey: storageKey + ".active")
         }
     }
 
