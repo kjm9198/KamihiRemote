@@ -19,19 +19,27 @@ public enum DesktopWindowChrome {
         guard point.y >= frame.minY,
               point.y <= frame.minY + titleHeight else { return nil }
 
-        let extent = min(max(frame.width * 0.066, 0.020), 0.030)
-        let gap = min(max(frame.width * 0.012, 0.004), 0.008)
-        let trailing = min(max(frame.width * 0.018, 0.006), 0.012)
-        let verticalPadding = max((titleHeight - extent) / 2, 0)
-        let yRange = (frame.minY + verticalPadding)...(frame.minY + verticalPadding + extent)
+        // The rendered buttons are visually small, but a software pointer on
+        // glasses needs forgiving hit targets. Keep the three actions separate
+        // while expanding each target to roughly 44pt-equivalent normalized
+        // geometry at a 1080p/1920-wide desktop. This fixes the visible X
+        // appearing clickable while the pointer misses its old tiny hit box.
+        let visualExtent = min(max(frame.width * 0.066, 0.020), 0.030)
+        let hitExtent = max(visualExtent, 0.026)
+        let gap = max(min(frame.width * 0.010, 0.006), 0.003)
+        let trailing = min(max(frame.width * 0.016, 0.006), 0.012)
+
+        let hitHeight = min(max(titleHeight * 0.88, 0.032), titleHeight)
+        let yCenter = frame.minY + titleHeight / 2
+        let yRange = (yCenter - hitHeight / 2)...(yCenter + hitHeight / 2)
         guard yRange.contains(point.y) else { return nil }
 
         let closeMaxX = frame.maxX - trailing
-        let closeMinX = closeMaxX - extent
+        let closeMinX = closeMaxX - hitExtent
         let maximizeMaxX = closeMinX - gap
-        let maximizeMinX = maximizeMaxX - extent
+        let maximizeMinX = maximizeMaxX - hitExtent
         let minimizeMaxX = maximizeMinX - gap
-        let minimizeMinX = minimizeMaxX - extent
+        let minimizeMinX = minimizeMaxX - hitExtent
 
         if (closeMinX...closeMaxX).contains(point.x) { return .close }
         if (maximizeMinX...maximizeMaxX).contains(point.x) { return .maximizeRestore }
