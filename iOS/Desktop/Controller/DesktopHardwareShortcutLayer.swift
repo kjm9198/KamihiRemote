@@ -19,6 +19,13 @@ struct DesktopHardwareShortcutLayer: View {
             )
 
             shortcutButton(
+                "Minimize Active Window",
+                key: "m",
+                modifiers: [.command],
+                action: minimizeActiveWindow
+            )
+
+            shortcutButton(
                 "Next Window",
                 key: "`",
                 modifiers: [.command]
@@ -87,6 +94,14 @@ struct DesktopHardwareShortcutLayer: View {
         // proxy targeting a window that no longer exists.
         desktop.dismissPhoneKeyboardRequest()
         desktop.close(id)
+    }
+
+    private func minimizeActiveWindow() {
+        guard let id = desktop.activeWindowID else { return }
+        // Minimize is also a focus transition: clear the phone keyboard request
+        // before DesktopSession promotes the next visible window.
+        desktop.dismissPhoneKeyboardRequest()
+        desktop.minimize(id)
     }
 
     private func cycleWindow(forward: Bool) {
