@@ -5,14 +5,32 @@ struct DesktopAppLauncherView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @EnvironmentObject private var desktop: DesktopSession
+    @StateObject private var browser = DesktopBrowserState.shared
     @State private var searchText = ""
 
     private struct AppItem: Identifiable {
-        let id = UUID()
+        let id: String
         let title: String
         let icon: String
         let color: Color
         let category: String
+        let url: URL?
+
+        init(
+            id: String? = nil,
+            title: String,
+            icon: String,
+            color: Color,
+            category: String,
+            url: URL? = nil
+        ) {
+            self.id = id ?? title
+            self.title = title
+            self.icon = icon
+            self.color = color
+            self.category = category
+            self.url = url
+        }
     }
 
     private let apps: [AppItem] = [
@@ -28,6 +46,21 @@ struct DesktopAppLauncherView: View {
         AppItem(title: "Display Diagnostics", icon: "waveform.path.ecg.rectangle", color: Color.teal, category: "System")
     ]
 
+    private var pinnedWebApps: [AppItem] {
+        browser.bookmarks.prefix(12).map { bookmark in
+            let fallbackTitle = bookmark.url.host?.replacingOccurrences(of: "www.", with: "") ?? "Website"
+            let trimmedTitle = bookmark.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return AppItem(
+                id: "pinned-web-\(bookmark.id.uuidString)",
+                title: trimmedTitle.isEmpty ? fallbackTitle : trimmedTitle,
+                icon: "app.badge",
+                color: Color.accentColor,
+                category: "Pinned Web App",
+                url: bookmark.url
+            )
+        }
+    }
+
     private var orderedApps: [AppItem] {
         let priorities = DesktopLaunchProfile.selected.preferredAppOrder
         guard !priorities.isEmpty else { return apps }
@@ -39,11 +72,16 @@ struct DesktopAppLauncherView: View {
         }
     }
 
+    private var allApps: [AppItem] {
+        orderedApps + pinnedWebApps
+    }
+
     private var filteredApps: [AppItem] {
-        if searchText.isEmpty { return orderedApps }
-        return orderedApps.filter {
+        if searchText.isEmpty { return allApps }
+        return allApps.filter {
             $0.title.localizedCaseInsensitiveContains(searchText) ||
-            $0.category.localizedCaseInsensitiveContains(searchText)
+            $0.category.localizedCaseInsensitiveContains(searchText) ||
+            ($0.url?.host?.localizedCaseInsensitiveContains(searchText) ?? false)
         }
     }
 
@@ -81,7 +119,7 @@ struct DesktopAppLauncherView: View {
 
     private func appTile(_ app: AppItem) -> some View {
         Button {
-            launchApp(app.title)
+            launchApp(app)
         } label: {
             VStack(spacing: DesktopShellMetrics.compactSpacing) {
                 Image(systemName: app.icon)
@@ -114,17 +152,27 @@ struct DesktopAppLauncherView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(app.title)
-        .accessibilityHint("Opens \(app.title) on Kamihi Desktop")
+        .accessibilityHint(app.url == nil ? "Opens \(app.title) on Kamihi Desktop" : "Opens pinned website \(app.title) in Kamihi Browser")
         .accessibilityAddTraits(.isButton)
     }
 
-    private func launchApp(_ title: String) {
+    private func launchApp(_ app: AppItem) {
         if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
 
         // New apps start centered at 60% of the desktop instead of appearing
         // oversized or touching display edges.
         let frame = CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60)
-        desktop.openProductivityApp(title, frame: frame)
+
+        if let url = app.url {
+            // Bookmarks are already persisted through DesktopBrowserState's URL
+            // privacy filter. Launch them as pinned web apps by opening a fresh
+            // Browser tab on the existing persistent WebKit website data store,
+            // preserving login/session continuity without copying credentials.
+            browser.newTab(url: url)
+            desktop.openProductivityApp("Browser", frame: frame)
+        } else {
+            desktop.openProductivityApp(app.title, frame: frame)
+        }
         dismiss()
     }
 
