@@ -10,6 +10,7 @@ import WebKit
 /// credentials from the page.
 struct PhoneTakeoverView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var desktop: DesktopSession
     let windowID: UUID
 
@@ -19,6 +20,7 @@ struct PhoneTakeoverView: View {
     @State private var canGoBack = false
     @State private var canGoForward = false
     @State private var webView: WKWebView?
+    @State private var isPrivacyShielded = false
 
     var body: some View {
         NavigationStack {
@@ -61,12 +63,66 @@ struct PhoneTakeoverView: View {
             }
         }
         .interactiveDismissDisabled(isLoading)
+        .overlay {
+            if isPrivacyShielded {
+                takeoverPrivacyShield
+            }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase != .active else { return }
+
+            // Authentication pages can contain passwords, one-time codes and
+            // account information even though Kamihi never reads those values.
+            // Hide the live WebView before iOS takes an app-switcher/background
+            // snapshot and require an explicit user gesture before revealing it
+            // again. Stop only the current network load; cookies/session data stay
+            // inside WKWebsiteDataStore.default().
+            isPrivacyShielded = true
+            webView?.stopLoading()
+            isLoading = false
+        }
         .onDisappear {
             // A swipe-to-dismiss after loading is a valid way to leave this sheet.
             // Synchronize the final URL on every dismissal path so OAuth redirects
             // are not lost merely because the user did not tap the Return button.
             synchronizeBrowserURL()
         }
+    }
+
+    private var takeoverPrivacyShield: some View {
+        ZStack {
+            Color(uiColor: .systemBackground)
+                .ignoresSafeArea()
+
+            VStack(spacing: 14) {
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 42, weight: .semibold))
+                    .foregroundStyle(.tint)
+                    .accessibilityHidden(true)
+
+                Text("Phone Takeover hidden")
+                    .font(.title3.weight(.semibold))
+
+                Text("Kamihi hides the authentication page when the app leaves the foreground so passwords, passkeys, one-time codes and account details are not left visible in the app switcher.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 420)
+
+                Button {
+                    isPrivacyShielded = false
+                } label: {
+                    Label("Continue securely", systemImage: "hand.tap.fill")
+                        .font(.headline)
+                        .frame(minWidth: 180, minHeight: 44)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(scenePhase != .active)
+                .accessibilityHint("Reveals the live authentication page on this iPhone.")
+            }
+            .padding(28)
+        }
+        .accessibilityElement(children: .contain)
     }
 
     private var securityBanner: some View {
