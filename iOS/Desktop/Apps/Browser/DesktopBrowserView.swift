@@ -51,46 +51,53 @@ struct DesktopBrowserView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 5) {
                     ForEach(state.tabs) { tab in
-                        Button {
-                            state.selectTab(id: tab.id)
-                        } label: {
-                            HStack(spacing: 7) {
-                                if tab.isLoading {
-                                    ProgressView().controlSize(.mini)
-                                } else {
-                                    Image(systemName: tab.id == state.activeTabID ? "globe" : "circle.fill")
-                                        .font(.system(size: tab.id == state.activeTabID ? 11 : 5, weight: .semibold))
-                                        .foregroundStyle(tab.id == state.activeTabID ? Color.accentColor : Color.secondary)
-                                }
+                        HStack(spacing: 0) {
+                            Button {
+                                state.selectTab(id: tab.id)
+                            } label: {
+                                HStack(spacing: 7) {
+                                    if tab.isLoading {
+                                        ProgressView().controlSize(.mini)
+                                    } else {
+                                        Image(systemName: tab.id == state.activeTabID ? "globe" : "circle.fill")
+                                            .font(.system(size: tab.id == state.activeTabID ? 11 : 5, weight: .semibold))
+                                            .foregroundStyle(tab.id == state.activeTabID ? Color.accentColor : Color.secondary)
+                                    }
 
-                                Text(tab.title)
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(Color.primary)
-                                    .lineLimit(1)
-                                    .frame(maxWidth: 150, alignment: .leading)
-
-                                Button {
-                                    controller.closeTab(tab.id)
-                                    state.closeTab(id: tab.id)
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .frame(width: 20, height: 20)
+                                    Text(tab.title)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundStyle(Color.primary)
+                                        .lineLimit(1)
+                                        .frame(maxWidth: 150, alignment: .leading)
                                 }
-                                .buttonStyle(.plain)
-                                .foregroundStyle(Color.secondary)
-                                .accessibilityLabel("Close tab")
+                                .padding(.leading, 10)
+                                .padding(.trailing, 4)
+                                .frame(height: 30)
+                                .contentShape(Rectangle())
                             }
-                            .padding(.leading, 10)
-                            .padding(.trailing, 5)
-                            .frame(height: 30)
-                            .background(
-                                tab.id == state.activeTabID ? Color.primary.opacity(0.09) : Color.clear,
-                                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            )
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Tab \(tab.title)")
+                            .accessibilityHint("Selects this browser tab")
+
+                            Button {
+                                controller.closeTab(tab.id)
+                                state.closeTab(id: tab.id)
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .frame(width: 28, height: 30)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Color.secondary)
+                            .accessibilityLabel("Close \(tab.title) tab")
+                            .accessibilityHint("Closes only this browser tab")
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Tab \(tab.title)")
+                        .padding(.trailing, 2)
+                        .background(
+                            tab.id == state.activeTabID ? Color.primary.opacity(0.09) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        )
                     }
                 }
                 .padding(.horizontal, 6)
