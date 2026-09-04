@@ -39,6 +39,10 @@ final class TrackpadEngine: ObservableObject {
     private var lastObservedFingerCount: Int = 0
     private var secondTapCandidate = false
     private var threeFingerActionFired = false
+    /// Three-finger controller gestures must begin only after the third finger is
+    /// actually present. Reusing the original one-finger centroid can inherit
+    /// earlier pointer motion and accidentally trigger Overview/window switching.
+    private var threeFingerStartCentroid: CGPoint?
     private var scrollVelocity: CGSize = .zero
     private var previousPointerDelta: CGSize = .zero
     private var hasPreviousPointerDelta = false
@@ -71,6 +75,7 @@ final class TrackpadEngine: ObservableObject {
             totalMovementDistance = 0
             gestureFingerCount = 1
             threeFingerActionFired = false
+            threeFingerStartCentroid = nil
             scrollVelocity = .zero
             resetPointerSmoothing()
             secondTapCandidate = now - lastTapTime <= 0.30
@@ -80,6 +85,11 @@ final class TrackpadEngine: ObservableObject {
             lastCentroid = center
             lastSampleTime = now
             gestureFingerCount = max(gestureFingerCount, activeFingers)
+            if activeFingers == 3 && lastObservedFingerCount != 3 {
+                threeFingerStartCentroid = center
+            } else if activeFingers != 3 {
+                threeFingerStartCentroid = nil
+            }
             resetPointerSmoothing()
         }
 
@@ -96,6 +106,11 @@ final class TrackpadEngine: ObservableObject {
         // When a second/third finger joins or leaves, reset the sampling origin
         // and consume that sample. This prevents the classic multi-touch jump.
         if activeFingers != lastObservedFingerCount {
+            if activeFingers == 3 {
+                threeFingerStartCentroid = center
+            } else {
+                threeFingerStartCentroid = nil
+            }
             lastObservedFingerCount = activeFingers
             gestureFingerCount = max(gestureFingerCount, activeFingers)
             lastCentroid = center
@@ -158,6 +173,9 @@ final class TrackpadEngine: ObservableObject {
 
         activeFingers = max(remainingTouchCount, 0)
         lastObservedFingerCount = activeFingers
+        if activeFingers != 3 {
+            threeFingerStartCentroid = nil
+        }
 
         // Evaluate click semantics only when the complete gesture has ended.
         guard remainingTouchCount == 0 else {
@@ -206,6 +224,7 @@ final class TrackpadEngine: ObservableObject {
         totalMovementDistance = 0
         secondTapCandidate = false
         threeFingerActionFired = false
+        threeFingerStartCentroid = nil
         scrollVelocity = .zero
         resetPointerSmoothing()
     }
@@ -219,6 +238,7 @@ final class TrackpadEngine: ObservableObject {
         totalMovementDistance = 0
         secondTapCandidate = false
         threeFingerActionFired = false
+        threeFingerStartCentroid = nil
         scrollVelocity = .zero
         resetPointerSmoothing()
         desktop.cancelPointerManipulation()
@@ -424,10 +444,11 @@ final class TrackpadEngine: ObservableObject {
     // MARK: - Three Finger
 
     private func handleThreeFingerGesture(center: CGPoint) {
-        guard !threeFingerActionFired else { return }
+        guard !threeFingerActionFired,
+              let origin = threeFingerStartCentroid else { return }
 
-        let totalDX = center.x - initialCentroid.x
-        let totalDY = center.y - initialCentroid.y
+        let totalDX = center.x - origin.x
+        let totalDY = center.y - origin.y
 
         if totalDY < -58 && abs(totalDX) < 46 {
             threeFingerActionFired = true
