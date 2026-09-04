@@ -19,7 +19,11 @@ struct ExternalDesktopCanvasView: View {
             let insets = display.safeInsets(for: outer.size)
 
             ZStack {
-                KamihiTheme.AtmosphericBackground()
+                // The canonical one-desktop experience starts from a genuinely
+                // empty black canvas. Appearance settings continue to style app
+                // surfaces/chrome, but never turn the desktop itself into a
+                // decorative wallpaper.
+                Color.black
                     .ignoresSafeArea()
 
                 desktopSurface
