@@ -130,14 +130,23 @@ public final class TrackpadSettings: ObservableObject {
         self.naturalScrolling = defaults.object(forKey: "kamihi.desktop.naturalScrolling") as? Bool ?? true
         self.scrollMomentum = defaults.object(forKey: "kamihi.desktop.scrollMomentum") as? Bool ?? true
         self.tapToClick = defaults.object(forKey: "kamihi.desktop.tapToClick") as? Bool ?? true
-        self.dragLock = defaults.object(forKey: "kamihi.desktop.dragLock") as? Bool ?? true
+
+        // Drag Lock is opt-in. A fresh/default installation should behave like a
+        // direct trackpad: hold to move a title bar and release to drop it. This
+        // prevents a second-tap hold from leaving a window attached to the pointer
+        // unexpectedly. Explicit user choices already persisted in UserDefaults
+        // are preserved exactly.
+        self.dragLock = defaults.object(forKey: "kamihi.desktop.dragLock") as? Bool ?? false
         self.hapticsEnabled = defaults.object(forKey: "kamihi.desktop.hapticsEnabled") as? Bool ?? true
 
         if let savedStyle = defaults.string(forKey: "kamihi.desktop.cursorStyle"),
            let style = CursorStyle(rawValue: savedStyle) {
             self.cursorStyle = style
         } else {
-            self.cursorStyle = .kamihiDot
+            // A conventional high-contrast arrow is easier to acquire on a plain
+            // black 1080p desktop than the compact dot. Users can still choose the
+            // Kamihi Dot, Precision or Large Accessibility styles in settings.
+            self.cursorStyle = .classicArrow
         }
 
         if pointerTuningVersion < 2 {
