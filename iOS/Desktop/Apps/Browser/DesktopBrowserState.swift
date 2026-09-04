@@ -111,7 +111,8 @@ public final class DesktopBrowserState: ObservableObject {
         }
 
         let active = initialTabs.first(where: { $0.id == resolvedActiveTabID }) ?? initialTabs[0]
-        let restoredBookmarks = Self.decode([Bookmark].self, from: defaults.data(forKey: "kamihi.desktop.browser.bookmarks.v1")) ?? []
+        let decodedBookmarks = Self.decode([Bookmark].self, from: defaults.data(forKey: "kamihi.desktop.browser.bookmarks.v1")) ?? []
+        let restoredBookmarks = decodedBookmarks.compactMap(Self.persistenceSafeBookmark)
         let decodedHistory = Self.decode([HistoryItem].self, from: defaults.data(forKey: "kamihi.desktop.browser.history.v1")) ?? []
         let restoredHistory = decodedHistory.compactMap { item -> HistoryItem? in
             guard let safeURL = Self.historySafeURL(item.url) else { return nil }
@@ -129,8 +130,8 @@ public final class DesktopBrowserState: ObservableObject {
         history = restoredHistory
 
         // Rewrite older persisted state through the same privacy filter so an
-        // upgrade removes OAuth codes/tokens/fragments from saved tabs as well as
-        // history. Live WebKit navigation still keeps the complete in-memory URL.
+        // upgrade removes OAuth codes/tokens/fragments from saved tabs, bookmarks
+        // and history. Live WebKit navigation still keeps the complete in-memory URL.
         persistTabs()
         persistLibrary()
     }
@@ -140,8 +141,9 @@ public final class DesktopBrowserState: ObservableObject {
     }
 
     public var isActivePageBookmarked: Bool {
-        guard let url = activeTab?.url else { return false }
-        return bookmarks.contains(where: { $0.url == url })
+        guard let url = activeTab?.url,
+              let safeURL = Self.historySafeURL(url) else { return false }
+        return bookmarks.contains(where: { $0.url == safeURL })
     }
 
     public func newTab(url: URL? = URL(string: "https://www.google.com")) {
@@ -214,11 +216,13 @@ public final class DesktopBrowserState: ObservableObject {
     }
 
     public func toggleBookmarkForActivePage() {
-        guard let tab = activeTab, let url = tab.url else { return }
-        if let index = bookmarks.firstIndex(where: { $0.url == url }) {
+        guard let tab = activeTab,
+              let url = tab.url,
+              let safeURL = Self.historySafeURL(url) else { return }
+        if let index = bookmarks.firstIndex(where: { $0.url == safeURL }) {
             bookmarks.remove(at: index)
         } else {
-            bookmarks.insert(Bookmark(title: tab.title, url: url), at: 0)
+            bookmarks.insert(Bookmark(title: tab.title, url: safeURL), at: 0)
         }
         persistLibrary()
     }
@@ -284,6 +288,13 @@ public final class DesktopBrowserState: ObservableObject {
         return sanitized
     }
 
+    private static func persistenceSafeBookmark(_ bookmark: Bookmark) -> Bookmark? {
+        guard let safeURL = historySafeURL(bookmark.url) else { return nil }
+        var sanitized = bookmark
+        sanitized.url = safeURL
+        return sanitized
+    }
+
     private func syncActiveMetadata() {
         guard let tab = activeTab else { return }
         urlInput = tab.url?.absoluteString ?? ""
@@ -311,7 +322,8 @@ public final class DesktopBrowserState: ObservableObject {
     }
 
     private func persistLibrary() {
-        defaults.set(try? encoder.encode(bookmarks), forKey: bookmarksKey)
+        let persistedBookmarks = bookmarks.compactMap(Self.persistenceSafeBookmark)
+        defaults.set(try? encoder.encode(persistedBookmarks), forKey: bookmarksKey)
         defaults.set(try? encoder.encode(history), forKey: historyKey)
     }
 
