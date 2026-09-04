@@ -33,6 +33,23 @@ struct ContextualControllerToolbar: View {
         return BrowserDownloadItem.loadCurrentDownloads()
     }
 
+    private var activeNoteShareText: String? {
+        guard let note = DesktopNotesStore.shared.activeNote else { return nil }
+        let title = note.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = note.body.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        switch (title.isEmpty, body.isEmpty) {
+        case (true, true):
+            return nil
+        case (false, true):
+            return title
+        case (true, false):
+            return body
+        case (false, false):
+            return "\(title)\n\n\(body)"
+        }
+    }
+
     var body: some View {
         ViewThatFits(in: .horizontal) {
             expandedToolbar
@@ -248,6 +265,11 @@ struct ContextualControllerToolbar: View {
                 Button(action: onToggleKeyboard) {
                     Label("Edit Note", systemImage: "pencil.line")
                 }
+                if let shareText = activeNoteShareText {
+                    ShareLink(item: shareText) {
+                        Label("Share Note", systemImage: "square.and.arrow.up")
+                    }
+                }
             default:
                 Button(action: onOpenOverview) {
                     Label("Window Overview", systemImage: "square.2.layers.3d.top.filled")
@@ -379,6 +401,20 @@ struct ContextualControllerToolbar: View {
             compactButton(symbol: "pencil.line", label: "Edit Note", hint: "Opens the phone keyboard for the current note.") {
                 onToggleKeyboard()
             }
+
+            if let shareText = activeNoteShareText {
+                ShareLink(item: shareText) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: symbolSize, weight: .semibold))
+                        .foregroundStyle(Color.primary.opacity(0.86))
+                        .frame(width: controlSize, height: controlSize)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: .circle)
+                .accessibilityLabel("Share Note")
+                .accessibilityHint("Shares the active note through the standard iPhone share sheet.")
+            }
         }
     }
 
@@ -476,7 +512,7 @@ private struct BrowserDownloadItem: Identifiable {
             for: .applicationSupportDirectory,
             in: .userDomainMask,
             appropriateFor: nil,
-            create: true
+            create: false
         ) else { return [] }
 
         let directory = applicationSupport
@@ -485,12 +521,12 @@ private struct BrowserDownloadItem: Identifiable {
 
         guard let urls = try? fileManager.contentsOfDirectory(
             at: directory,
-            includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey],
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey],
             options: [.skipsHiddenFiles]
         ) else { return [] }
 
         return urls.compactMap { url in
-            guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]),
+            guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]),
                   values.isRegularFile == true else { return nil }
             return BrowserDownloadItem(
                 url: url,
@@ -499,6 +535,6 @@ private struct BrowserDownloadItem: Identifiable {
                 modifiedAt: values.contentModificationDate ?? .distantPast
             )
         }
-        .sorted { lhs, rhs in lhs.modifiedAt > rhs.modifiedAt }
+        .sorted { $0.modifiedAt > $1.modifiedAt }
     }
 }
