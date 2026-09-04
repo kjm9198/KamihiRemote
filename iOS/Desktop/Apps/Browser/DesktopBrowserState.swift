@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import WebKit
 
@@ -48,6 +49,20 @@ public final class DesktopBrowserState: ObservableObject {
             self.title = title
             self.url = url
             self.visitedAt = visitedAt
+        }
+    }
+
+    public enum BookmarkImportError: LocalizedError {
+        case unreadableFile
+        case noSupportedBookmarks
+
+        public var errorDescription: String? {
+            switch self {
+            case .unreadableFile:
+                return "Kamihi could not read that bookmark export."
+            case .noSupportedBookmarks:
+                return "No supported http or https bookmarks were found in that file."
+            }
         }
     }
 
@@ -227,6 +242,59 @@ public final class DesktopBrowserState: ObservableObject {
         persistLibrary()
     }
 
+    /// Imports a user-selected Safari/Chrome/Netscape bookmark HTML export.
+    /// Only http/https URLs are accepted, auth-like query values/fragments are
+    /// sanitized through the same persistence filter as native bookmarks, and
+    /// duplicates already present in Kamihi are ignored. This intentionally does
+    /// not touch cookies, passwords, tokens or another browser's private storage.
+    @discardableResult
+    public func importBookmarksHTML(_ data: Data) throws -> Int {
+        guard let html = String(data: data, encoding: .utf8)
+                ?? String(data: data, encoding: .windowsCP1252) else {
+            throw BookmarkImportError.unreadableFile
+        }
+
+        let pattern = #"(?is)<a\b[^>]*\bhref\s*=\s*([\"'])(.*?)\1[^>]*>(.*?)</a>"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            throw BookmarkImportError.unreadableFile
+        }
+
+        let fullRange = NSRange(html.startIndex..<html.endIndex, in: html)
+        let matches = regex.matches(in: html, range: fullRange)
+        var existingURLs = Set(bookmarks.map(\.url))
+        var imported: [Bookmark] = []
+
+        for match in matches {
+            guard match.numberOfRanges >= 4,
+                  let hrefRange = Range(match.range(at: 2), in: html),
+                  let titleRange = Range(match.range(at: 3), in: html) else { continue }
+
+            let href = Self.decodeBasicHTMLEntities(String(html[hrefRange]))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let rawURL = URL(string: href),
+                  let safeURL = Self.historySafeURL(rawURL),
+                  !existingURLs.contains(safeURL) else { continue }
+
+            let rawTitle = String(html[titleRange])
+                .replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
+            let decodedTitle = Self.decodeBasicHTMLEntities(rawTitle)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let fallbackTitle = safeURL.host?.replacingOccurrences(of: "www.", with: "") ?? "Bookmark"
+            let bookmarkTitle = decodedTitle.isEmpty ? fallbackTitle : decodedTitle
+
+            imported.append(Bookmark(title: bookmarkTitle, url: safeURL))
+            existingURLs.insert(safeURL)
+        }
+
+        guard !imported.isEmpty else {
+            throw BookmarkImportError.noSupportedBookmarks
+        }
+
+        bookmarks.append(contentsOf: imported)
+        persistLibrary()
+        return imported.count
+    }
+
     public func removeBookmark(id: UUID) {
         bookmarks.removeAll(where: { $0.id == id })
         persistLibrary()
@@ -293,6 +361,17 @@ public final class DesktopBrowserState: ObservableObject {
         var sanitized = bookmark
         sanitized.url = safeURL
         return sanitized
+    }
+
+    private static func decodeBasicHTMLEntities(_ string: String) -> String {
+        string
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&apos;", with: "'")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&nbsp;", with: " ")
     }
 
     private func syncActiveMetadata() {

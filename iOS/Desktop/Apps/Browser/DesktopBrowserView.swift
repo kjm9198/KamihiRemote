@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 import WebKit
 
 /// Desktop browser with persistent tabs and one retained WKWebView per tab.
@@ -506,11 +507,32 @@ private struct BrowserLibrarySheet: View {
     @ObservedObject var state: DesktopBrowserState
     let openURL: (URL) -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var showBookmarkImporter = false
+    @State private var bookmarkImportMessage: String?
 
     var body: some View {
         NavigationStack {
             List {
                 Section("Bookmarks") {
+                    Button {
+                        bookmarkImportMessage = nil
+                        showBookmarkImporter = true
+                    } label: {
+                        Label("Import Safari / Chrome Bookmarks", systemImage: "square.and.arrow.down")
+                    }
+                    .accessibilityHint("Choose a bookmark HTML export from Safari, Chrome, or another browser. Passwords and cookies are never imported.")
+
+                    Text("Imports only bookmarks from a user-selected HTML export. Kamihi never reads passwords, cookies, tokens, or another browser's private storage.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    if let bookmarkImportMessage {
+                        Text(bookmarkImportMessage)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel(bookmarkImportMessage)
+                    }
+
                     if state.bookmarks.isEmpty {
                         Text("No bookmarks yet").foregroundStyle(.secondary)
                     } else {
@@ -560,6 +582,33 @@ private struct BrowserLibrarySheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+        }
+        .fileImporter(
+            isPresented: $showBookmarkImporter,
+            allowedContentTypes: [.html, .plainText],
+            allowsMultipleSelection: false
+        ) { result in
+            handleBookmarkImport(result)
+        }
+    }
+
+    private func handleBookmarkImport(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else {
+                bookmarkImportMessage = "No bookmark file was selected."
+                return
+            }
+
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer {
+                if accessed { url.stopAccessingSecurityScopedResource() }
+            }
+
+            let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+            let importedCount = try state.importBookmarksHTML(data)
+            bookmarkImportMessage = "Imported \(importedCount) bookmark\(importedCount == 1 ? "" : "s")."
+        } catch {
+            bookmarkImportMessage = error.localizedDescription
         }
     }
 
