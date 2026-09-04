@@ -15,7 +15,14 @@ final class DesktopWebInputRegistry {
         init(_ value: WKWebView) { self.value = value }
     }
 
+    private struct PrimaryClickSample {
+        let time: TimeInterval
+        let x: CGFloat
+        let y: CGFloat
+    }
+
     private var webViews: [String: WeakWebView] = [:]
+    private var lastPrimaryClick: [String: PrimaryClickSample] = [:]
 
     private init() {}
 
@@ -28,24 +35,55 @@ final class DesktopWebInputRegistry {
     /// avoids a dismantled SwiftUI representable accidentally clearing a newer
     /// replacement registered under the same app key.
     func unregister(_ webView: WKWebView) {
+        let removedKeys = webViews.compactMap { key, holder -> String? in
+            guard let value = holder.value else { return key }
+            return value === webView ? key : nil
+        }
         webViews = webViews.filter { _, holder in
             guard let value = holder.value else { return false }
             return value !== webView
         }
+        for key in removedKeys {
+            lastPrimaryClick.removeValue(forKey: key)
+        }
     }
 
     private func pruneReleasedEntries() {
+        let releasedKeys = webViews.compactMap { key, holder in holder.value == nil ? key : nil }
         webViews = webViews.filter { $0.value.value != nil }
+        for key in releasedKeys {
+            lastPrimaryClick.removeValue(forKey: key)
+        }
     }
 
     func click(key: String, x: CGFloat, y: CGFloat, completion: @escaping (Bool) -> Void) {
         guard let webView = webViews[key]?.value else {
+            lastPrimaryClick.removeValue(forKey: key)
             completion(false)
             return
         }
 
         let safeX = min(max(x, 0), 1)
         let safeY = min(max(y, 0), 1)
+        let now = Date.timeIntervalSinceReferenceDate
+        let previous = lastPrimaryClick[key]
+        let isDoubleClick: Bool
+        if let previous {
+            let dt = now - previous.time
+            let distance = hypot(safeX - previous.x, safeY - previous.y)
+            isDoubleClick = dt > 0 && dt <= 0.30 && distance <= 0.025
+        } else {
+            isDoubleClick = false
+        }
+
+        // Consume a successful pair so a rapid third tap starts a new click
+        // sequence instead of generating overlapping double-click semantics.
+        if isDoubleClick {
+            lastPrimaryClick.removeValue(forKey: key)
+        } else {
+            lastPrimaryClick[key] = PrimaryClickSample(time: now, x: safeX, y: safeY)
+        }
+
         let script = """
         (() => {
           const x = window.innerWidth * \(safeX);
@@ -61,6 +99,18 @@ final class DesktopWebInputRegistry {
           }
 
           if (hit.click) hit.click();
+          if (\(isDoubleClick ? "true" : "false")) {
+            hit.dispatchEvent(new MouseEvent('dblclick', {
+              bubbles: true,
+              cancelable: true,
+              view: window,
+              detail: 2,
+              clientX: x,
+              clientY: y,
+              button: 0,
+              buttons: 0
+            }));
+          }
           return !!(editable && !editable.disabled && !editable.readOnly);
         })();
         """
@@ -71,39 +121,8 @@ final class DesktopWebInputRegistry {
         }
     }
 
-    /// `HTMLElement.click()` does not synthesize a DOM `dblclick` when called
-    /// twice from the non-interactive external-display bridge. Emit the missing
-    /// double-click semantic only after the controller has already delivered the
-    /// two normal clicks, preserving ordinary link/button activation while making
-    /// desktop web affordances such as word selection and app-specific double-click
-    /// handlers behave like a real pointer.
-    func doubleClick(key: String, x: CGFloat, y: CGFloat) {
-        guard let webView = webViews[key]?.value else { return }
-        let safeX = min(max(x, 0), 1)
-        let safeY = min(max(y, 0), 1)
-        let script = """
-        (() => {
-          const x = window.innerWidth * \(safeX);
-          const y = window.innerHeight * \(safeY);
-          const hit = document.elementFromPoint(x, y);
-          if (!hit) return false;
-          hit.dispatchEvent(new MouseEvent('dblclick', {
-            bubbles: true,
-            cancelable: true,
-            view: window,
-            detail: 2,
-            clientX: x,
-            clientY: y,
-            button: 0,
-            buttons: 0
-          }));
-          return true;
-        })();
-        """
-        webView.evaluateJavaScript(script, completionHandler: nil)
-    }
-
     func contextClick(key: String, x: CGFloat, y: CGFloat) {
+        lastPrimaryClick.removeValue(forKey: key)
         guard let webView = webViews[key]?.value else { return }
         let safeX = min(max(x, 0), 1)
         let safeY = min(max(y, 0), 1)
@@ -121,6 +140,7 @@ final class DesktopWebInputRegistry {
     }
 
     func scroll(key: String, deltaX: CGFloat, deltaY: CGFloat) {
+        lastPrimaryClick.removeValue(forKey: key)
         guard let webView = webViews[key]?.value else { return }
         var offset = webView.scrollView.contentOffset
         offset.x += deltaX
