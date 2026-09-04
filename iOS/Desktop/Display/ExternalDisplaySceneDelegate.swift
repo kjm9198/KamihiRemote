@@ -1,12 +1,12 @@
 import SwiftUI
 import UIKit
 
-/// Startup profiles are a one-time process launch decision, not a cable-reconnect
-/// policy. Keeping this state outside the scene delegate matters because iOS may
-/// destroy and recreate the external-display scene when USB-C glasses/monitors are
-/// unplugged and reattached while the Kamihi process remains alive.
+/// The one persistent desktop is restored only once per process launch. Keeping
+/// this state outside the scene delegate matters because iOS may destroy and
+/// recreate the external-display scene when USB-C glasses/monitors are unplugged
+/// and reattached while the Kamihi process remains alive.
 @MainActor
-private var hasAppliedInitialDesktopLaunchProfile = false
+private var hasRestoredInitialPersistentDesktop = false
 
 /// User-initiated capture bridge for the Kamihi-owned external-display scene.
 ///
@@ -137,13 +137,18 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
         Task { @MainActor in
             ExternalDisplayCoordinator.shared.connect(screen: screen)
 
-            // Apply Clean/Resume/Work/Browse/Media/Vibe only for the first
-            // external-display connection of this app process. A USB-C unplug /
-            // reconnect must retain the current windows, workspace and active app
-            // instead of re-running the startup profile over the live session.
-            if !hasAppliedInitialDesktopLaunchProfile {
-                hasAppliedInitialDesktopLaunchProfile = true
-                DesktopLaunchProfile.selected.apply(to: DesktopSession.shared)
+            // The normal product is one persistent desktop. On the first external
+            // connection of this app process, restore the saved desktop directly.
+            // Do not consult Clean/Resume/Work/Browse/Media/Vibe compatibility
+            // identifiers: an old persisted profile must never seed or rearrange
+            // the user's current desktop. No snapshot means a genuinely empty
+            // black desktop. USB-C reconnects during the same process keep the
+            // current in-memory windows and therefore do not replay restoration.
+            if !hasRestoredInitialPersistentDesktop {
+                hasRestoredInitialPersistentDesktop = true
+                if !DesktopFeatureState.shared.restoreSession(desktop: DesktopSession.shared) {
+                    DesktopSession.shared.closeAllDesktopWindows()
+                }
             }
         }
     }
