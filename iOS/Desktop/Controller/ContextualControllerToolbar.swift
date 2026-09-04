@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 /// Compact, thumb-first toolbar for Kamihi Desktop.
@@ -7,6 +8,7 @@ struct ContextualControllerToolbar: View {
     @EnvironmentObject private var desktop: DesktopSession
     @ObservedObject var engine: TrackpadEngine
     @ScaledMetric(relativeTo: .body) private var scaledControlSize: CGFloat = 44
+    @State private var downloadsRevision = 0
 
     var onOpenLauncher: () -> Void
     var onOpenOverview: () -> Void
@@ -24,6 +26,11 @@ struct ContextualControllerToolbar: View {
 
     private var openWindows: [DesktopSession.DesktopWindow] {
         desktop.windows.filter { !$0.isMinimized }
+    }
+
+    private var browserDownloads: [BrowserDownloadItem] {
+        _ = downloadsRevision
+        return BrowserDownloadItem.loadCurrentDownloads()
     }
 
     var body: some View {
@@ -219,6 +226,7 @@ struct ContextualControllerToolbar: View {
                 Button { desktop.goForwardInActiveBrowser() } label: {
                     Label("Forward", systemImage: "chevron.right")
                 }
+                browserDownloadsMenu
                 Button { onContinueOnPhone(active.id) } label: {
                     Label("Continue on iPhone", systemImage: "iphone.and.arrow.forward")
                 }
@@ -290,7 +298,59 @@ struct ContextualControllerToolbar: View {
                 desktop.goForwardInActiveBrowser()
             }
 
+            Menu {
+                browserDownloadsMenu
+            } label: {
+                Image(systemName: "arrow.down.circle")
+                    .font(.system(size: symbolSize, weight: .semibold))
+                    .foregroundStyle(Color.primary.opacity(0.86))
+                    .frame(width: controlSize, height: controlSize)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .circle)
+            .accessibilityLabel("Browser Downloads")
+            .accessibilityValue(browserDownloads.isEmpty ? "No downloads" : "\(browserDownloads.count) files")
+            .accessibilityHint("Opens downloaded files for sharing or deletion from the iPhone controller.")
+
             phoneButton(windowID: windowID)
+        }
+    }
+
+    @ViewBuilder
+    private var browserDownloadsMenu: some View {
+        Menu {
+            if browserDownloads.isEmpty {
+                Text("No downloads yet")
+            } else {
+                ForEach(browserDownloads.prefix(12)) { item in
+                    Menu {
+                        ShareLink(item: item.url) {
+                            Label("Open or Share", systemImage: "square.and.arrow.up")
+                        }
+
+                        Button(role: .destructive) {
+                            deleteDownload(item)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading) {
+                                Text(item.name)
+                                Text(item.detail)
+                            }
+                        } icon: {
+                            Image(systemName: item.symbolName)
+                        }
+                    }
+                }
+            }
+        } label: {
+            Label(
+                browserDownloads.isEmpty ? "Downloads" : "Downloads (\(browserDownloads.count))",
+                systemImage: "arrow.down.circle"
+            )
         }
     }
 
@@ -368,9 +428,77 @@ struct ContextualControllerToolbar: View {
         .accessibilityHint("Temporarily opens the active app on the phone for touch, typing, or authentication.")
     }
 
+    private func deleteDownload(_ item: BrowserDownloadItem) {
+        do {
+            try FileManager.default.removeItem(at: item.url)
+            downloadsRevision &+= 1
+            if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+        } catch {
+            // Keep download management local and quiet; the next refresh leaves a
+            // file visible if iOS refused deletion rather than pretending success.
+        }
+    }
+
     private func captureDesktop() {
         let didPresent = DesktopCaptureService.shared.captureAndShare()
         guard didPresent, TrackpadSettings.shared.hapticsEnabled else { return }
         Haptics.touchTap()
+    }
+}
+
+private struct BrowserDownloadItem: Identifiable {
+    let url: URL
+    let name: String
+    let byteCount: Int64
+    let modifiedAt: Date
+
+    var id: URL { url }
+
+    var detail: String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        let size = formatter.string(fromByteCount: byteCount)
+        return size
+    }
+
+    var symbolName: String {
+        switch url.pathExtension.lowercased() {
+        case "pdf": return "doc.richtext"
+        case "jpg", "jpeg", "png", "heic", "webp": return "photo"
+        case "zip": return "archivebox"
+        default: return "doc"
+        }
+    }
+
+    static func loadCurrentDownloads() -> [BrowserDownloadItem] {
+        let fileManager = FileManager.default
+        guard let applicationSupport = try? fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        ) else { return [] }
+
+        let directory = applicationSupport
+            .appendingPathComponent("Kamihi Desktop", isDirectory: true)
+            .appendingPathComponent("Browser Downloads", isDirectory: true)
+
+        guard let urls = try? fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        return urls.compactMap { url in
+            guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]),
+                  values.isRegularFile == true else { return nil }
+            return BrowserDownloadItem(
+                url: url,
+                name: url.lastPathComponent,
+                byteCount: Int64(values.fileSize ?? 0),
+                modifiedAt: values.contentModificationDate ?? .distantPast
+            )
+        }
+        .sorted { lhs, rhs in lhs.modifiedAt > rhs.modifiedAt }
     }
 }
