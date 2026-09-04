@@ -34,11 +34,12 @@ struct DesktopAppLauncherView: View {
     }
 
     private let apps: [AppItem] = [
-        AppItem(title: "ChatGPT", icon: "sparkles", color: Color(red: 0.18, green: 0.72, blue: 0.62), category: "AI & Productivity"),
         AppItem(title: "Browser", icon: "globe", color: Color(red: 0.22, green: 0.58, blue: 0.94), category: "Web"),
-        AppItem(title: "YouTube", icon: "play.rectangle.fill", color: Color(red: 0.94, green: 0.22, blue: 0.28), category: "Media"),
+        AppItem(title: "Documents", icon: "doc.richtext.fill", color: Color(red: 0.26, green: 0.52, blue: 0.92), category: "Productivity"),
         AppItem(title: "Notes", icon: "note.text", color: Color(red: 0.92, green: 0.74, blue: 0.24), category: "Productivity"),
         AppItem(title: "Files", icon: "folder.fill", color: Color(red: 0.42, green: 0.68, blue: 0.94), category: "Utilities"),
+        AppItem(title: "ChatGPT", icon: "sparkles", color: Color(red: 0.18, green: 0.72, blue: 0.62), category: "AI & Productivity"),
+        AppItem(title: "YouTube", icon: "play.rectangle.fill", color: Color(red: 0.94, green: 0.22, blue: 0.28), category: "Media"),
         AppItem(title: "PDF Viewer", icon: "doc.text.fill", color: Color.red, category: "Documents"),
         AppItem(title: "Calculator", icon: "plus.slash.minus", color: Color.orange, category: "Utilities"),
         AppItem(title: "Clipboard", icon: "doc.on.clipboard.fill", color: Color.indigo, category: "Utilities"),
@@ -61,19 +62,10 @@ struct DesktopAppLauncherView: View {
         }
     }
 
-    private var orderedApps: [AppItem] {
-        let priorities = DesktopLaunchProfile.selected.preferredAppOrder
-        guard !priorities.isEmpty else { return apps }
-        return apps.sorted { lhs, rhs in
-            let left = priorities.firstIndex(of: lhs.title) ?? Int.max
-            let right = priorities.firstIndex(of: rhs.title) ?? Int.max
-            if left == right { return appsIndex(lhs.title) < appsIndex(rhs.title) }
-            return left < right
-        }
-    }
-
+    /// One persistent desktop has one stable app library. Legacy startup-profile
+    /// preferences no longer reorder or shape the normal launcher.
     private var allApps: [AppItem] {
-        orderedApps + pinnedWebApps
+        apps + pinnedWebApps
     }
 
     private var filteredApps: [AppItem] {
@@ -174,9 +166,5 @@ struct DesktopAppLauncherView: View {
             desktop.openProductivityApp(app.title, frame: frame)
         }
         dismiss()
-    }
-
-    private func appsIndex(_ title: String) -> Int {
-        apps.firstIndex(where: { $0.title == title }) ?? Int.max
     }
 }
