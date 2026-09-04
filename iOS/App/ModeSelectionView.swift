@@ -1,22 +1,12 @@
 import SwiftUI
 
-/// Desktop-first launch experience. Startup choices are layouts, not separate products.
+/// Kamihi Desktop has one normal product flow: enter the desktop and continue
+/// from the last saved session. The legacy launch-profile identifiers remain in
+/// the codebase only for compatibility with existing persisted user data.
 struct ModeSelectionView: View {
     @EnvironmentObject private var router: AppModeRouter
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
-    @State private var selectedProfile = DesktopLaunchProfile.selected
-
-    private var columns: [GridItem] {
-        if dynamicTypeSize.isAccessibilitySize {
-            return [GridItem(.flexible())]
-        }
-        return [
-            GridItem(.flexible(), spacing: KamihiTheme.Spacing.sm),
-            GridItem(.flexible(), spacing: KamihiTheme.Spacing.sm)
-        ]
-    }
 
     var body: some View {
         ZStack {
@@ -25,30 +15,34 @@ struct ModeSelectionView: View {
             ScrollView {
                 VStack(spacing: KamihiTheme.Spacing.lg) {
                     headerSection
-                    featuredDesktopCard
+                    desktopCard
 
-                    VStack(alignment: .leading, spacing: KamihiTheme.Spacing.sm) {
-                        Text("Choose how to start")
+                    Button {
+                        // One desktop. Restore what the user left behind when a
+                        // recovery snapshot exists; a first run naturally opens
+                        // to an empty desktop because there is nothing to restore.
+                        DesktopLaunchProfile.selected = .resume
+                        router.selectMode(.externalDesktop)
+                    } label: {
+                        Label("Enter Desktop", systemImage: "rectangle.inset.filled.and.person.filled")
                             .font(.headline)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .accessibilityAddTraits(.isHeader)
-
-                        Text("This only chooses the starting layout. Once Kamihi Desktop opens, you can launch any app, resize windows, change workspace, and use it like your own iOS desktop.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                        LazyVGrid(columns: columns, spacing: KamihiTheme.Spacing.sm) {
-                            ForEach(DesktopLaunchProfile.allCases) { profile in
-                                profileCard(profile)
-                            }
-                        }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
                     }
-                    .frame(maxWidth: 560)
+                    .buttonStyle(.borderedProminent)
+                    .frame(maxWidth: 560, minHeight: 52)
+                    .keyboardShortcut(.return, modifiers: [])
+                    .accessibilityHint("Opens your single Kamihi Desktop and restores the windows you left open when available.")
+
+                    Text("Kamihi remembers the windows you leave open. On a new or cleared session the desktop starts empty, and nothing opens until you choose an app.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 520)
 
                     #if DEBUG
                     Button {
-                        DesktopLaunchProfile.selected = selectedProfile
+                        DesktopLaunchProfile.selected = .resume
                         router.startDesktopLab()
                     } label: {
                         Label("Open Desktop Lab", systemImage: "flask.fill")
@@ -79,7 +73,7 @@ struct ModeSelectionView: View {
                 .font(.largeTitle.bold())
                 .multilineTextAlignment(.center)
 
-            Text("Connect RayNeo or another external display and use the iPhone as the trackpad, keyboard, launcher, and secure touch surface.")
+            Text("Connect RayNeo or another external display. Your iPhone becomes the trackpad, keyboard, launcher, and secure touch surface.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -89,135 +83,30 @@ struct ModeSelectionView: View {
         .accessibilityAddTraits(.isHeader)
     }
 
-    @ViewBuilder
-    private var featuredDesktopCard: some View {
-        if dynamicTypeSize.isAccessibilitySize {
-            VStack(alignment: .leading, spacing: KamihiTheme.Spacing.sm) {
-                featuredDesktopIcon
-                featuredDesktopCopy
-            }
-            .modifier(FeaturedDesktopCardStyle(reduceTransparency: reduceTransparency))
-        } else {
-            HStack(alignment: .top, spacing: KamihiTheme.Spacing.md) {
-                featuredDesktopIcon
-                featuredDesktopCopy
-                Spacer(minLength: 0)
-            }
-            .modifier(FeaturedDesktopCardStyle(reduceTransparency: reduceTransparency))
-        }
-    }
+    private var desktopCard: some View {
+        HStack(alignment: .top, spacing: KamihiTheme.Spacing.md) {
+            Image(systemName: "display.2")
+                .font(.title.weight(.semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.tint)
+                .accessibilityHidden(true)
 
-    private var featuredDesktopIcon: some View {
-        Image(systemName: "display.2")
-            .font(.title.weight(.semibold))
-            .symbolRenderingMode(.hierarchical)
-            .foregroundStyle(.tint)
-            .accessibilityHidden(true)
-    }
-
-    private var featuredDesktopCopy: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text("One desktop. Use it however you want.")
-                .font(.headline)
-            Text("No forced coding layout and no separate Mac-remote product in the normal app flow.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private func profileCard(_ profile: DesktopLaunchProfile) -> some View {
-        let isSelected = selectedProfile == profile
-        let shortcut = keyboardShortcut(for: profile)
-
-        return Button {
-            selectedProfile = profile
-            DesktopLaunchProfile.selected = profile
-            router.selectMode(.externalDesktop)
-        } label: {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Image(systemName: profile.systemImage)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(isSelected ? Color.accentColor : .primary)
-                        .accessibilityHidden(true)
-                    Spacer()
-                    if isSelected {
-                        Image(systemName: differentiateWithoutColor ? "checkmark.seal.fill" : "checkmark.circle.fill")
-                            .foregroundStyle(.tint)
-                            .accessibilityHidden(true)
-                    }
-                }
-
-                Text(profile.title)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("One desktop")
                     .font(.headline)
-                    .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                Text(profile.subtitle)
-                    .font(.caption)
+                Text("No modes and no presets. Continue from what you left behind, or start from an empty desktop when there is no saved session.")
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 4)
-                    .frame(
-                        maxWidth: .infinity,
-                        minHeight: dynamicTypeSize.isAccessibilitySize ? nil : 54,
-                        alignment: .topLeading
-                    )
-
-                if differentiateWithoutColor || dynamicTypeSize.isAccessibilitySize {
-                    Text("⌘\(shortcut.character)")
-                        .font(.caption2.monospaced().weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                }
             }
-            .padding(14)
-            .frame(
-                maxWidth: .infinity,
-                minHeight: dynamicTypeSize.isAccessibilitySize ? 88 : 150,
-                alignment: .topLeading
-            )
-            .contentShape(Rectangle())
-            .background(
-                isSelected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.05),
-                in: RoundedRectangle(cornerRadius: KamihiTheme.Radius.md, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: KamihiTheme.Radius.md, style: .continuous)
-                    .stroke(isSelected ? Color.accentColor.opacity(0.8) : Color.primary.opacity(0.10), lineWidth: isSelected ? 2 : 1)
-            }
+
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.plain)
-        .keyboardShortcut(shortcut, modifiers: .command)
-        .accessibilityLabel(profile.title)
-        .accessibilityValue(isSelected ? "Selected" : "Not selected")
-        .accessibilityHint("\(profile.subtitle) Opens Kamihi Desktop with this starting layout. Hardware keyboard shortcut Command \(shortcut.character).")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-
-    private func keyboardShortcut(for profile: DesktopLaunchProfile) -> KeyEquivalent {
-        switch profile {
-        case .clean: return "1"
-        case .resume: return "2"
-        case .work: return "3"
-        case .browse: return "4"
-        case .media: return "5"
-        case .vibe: return "6"
-        }
-    }
-}
-
-private struct FeaturedDesktopCardStyle: ViewModifier {
-    let reduceTransparency: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .padding(KamihiTheme.Spacing.md)
-            .frame(maxWidth: 560, alignment: .leading)
-            .background(
-                reduceTransparency ? AnyShapeStyle(Color(uiColor: .secondarySystemBackground)) : AnyShapeStyle(.thinMaterial),
-                in: RoundedRectangle(cornerRadius: KamihiTheme.Radius.lg, style: .continuous)
-            )
-            .accessibilityElement(children: .combine)
+        .padding(KamihiTheme.Spacing.md)
+        .frame(maxWidth: 560, alignment: .leading)
+        .background(
+            reduceTransparency ? AnyShapeStyle(Color(uiColor: .secondarySystemBackground)) : AnyShapeStyle(.thinMaterial),
+            in: RoundedRectangle(cornerRadius: KamihiTheme.Radius.lg, style: .continuous)
+        )
+        .accessibilityElement(children: .combine)
     }
 }
