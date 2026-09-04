@@ -20,11 +20,33 @@ struct DesktopCommandPaletteView: View {
     private var allCommands: [CommandItem] {
         [
             // Apps — all normal launches use the same centered 60% geometry.
-            CommandItem(title: "Open ChatGPT", icon: "sparkles", category: "Apps") { _ = $0.openProductivityApp("ChatGPT", frame: centeredAppFrame) },
             CommandItem(title: "Open Browser", icon: "globe", category: "Apps") { $0.openBrowser() },
-            CommandItem(title: "Open YouTube", icon: "play.rectangle.fill", category: "Apps") { _ = $0.openProductivityApp("YouTube", frame: centeredAppFrame) },
+            CommandItem(title: "Open Documents", icon: "doc.richtext.fill", category: "Apps") { _ = $0.openProductivityApp("Documents", frame: centeredAppFrame) },
             CommandItem(title: "Open Notes", icon: "note.text", category: "Apps") { _ = $0.openProductivityApp("Notes", frame: centeredAppFrame) },
             CommandItem(title: "Open Files", icon: "folder.fill", category: "Apps") { _ = $0.openProductivityApp("Files", frame: centeredAppFrame) },
+            CommandItem(title: "Open ChatGPT", icon: "sparkles", category: "Apps") { _ = $0.openProductivityApp("ChatGPT", frame: centeredAppFrame) },
+            CommandItem(title: "Open YouTube", icon: "play.rectangle.fill", category: "Apps") { _ = $0.openProductivityApp("YouTube", frame: centeredAppFrame) },
+
+            // Documents — external displays are non-interactive, so document
+            // management stays explicitly reachable from this phone-side palette.
+            CommandItem(title: "New Document", icon: "doc.badge.plus", category: "Documents") { session in
+                DesktopDocumentsStore.shared.createDocument()
+                _ = session.openProductivityApp("Documents", frame: centeredAppFrame)
+            },
+            CommandItem(title: "Next Document", icon: "chevron.right.doc.on.clipboard", category: "Documents") { session in
+                DesktopDocumentsStore.shared.cycleDocument(forward: true)
+                _ = session.openProductivityApp("Documents", frame: centeredAppFrame)
+            },
+            CommandItem(title: "Previous Document", icon: "chevron.left", category: "Documents") { session in
+                DesktopDocumentsStore.shared.cycleDocument(forward: false)
+                _ = session.openProductivityApp("Documents", frame: centeredAppFrame)
+            },
+            CommandItem(title: "Export Current Document", icon: "square.and.arrow.up", category: "Documents") { _ in
+                _ = DesktopDocumentsStore.shared.exportActiveDocument()
+            },
+            CommandItem(title: "Delete Current Document", icon: "trash", category: "Documents") { _ in
+                DesktopDocumentsStore.shared.deleteActiveDocument()
+            },
 
             // Window Management
             CommandItem(title: "Snap Left (Half)", icon: "rectangle.leadinghalf.filled", category: "Window") { $0.snapActiveLeft() },
@@ -38,10 +60,7 @@ struct DesktopCommandPaletteView: View {
             CommandItem(title: "Close Active Window", icon: "xmark", category: "Window") {
                 if let id = $0.activeWindowID { $0.close(id) }
             },
-
-            // Workspaces — Vibe remains explicitly user-triggered only.
-            CommandItem(title: "Start Vibe Workspace (Tiled)", icon: "sparkles.rectangle.stack", category: "Workspaces") { $0.openVibeWorkspace() },
-            CommandItem(title: "Close All Windows", icon: "trash", category: "Workspaces") { $0.closeAllDesktopWindows() }
+            CommandItem(title: "Close All Windows", icon: "trash.slash", category: "Window") { $0.closeAllDesktopWindows() }
         ]
     }
 
@@ -134,7 +153,7 @@ private struct DesktopInputGuideView: View {
     }
 
     private let trackpadItems = [
-        GuideItem(symbol: "hand.point.up.left", title: "One finger", detail: "Move the pointer. Drag a title bar to move a window."),
+        GuideItem(symbol: "hand.point.up.left", title: "One finger", detail: "Move the pointer. Hold a window title bar deliberately, then move to drag the window."),
         GuideItem(symbol: "hand.draw", title: "Two fingers", detail: "Scroll horizontally or vertically. Drag on a window edge to resize."),
         GuideItem(symbol: "cursorarrow.click.2", title: "Two-finger tap", detail: "Open the context menu for the item under the pointer."),
         GuideItem(symbol: "rectangle.stack", title: "Three fingers up", detail: "Open Window Overview."),
@@ -142,8 +161,8 @@ private struct DesktopInputGuideView: View {
     ]
 
     private let phoneItems = [
-        GuideItem(symbol: "square.grid.2x2", title: "Desktop preview", detail: "Double-tap the preview to open the App Library."),
-        GuideItem(symbol: "keyboard", title: "Keyboard", detail: "Use the Keyboard control to type into the active supported desktop app."),
+        GuideItem(symbol: "square.grid.2x2", title: "App Library", detail: "Open Apps from More to launch desktop tools."),
+        GuideItem(symbol: "keyboard", title: "Keyboard", detail: "Use the Keyboard control to type into the active supported desktop app, including Documents and Notes."),
         GuideItem(symbol: "scope", title: "Precision Mode", detail: "Reduce pointer speed when selecting small desktop targets."),
         GuideItem(symbol: "iphone.and.arrow.forward", title: "Continue on iPhone", detail: "Use touch on the phone for authentication, CAPTCHA, file picking, and other iOS-owned flows.")
     ]
@@ -168,7 +187,7 @@ private struct DesktopInputGuideView: View {
                 }
 
                 Section {
-                    Label("Open the Command Palette to search available app, window, and workspace actions.", systemImage: "command")
+                    Label("Open the Command Palette to search available app, document and window actions.", systemImage: "command")
                         .font(.body)
                         .accessibilityElement(children: .combine)
                 } header: {
