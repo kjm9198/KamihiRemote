@@ -165,12 +165,13 @@ struct DesktopClipboardCenterView: View {
     @ObservedObject private var clipboard = DesktopClipboardStore.shared
     @ObservedObject private var notes = DesktopNotesStore.shared
     @Environment(\.dismiss) private var dismiss
+    @State private var confirmClear = false
 
     var body: some View {
         NavigationStack {
             List {
                 if clipboard.items.isEmpty {
-                    ContentUnavailableView("Clipboard Empty", systemImage: "doc.on.clipboard", description: Text("Copy text on the iPhone, then tap Refresh."))
+                    ContentUnavailableView("Clipboard Empty", systemImage: "doc.on.clipboard", description: Text("Copy text on the iPhone, then tap Refresh. Kamihi keeps this history only in memory."))
                 } else {
                     ForEach(Array(clipboard.items.enumerated()), id: \.offset) { _, item in
                         VStack(alignment: .leading, spacing: 10) {
@@ -207,11 +208,36 @@ struct DesktopClipboardCenterView: View {
                         .padding(.vertical, 4)
                     }
                 }
+
+                Section {
+                    Label("Kamihi does not persist clipboard history. Refresh reads the current iOS pasteboard only when you ask it to or open this screen.", systemImage: "hand.raised.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Clipboard privacy. Kamihi does not persist clipboard history. Refresh reads the current iOS pasteboard only when requested or when this screen opens.")
+                }
             }
             .navigationTitle("Clipboard")
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { Button("Refresh") { clipboard.captureIfChanged() } }
-                ToolbarItem(placement: .topBarTrailing) { Button("Clear", role: .destructive) { clipboard.clear() } }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Refresh") { clipboard.captureIfChanged() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Clear", role: .destructive) { confirmClear = true }
+                        .disabled(clipboard.items.isEmpty && UIPasteboard.general.items.isEmpty)
+                }
+            }
+            .confirmationDialog(
+                "Clear clipboard?",
+                isPresented: $confirmClear,
+                titleVisibility: .visible
+            ) {
+                Button("Clear iOS Clipboard & Kamihi History", role: .destructive) {
+                    UIPasteboard.general.items = []
+                    clipboard.clear()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes Kamihi's in-memory history and clears the current iOS system clipboard. It cannot be undone.")
             }
         }
         .onAppear { clipboard.captureIfChanged() }
