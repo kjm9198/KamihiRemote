@@ -9,7 +9,6 @@ struct DesktopControllerView: View {
     @EnvironmentObject private var desktop: DesktopSession
     @StateObject private var engine = TrackpadEngine()
     @StateObject private var settings = TrackpadSettings.shared
-    @StateObject private var featureState = DesktopFeatureState.shared
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("desktop.controller.controlsLeading") private var controlsLeading = false
@@ -125,7 +124,7 @@ struct DesktopControllerView: View {
                     .glassEffect(.regular.interactive(), in: .circle)
                     .accessibilityLabel("More Desktop Controls")
                     .accessibilityValue(desktop.activeWindow?.title ?? "No active window")
-                    .accessibilityHint("Opens apps, windows, workspaces, status, settings, and other controls.")
+                    .accessibilityHint("Opens apps, windows, status, settings, and other controls for this desktop.")
 
                     if controlsLeading { Spacer(minLength: 0) }
                 }
@@ -171,23 +170,6 @@ struct DesktopControllerView: View {
             showCommandPalette = true
         } label: {
             Label("Commands", systemImage: "command")
-        }
-
-        Menu {
-            ForEach(DesktopFeatureState.Workspace.allCases) { workspace in
-                Button {
-                    switchWorkspace(workspace)
-                } label: {
-                    if workspace == featureState.workspace {
-                        Label(workspace.rawValue, systemImage: "checkmark.circle.fill")
-                    } else {
-                        Label(workspace.rawValue, systemImage: workspace.icon)
-                    }
-                }
-                .disabled(workspace == featureState.workspace)
-            }
-        } label: {
-            Label("Workspace: \(featureState.workspace.rawValue)", systemImage: "square.stack.3d.up.fill")
         }
 
         Divider()
@@ -311,13 +293,6 @@ struct DesktopControllerView: View {
         case .idle: return "Ready"
         case .moving: return "Pointer"
         }
-    }
-
-    private func switchWorkspace(_ workspace: DesktopFeatureState.Workspace) {
-        guard workspace != featureState.workspace else { return }
-        setKeyboardVisible(false)
-        featureState.setWorkspace(workspace, desktop: desktop)
-        if settings.hapticsEnabled { Haptics.touchTap() }
     }
 
     private func setKeyboardVisible(_ visible: Bool) {
