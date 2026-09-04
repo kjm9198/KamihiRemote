@@ -71,6 +71,38 @@ final class DesktopWebInputRegistry {
         }
     }
 
+    /// `HTMLElement.click()` does not synthesize a DOM `dblclick` when called
+    /// twice from the non-interactive external-display bridge. Emit the missing
+    /// double-click semantic only after the controller has already delivered the
+    /// two normal clicks, preserving ordinary link/button activation while making
+    /// desktop web affordances such as word selection and app-specific double-click
+    /// handlers behave like a real pointer.
+    func doubleClick(key: String, x: CGFloat, y: CGFloat) {
+        guard let webView = webViews[key]?.value else { return }
+        let safeX = min(max(x, 0), 1)
+        let safeY = min(max(y, 0), 1)
+        let script = """
+        (() => {
+          const x = window.innerWidth * \(safeX);
+          const y = window.innerHeight * \(safeY);
+          const hit = document.elementFromPoint(x, y);
+          if (!hit) return false;
+          hit.dispatchEvent(new MouseEvent('dblclick', {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            detail: 2,
+            clientX: x,
+            clientY: y,
+            button: 0,
+            buttons: 0
+          }));
+          return true;
+        })();
+        """
+        webView.evaluateJavaScript(script, completionHandler: nil)
+    }
+
     func contextClick(key: String, x: CGFloat, y: CGFloat) {
         guard let webView = webViews[key]?.value else { return }
         let safeX = min(max(x, 0), 1)
