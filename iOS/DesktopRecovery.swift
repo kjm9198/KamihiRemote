@@ -34,6 +34,11 @@ final class DesktopRecoveryCoordinator: ObservableObject {
         let windows: [DesktopFeatureState.SavedWindow]
     }
 
+    private struct SnapshotContent: Equatable {
+        let workspaceRawValue: String
+        let windows: [DesktopFeatureState.SavedWindow]
+    }
+
     @Published private(set) var displayHealth: DisplayHealth = .disconnected
     @Published private(set) var lastSnapshotDate: Date?
     @Published private(set) var recoveredAfterInterruption = false
@@ -44,10 +49,18 @@ final class DesktopRecoveryCoordinator: ObservableObject {
     private let autosaveMinimumInterval: TimeInterval = 0.75
     private var lastAutosaveDate: Date?
     private var pendingAutosaveTask: Task<Void, Never>?
+    private var lastPersistedContent: SnapshotContent?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        lastSnapshotDate = Self.decodeSnapshot(defaults.data(forKey: snapshotKey))?.savedAt
+        let existingSnapshot = Self.decodeSnapshot(defaults.data(forKey: snapshotKey))
+        lastSnapshotDate = existingSnapshot?.savedAt
+        if let existingSnapshot {
+            lastPersistedContent = SnapshotContent(
+                workspaceRawValue: existingSnapshot.workspaceRawValue,
+                windows: existingSnapshot.windows
+            )
+        }
     }
 
     @discardableResult
@@ -59,7 +72,7 @@ final class DesktopRecoveryCoordinator: ObservableObject {
         recoveredAfterInterruption = restored
         displayHealth = restored ? .recovered : .connected
         defaults.set(false, forKey: cleanExitKey)
-        saveSnapshot(desktop: desktop)
+        saveSnapshot(desktop: desktop, force: true)
         lastAutosaveDate = Date()
         return restored
     }
@@ -95,17 +108,32 @@ final class DesktopRecoveryCoordinator: ObservableObject {
     func finishSession(desktop: DesktopSession) {
         pendingAutosaveTask?.cancel()
         pendingAutosaveTask = nil
-        saveSnapshot(desktop: desktop)
+        saveSnapshot(desktop: desktop, force: true)
         lastAutosaveDate = Date()
         defaults.set(true, forKey: cleanExitKey)
         displayHealth = .disconnected
         recoveredAfterInterruption = false
     }
 
-    func saveSnapshot(desktop: DesktopSession) {
-        let snapshot = Self.makeSnapshot(desktop: desktop, workspace: DesktopFeatureState.shared.workspace)
+    func saveSnapshot(desktop: DesktopSession, force: Bool = false) {
+        let workspaceRawValue = DesktopFeatureState.shared.workspace.rawValue
+        let windows = Self.savedWindows(desktop: desktop)
+        let content = SnapshotContent(workspaceRawValue: workspaceRawValue, windows: windows)
+
+        // DesktopSession publishes more state than recovery needs. Avoid repeatedly
+        // serializing and writing an identical window/workspace snapshot when a
+        // cursor, focus, or other unrelated desktop update triggers autosave.
+        guard force || content != lastPersistedContent else { return }
+
+        let snapshot = Snapshot(
+            version: 1,
+            workspaceRawValue: workspaceRawValue,
+            savedAt: Date(),
+            windows: windows
+        )
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         defaults.set(data, forKey: snapshotKey)
+        lastPersistedContent = content
         lastSnapshotDate = snapshot.savedAt
     }
 
@@ -130,6 +158,10 @@ final class DesktopRecoveryCoordinator: ObservableObject {
             DesktopFeatureState.shared.workspace = workspace
             DesktopFeatureState.shared.focusMode = workspace == .focus
         }
+        lastPersistedContent = SnapshotContent(
+            workspaceRawValue: snapshot.workspaceRawValue,
+            windows: snapshot.windows
+        )
         lastSnapshotDate = snapshot.savedAt
         return true
     }
@@ -143,22 +175,26 @@ final class DesktopRecoveryCoordinator: ObservableObject {
             version: 1,
             workspaceRawValue: workspace.rawValue,
             savedAt: savedAt,
-            windows: desktop.windows.map {
-                DesktopFeatureState.SavedWindow(
-                    title: $0.title,
-                    x: $0.normalizedFrame.origin.x,
-                    y: $0.normalizedFrame.origin.y,
-                    width: $0.normalizedFrame.width,
-                    height: $0.normalizedFrame.height,
-                    minimized: $0.isMinimized,
-                    maximized: $0.isMaximized
-                )
-            }
+            windows: savedWindows(desktop: desktop)
         )
     }
 
     static func decodeSnapshot(_ data: Data?) -> Snapshot? {
         guard let data else { return nil }
         return try? JSONDecoder().decode(Snapshot.self, from: data)
+    }
+
+    private static func savedWindows(desktop: DesktopSession) -> [DesktopFeatureState.SavedWindow] {
+        desktop.windows.map {
+            DesktopFeatureState.SavedWindow(
+                title: $0.title,
+                x: $0.normalizedFrame.origin.x,
+                y: $0.normalizedFrame.origin.y,
+                width: $0.normalizedFrame.width,
+                height: $0.normalizedFrame.height,
+                minimized: $0.isMinimized,
+                maximized: $0.isMaximized
+            )
+        }
     }
 }
