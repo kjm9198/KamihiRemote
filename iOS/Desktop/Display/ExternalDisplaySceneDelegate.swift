@@ -122,10 +122,13 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
         controller.view.backgroundColor = .black
         controller.view.isOpaque = true
         // Keep SwiftUI/UIKit rendering aligned with the backing scale iOS negotiated for the external display.
-        controller.view.contentScaleFactor = screen.nativeScale
+        controller.view.contentScaleFactor = max(screen.nativeScale, 1)
 
         let window = UIWindow(windowScene: windowScene)
-        window.frame = screen.bounds
+        // Size the window from the scene coordinate space rather than assuming UIScreen.bounds
+        // is the final logical canvas. This follows the exact geometry iOS exposes to this scene
+        // when an adapter/display negotiates a mode or reapplies overscan compensation.
+        window.frame = windowScene.coordinateSpace.bounds
         window.rootViewController = controller
         window.makeKeyAndVisible()
         self.window = window
@@ -145,18 +148,18 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        guard let windowScene = scene as? UIWindowScene else { return }
+        applyNegotiatedGeometry(from: windowScene)
+    }
+
     func windowScene(
         _ windowScene: UIWindowScene,
         didUpdate previousCoordinateSpace: UICoordinateSpace,
         interfaceOrientation previousInterfaceOrientation: UIInterfaceOrientation,
         traitCollection previousTraitCollection: UITraitCollection
     ) {
-        let screen = windowScene.screen
-        window?.frame = screen.bounds
-        window?.rootViewController?.view.contentScaleFactor = screen.nativeScale
-        Task { @MainActor in
-            ExternalDisplayCoordinator.shared.refreshMetrics(from: screen)
-        }
+        applyNegotiatedGeometry(from: windowScene)
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {
@@ -166,5 +169,14 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
             ExternalDisplayCoordinator.shared.disconnect()
         }
         window = nil
+    }
+
+    private func applyNegotiatedGeometry(from windowScene: UIWindowScene) {
+        let screen = windowScene.screen
+        window?.frame = windowScene.coordinateSpace.bounds
+        window?.rootViewController?.view.contentScaleFactor = max(screen.nativeScale, 1)
+        Task { @MainActor in
+            ExternalDisplayCoordinator.shared.refreshMetrics(from: screen)
+        }
     }
 }
