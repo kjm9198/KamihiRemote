@@ -34,6 +34,11 @@ final class DesktopFeatureState: ObservableObject {
         var maximized: Bool
     }
 
+    private struct SavedWorkspace: Codable, Equatable {
+        var windows: [SavedWindow]
+        var activeWindowTitle: String?
+    }
+
     @Published var workspace: Workspace = .vibe
     @Published var focusMode = false
     @Published var privacyMode = false
@@ -47,6 +52,7 @@ final class DesktopFeatureState: ObservableObject {
 
     private let defaults = UserDefaults.standard
     private let restorationKey = "kamihi.desktop.restoration.v1"
+    private let workspaceRestorationPrefix = "kamihi.desktop.workspace.v2."
 
     private init() {
         uiScale = defaults.object(forKey: "kamihi.desktop.uiScale") as? Double ?? 1.0
@@ -61,9 +67,30 @@ final class DesktopFeatureState: ObservableObject {
     }
 
     func setWorkspace(_ workspace: Workspace, desktop: DesktopSession) {
+        if workspace == self.workspace {
+            saveWorkspaceSession(workspace, desktop: desktop)
+            saveSession(desktop: desktop)
+            return
+        }
+
+        // Treat each workspace like an independent Space: snapshot the complete
+        // current layout before leaving it, then restore the destination's own
+        // last layout when returning. Existing v1 Resume data is left intact.
+        saveWorkspaceSession(self.workspace, desktop: desktop)
         self.workspace = workspace
         focusMode = workspace == .focus
 
+        if restoreWorkspaceSession(workspace, desktop: desktop) {
+            saveSession(desktop: desktop)
+            return
+        }
+
+        seedWorkspace(workspace, desktop: desktop)
+        saveWorkspaceSession(workspace, desktop: desktop)
+        saveSession(desktop: desktop)
+    }
+
+    private func seedWorkspace(_ workspace: Workspace, desktop: DesktopSession) {
         switch workspace {
         case .vibe:
             desktop.openVibeWorkspace()
@@ -83,11 +110,10 @@ final class DesktopFeatureState: ObservableObject {
             desktop.closeAllDesktopWindows()
             _ = desktop.openProductivityApp("ChatGPT", frame: CGRect(x: 0.08, y: 0.07, width: 0.84, height: 0.79))
         }
-        saveSession(desktop: desktop)
     }
 
-    func saveSession(desktop: DesktopSession) {
-        let windows = desktop.windows.map {
+    private func savedWindows(from desktop: DesktopSession) -> [SavedWindow] {
+        desktop.windows.map {
             SavedWindow(
                 title: $0.title,
                 x: $0.normalizedFrame.origin.x,
@@ -98,9 +124,57 @@ final class DesktopFeatureState: ObservableObject {
                 maximized: $0.isMaximized
             )
         }
+    }
+
+    private func workspaceKey(_ workspace: Workspace) -> String {
+        workspaceRestorationPrefix + workspace.rawValue.lowercased()
+    }
+
+    private func saveWorkspaceSession(_ workspace: Workspace, desktop: DesktopSession) {
+        let activeTitle = desktop.activeWindowID.flatMap { id in
+            desktop.windows.first(where: { $0.id == id })?.title
+        }
+        let snapshot = SavedWorkspace(windows: savedWindows(from: desktop), activeWindowTitle: activeTitle)
+        if let data = try? JSONEncoder().encode(snapshot) {
+            defaults.set(data, forKey: workspaceKey(workspace))
+        }
+    }
+
+    @discardableResult
+    private func restoreWorkspaceSession(_ workspace: Workspace, desktop: DesktopSession) -> Bool {
+        guard let data = defaults.data(forKey: workspaceKey(workspace)),
+              let saved = try? JSONDecoder().decode(SavedWorkspace.self, from: data) else { return false }
+
+        desktop.closeAllDesktopWindows()
+        var restoredActiveID: UUID?
+        for item in saved.windows.prefix(8) {
+            let id = desktop.openProductivityApp(
+                item.title,
+                frame: CGRect(x: item.x, y: item.y, width: item.width, height: item.height)
+            )
+            if let index = desktop.windows.firstIndex(where: { $0.id == id }) {
+                desktop.windows[index].isMinimized = item.minimized
+                desktop.windows[index].isMaximized = item.maximized
+            }
+            if item.title == saved.activeWindowTitle {
+                restoredActiveID = id
+            }
+        }
+
+        if let restoredActiveID {
+            desktop.restoreAndActivate(restoredActiveID)
+        } else {
+            desktop.activeWindowID = desktop.windows.last(where: { !$0.isMinimized })?.id
+        }
+        return true
+    }
+
+    func saveSession(desktop: DesktopSession) {
+        let windows = savedWindows(from: desktop)
         if let data = try? JSONEncoder().encode(windows) {
             defaults.set(data, forKey: restorationKey)
         }
+        saveWorkspaceSession(workspace, desktop: desktop)
     }
 
     @discardableResult
@@ -120,6 +194,7 @@ final class DesktopFeatureState: ObservableObject {
                 desktop.windows[index].isMaximized = item.maximized
             }
         }
+        saveWorkspaceSession(workspace, desktop: desktop)
         return true
     }
 
