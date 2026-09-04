@@ -71,17 +71,17 @@ struct PhoneTakeoverView: View {
 
     private var securityBanner: some View {
         HStack(spacing: 9) {
-            Image(systemName: "lock.shield.fill")
+            Image(systemName: transportSecuritySymbol)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.tint)
+                .foregroundStyle(transportSecurityTint)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text("Secure phone interaction")
+                Text(transportSecurityTitle)
                     .font(.caption.weight(.semibold))
-                Text("AutoFill, passkeys, CAPTCHA and file pickers stay on iPhone")
+                Text(transportSecurityDetail)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
 
             Spacer(minLength: 8)
@@ -95,6 +95,58 @@ struct PhoneTakeoverView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
         .background(.thinMaterial)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(transportSecurityTitle). \(transportSecurityDetail)")
+    }
+
+    private var transportSecurityTitle: String {
+        guard let scheme = currentURL?.scheme?.lowercased() else {
+            return "Private phone interaction"
+        }
+        switch scheme {
+        case "https":
+            return "Encrypted web connection"
+        case "http":
+            return "Connection not encrypted"
+        default:
+            return "Private phone interaction"
+        }
+    }
+
+    private var transportSecurityDetail: String {
+        guard let scheme = currentURL?.scheme?.lowercased() else {
+            return "AutoFill, passkeys, CAPTCHA and file pickers stay inside iPhone and WebKit."
+        }
+        switch scheme {
+        case "https":
+            return "HTTPS is active; AutoFill, passkeys and page credentials stay inside iPhone and WebKit."
+        case "http":
+            return "Do not enter passwords or sensitive information on this unencrypted HTTP page."
+        default:
+            return "This interaction stays on iPhone; Kamihi does not read or store page credentials."
+        }
+    }
+
+    private var transportSecuritySymbol: String {
+        switch currentURL?.scheme?.lowercased() {
+        case "https":
+            return "lock.shield.fill"
+        case "http":
+            return "exclamationmark.triangle.fill"
+        default:
+            return "hand.raised.fill"
+        }
+    }
+
+    private var transportSecurityTint: Color {
+        switch currentURL?.scheme?.lowercased() {
+        case "https":
+            return Color(uiColor: .systemGreen)
+        case "http":
+            return Color(uiColor: .systemOrange)
+        default:
+            return .accentColor
+        }
     }
 
     private var navigationBar: some View {
@@ -155,7 +207,7 @@ struct PhoneTakeoverView: View {
         guard let currentURL,
               let scheme = currentURL.scheme?.lowercased(),
               let host = currentURL.host else {
-            return "Secure WebKit session"
+            return "WebKit session"
         }
 
         if let port = currentURL.port {
