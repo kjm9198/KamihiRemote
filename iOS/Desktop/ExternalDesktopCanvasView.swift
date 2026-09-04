@@ -175,6 +175,8 @@ struct ExternalDesktopCanvasView: View {
             DesktopChatGPTView()
         case "YouTube":
             DesktopYouTubeView()
+        case "Documents":
+            DesktopDocumentsView()
         case "Notes":
             DesktopNotesView()
         case "Files":
