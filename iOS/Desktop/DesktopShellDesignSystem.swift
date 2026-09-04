@@ -66,6 +66,15 @@ enum DesktopShellMetrics {
     static let minimumHitTarget: CGFloat = 44
     static let compactIcon: CGFloat = 17
     static let standardIcon: CGFloat = 20
+
+    static func separatorOpacity(reduceTransparency: Bool, increasedContrast: Bool) -> Double {
+        if increasedContrast { return 0.88 }
+        return reduceTransparency ? 0.72 : 0.45
+    }
+
+    static func separatorWidth(reduceTransparency: Bool, increasedContrast: Bool) -> CGFloat {
+        (reduceTransparency || increasedContrast) ? 1 : 0.5
+    }
 }
 
 enum DesktopShellPalette {
@@ -81,12 +90,15 @@ enum DesktopShellPalette {
 
 struct DesktopShellChromeModifier: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     var cornerRadius: CGFloat = DesktopShellMetrics.chromeCornerRadius
+
+    private var increasedContrast: Bool { colorSchemeContrast == .increased }
 
     func body(content: Content) -> some View {
         content
             .background {
-                if reduceTransparency {
+                if reduceTransparency || increasedContrast {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .fill(DesktopShellPalette.secondaryCanvas)
                 } else {
@@ -97,8 +109,16 @@ struct DesktopShellChromeModifier: ViewModifier {
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(
-                        DesktopShellPalette.separator.opacity(reduceTransparency ? 0.72 : 0.45),
-                        lineWidth: reduceTransparency ? 1 : 0.5
+                        DesktopShellPalette.separator.opacity(
+                            DesktopShellMetrics.separatorOpacity(
+                                reduceTransparency: reduceTransparency,
+                                increasedContrast: increasedContrast
+                            )
+                        ),
+                        lineWidth: DesktopShellMetrics.separatorWidth(
+                            reduceTransparency: reduceTransparency,
+                            increasedContrast: increasedContrast
+                        )
                     )
             }
     }
@@ -106,19 +126,29 @@ struct DesktopShellChromeModifier: ViewModifier {
 
 struct DesktopShellElevatedSurfaceModifier: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     var cornerRadius: CGFloat = DesktopShellMetrics.windowCornerRadius
+
+    private var increasedContrast: Bool { colorSchemeContrast == .increased }
 
     func body(content: Content) -> some View {
         content
             .background(
-                reduceTransparency ? DesktopShellPalette.canvas : DesktopShellPalette.secondaryCanvas,
+                (reduceTransparency || increasedContrast)
+                    ? DesktopShellPalette.canvas
+                    : DesktopShellPalette.secondaryCanvas,
                 in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(
-                        DesktopShellPalette.separator.opacity(reduceTransparency ? 0.62 : 0.35),
-                        lineWidth: reduceTransparency ? 1 : 0.5
+                        DesktopShellPalette.separator.opacity(
+                            increasedContrast ? 0.82 : (reduceTransparency ? 0.62 : 0.35)
+                        ),
+                        lineWidth: DesktopShellMetrics.separatorWidth(
+                            reduceTransparency: reduceTransparency,
+                            increasedContrast: increasedContrast
+                        )
                     )
             }
     }
@@ -146,6 +176,14 @@ enum DesktopShellDesignSystemSelfCheck {
         precondition(DesktopShellAppearance.Theme.system.preferredColorScheme == nil)
         precondition(DesktopShellMetrics.chromeCornerRadius > 0)
         precondition(DesktopShellMetrics.windowCornerRadius >= DesktopShellMetrics.chromeCornerRadius)
+        precondition(
+            DesktopShellMetrics.separatorOpacity(reduceTransparency: false, increasedContrast: true)
+                > DesktopShellMetrics.separatorOpacity(reduceTransparency: false, increasedContrast: false)
+        )
+        precondition(
+            DesktopShellMetrics.separatorWidth(reduceTransparency: false, increasedContrast: true)
+                >= DesktopShellMetrics.separatorWidth(reduceTransparency: false, increasedContrast: false)
+        )
         print("[DesktopShellDesignSystemSelfCheck] PASS")
     }
 }
