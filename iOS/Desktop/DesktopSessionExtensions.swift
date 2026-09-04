@@ -42,8 +42,8 @@ extension DesktopSession {
         activate(topID)
         primaryClick()
 
-        // Native Notes use the phone keyboard as an explicit body editor.
-        if window.title == "Notes" {
+        // Native text apps use the phone keyboard as their explicit editor.
+        if window.title == "Notes" || window.title == "Documents" {
             wantsPhoneKeyboard = true
             return
         }
@@ -67,6 +67,7 @@ extension DesktopSession {
     public func contextClickAtCursorUsingRegistry() {
         guard let window = topWindowForInput(at: cursor),
               window.title != "Notes",
+              window.title != "Documents",
               let point = webContentPoint(at: cursor, in: effectiveFrame(for: window)) else { return }
 
         wantsPhoneKeyboard = false
@@ -111,7 +112,9 @@ extension DesktopSession {
     /// Two-axis scrolling uses the same gain and direction rules on both axes.
     /// Pages without horizontal overflow simply clamp X to their valid range.
     public func scrollActiveWindow(deltaX: CGFloat, deltaY: CGFloat) {
-        guard let key = activeWindow?.title, key != "Notes" else { return }
+        guard let key = activeWindow?.title,
+              key != "Notes",
+              key != "Documents" else { return }
         DesktopWebInputRegistry.shared.scroll(key: key, deltaX: deltaX, deltaY: deltaY)
     }
 
@@ -122,27 +125,45 @@ extension DesktopSession {
 
     public func typeIntoActiveDesktopField(_ text: String) {
         guard !text.isEmpty else { return }
-        if activeWindow?.title == "Notes" {
+        switch activeWindow?.title {
+        case "Notes":
             DesktopNotesStore.shared.appendToActiveBody(text)
             return
+        case "Documents":
+            DesktopDocumentsStore.shared.appendToActiveBody(text)
+            return
+        default:
+            break
         }
         guard let key = activeWindow?.title else { return }
         DesktopWebInputRegistry.shared.type(key: key, text: text)
     }
 
     public func deleteBackwardInActiveDesktopField() {
-        if activeWindow?.title == "Notes" {
+        switch activeWindow?.title {
+        case "Notes":
             DesktopNotesStore.shared.deleteBackwardFromActiveBody()
             return
+        case "Documents":
+            DesktopDocumentsStore.shared.deleteBackwardFromActiveBody()
+            return
+        default:
+            break
         }
         guard let key = activeWindow?.title else { return }
         DesktopWebInputRegistry.shared.deleteBackward(key: key)
     }
 
     public func pressEnterInActiveDesktopField() {
-        if activeWindow?.title == "Notes" {
+        switch activeWindow?.title {
+        case "Notes":
             DesktopNotesStore.shared.insertNewlineIntoActiveBody()
             return
+        case "Documents":
+            DesktopDocumentsStore.shared.insertNewlineIntoActiveBody()
+            return
+        default:
+            break
         }
         guard let key = activeWindow?.title else { return }
         DesktopWebInputRegistry.shared.pressEnter(key: key)
