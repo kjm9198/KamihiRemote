@@ -18,7 +18,7 @@ public final class ExternalDisplayCoordinator: ObservableObject {
     }
 
     @Published public private(set) var isConnected: Bool = false
-    /// Logical UIKit coordinate size used by the scene.
+    /// Logical UIKit coordinate size used by the external UIWindowScene.
     @Published public private(set) var logicalSize: CGSize = CGSize(width: 1920, height: 1080)
     /// Native backing pixel dimensions reported by iOS for the connected screen.
     @Published public private(set) var nativePixelSize: CGSize = CGSize(width: 1920, height: 1080)
@@ -209,19 +209,24 @@ public final class ExternalDisplayCoordinator: ObservableObject {
         bottomSafeTrim = min(max(UserDefaults.standard.double(forKey: DefaultsKey.bottomSafeTrim), -0.04), 0.04)
     }
 
-    public func connect(screen: UIScreen) {
+    public func connect(screen: UIScreen, logicalSize: CGSize? = nil) {
         let wasConnected = isConnected
         isConnected = true
-        refreshMetrics(from: screen)
+        refreshMetrics(from: screen, logicalSize: logicalSize)
 
         if !wasConnected {
             DesktopSession.shared.externalDisplayDidConnect()
         }
     }
 
-    public func refreshMetrics(from screen: UIScreen) {
-        let newLogicalSize = screen.bounds.size
-        let newNativePixelSize = screen.nativeBounds.size
+    /// Refresh measurements using the external UIWindowScene's actual logical coordinate size when
+    /// available. UIScreen.bounds is not guaranteed to match the scene coordinate space after iOS
+    /// applies display geometry or overscan compensation, so diagnostics must follow the same canvas
+    /// that Kamihi actually renders into.
+    public func refreshMetrics(from screen: UIScreen, logicalSize sceneLogicalSize: CGSize? = nil) {
+        let newLogicalSize = sceneLogicalSize ?? screen.bounds.size
+        let rawNativePixelSize = screen.nativeBounds.size
+        let newNativePixelSize = orientedNativePixelSize(rawNativePixelSize, matching: newLogicalSize)
         let newNativeScale = screen.nativeScale
         let newMaximumFramesPerSecond = screen.maximumFramesPerSecond
         let newDisplayName = "External Display • \(Int(newNativePixelSize.width))×\(Int(newNativePixelSize.height))"
@@ -264,6 +269,13 @@ public final class ExternalDisplayCoordinator: ObservableObject {
             bottom: size.height * CGFloat(effectiveBottomSafeMargin),
             trailing: size.width * CGFloat(effectiveRightSafeMargin)
         )
+    }
+
+    private func orientedNativePixelSize(_ nativeSize: CGSize, matching logicalSize: CGSize) -> CGSize {
+        let logicalIsLandscape = logicalSize.width >= logicalSize.height
+        let nativeIsLandscape = nativeSize.width >= nativeSize.height
+        guard logicalIsLandscape != nativeIsLandscape else { return nativeSize }
+        return CGSize(width: nativeSize.height, height: nativeSize.width)
     }
 
     private func effectiveMargin(base: Double, trim: Double) -> Double {
