@@ -22,10 +22,13 @@ final class DesktopSheetsStore: ObservableObject {
     static let columnCount = 12
 
     @Published private(set) var workbook: Workbook {
-        didSet { save() }
+        didSet { scheduleSave() }
     }
 
     private let storageKey = "kamihi.desktop.sheets.v1"
+    private let saveDelayNanoseconds: UInt64 = 400_000_000
+    private var saveTask: Task<Void, Never>?
+    private var lifecycleObservers: [NSObjectProtocol] = []
 
     private init() {
         if let data = UserDefaults.standard.data(forKey: storageKey),
@@ -41,6 +44,37 @@ final class DesktopSheetsStore: ObservableObject {
             )
         }
         clampSelection()
+
+        let center = NotificationCenter.default
+        lifecycleObservers.append(
+            center.addObserver(
+                forName: UIApplication.didEnterBackgroundNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.flushPendingSave()
+                }
+            }
+        )
+        lifecycleObservers.append(
+            center.addObserver(
+                forName: UIApplication.willTerminateNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.flushPendingSave()
+                }
+            }
+        )
+    }
+
+    deinit {
+        saveTask?.cancel()
+        for observer in lifecycleObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     var activeRow: Int { workbook.activeRow }
@@ -159,7 +193,27 @@ final class DesktopSheetsStore: ObservableObject {
         workbook.activeColumn = min(max(workbook.activeColumn, 0), Self.columnCount - 1)
     }
 
-    private func save() {
+    /// Collapse rapid spreadsheet mutations into one trailing persistence write.
+    /// This avoids re-encoding the entire workbook for every typed character.
+    private func scheduleSave() {
+        saveTask?.cancel()
+        saveTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(nanoseconds: saveDelayNanoseconds)
+            guard !Task.isCancelled else { return }
+            saveNow()
+            saveTask = nil
+        }
+    }
+
+    /// Flush the last editing burst before iOS suspends or terminates the app.
+    private func flushPendingSave() {
+        saveTask?.cancel()
+        saveTask = nil
+        saveNow()
+    }
+
+    private func saveNow() {
         guard let data = try? JSONEncoder().encode(workbook) else { return }
         UserDefaults.standard.set(data, forKey: storageKey)
     }
