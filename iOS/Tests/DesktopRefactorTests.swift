@@ -22,7 +22,7 @@ public enum DesktopRefactorTests {
             }
             router.returnToChooser()
             guard router.currentMode == .none else {
-                throw NSError(domain: "Test", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to return to startup profiles"])
+                throw NSError(domain: "Test", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to leave Kamihi Desktop"])
             }
             router.startDesktopLab()
             guard router.currentMode == .externalDesktop, router.isDesktopLabActive else {
@@ -185,6 +185,46 @@ public enum DesktopRefactorTests {
             results.append(TestResult(name: "Two Axis Scroll Symmetry", passed: true, message: "OK"))
         } catch {
             results.append(TestResult(name: "Two Axis Scroll Symmetry", passed: false, message: error.localizedDescription))
+        }
+
+        // Test 9: closing an app is a true lifecycle transition. It must disappear
+        // from the running window list, clear stale keyboard ownership, and a later
+        // explicit launch must create and reveal a new active window.
+        do {
+            let desktop = DesktopSession.shared
+            let title = "Lifecycle Self Check"
+
+            // Keep this check isolated if a previous interrupted run left its
+            // synthetic window behind.
+            for window in desktop.windows.filter({ $0.title == title }) {
+                desktop.close(window.id)
+            }
+
+            let firstID = desktop.openProductivityApp(
+                title,
+                frame: CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60)
+            )
+            desktop.wantsPhoneKeyboard = true
+            desktop.close(firstID)
+
+            guard !desktop.windows.contains(where: { $0.id == firstID }),
+                  !desktop.windows.contains(where: { $0.title == title }),
+                  desktop.wantsPhoneKeyboard == false else {
+                throw NSError(domain: "Test", code: 13, userInfo: [NSLocalizedDescriptionKey: "Close did not fully remove the active app or clear keyboard ownership"])
+            }
+
+            let reopenedID = desktop.openProductivityApp(title)
+            guard reopenedID != firstID,
+                  let reopened = desktop.windows.first(where: { $0.id == reopenedID }),
+                  reopened.isMinimized == false,
+                  desktop.activeWindowID == reopenedID else {
+                throw NSError(domain: "Test", code: 14, userInfo: [NSLocalizedDescriptionKey: "Reopening a closed app did not create and reveal a new active window"])
+            }
+
+            desktop.close(reopenedID)
+            results.append(TestResult(name: "Close And Reopen App Lifecycle", passed: true, message: "OK"))
+        } catch {
+            results.append(TestResult(name: "Close And Reopen App Lifecycle", passed: false, message: error.localizedDescription))
         }
 
         return results
