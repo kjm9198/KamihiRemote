@@ -271,7 +271,28 @@ struct DesktopControllerView: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Desktop trackpad")
-        .accessibilityHint("One finger moves the pointer or drags a title bar. Two fingers scroll horizontally and vertically; two-finger drag on a window edge resizes. Two-finger tap opens the context menu. Three-finger swipe up opens Window Overview.")
+        .accessibilityValue(desktop.activeWindow?.title ?? "No active window")
+        .accessibilityHint("Use custom actions for click, context click, window switching, Window Overview, or keyboard. Standard touch gestures remain available when VoiceOver is off.")
+        .accessibilityAction(named: Text("Click at Pointer")) {
+            desktop.clickAtCursor()
+        }
+        .accessibilityAction(named: Text("Right Click at Pointer")) {
+            desktop.contextClickAtCursorUsingRegistry()
+        }
+        .accessibilityAction(named: Text("Next Window")) {
+            desktop.dismissPhoneKeyboardRequest()
+            desktop.cycleWindow(forward: true)
+        }
+        .accessibilityAction(named: Text("Previous Window")) {
+            desktop.dismissPhoneKeyboardRequest()
+            desktop.cycleWindow(forward: false)
+        }
+        .accessibilityAction(named: Text("Window Overview")) {
+            showOverview = true
+        }
+        .accessibilityAction(named: Text(showKeyboard ? "Hide Keyboard" : "Keyboard")) {
+            setKeyboardVisible(!showKeyboard)
+        }
     }
 
     private var stateSymbol: String {
