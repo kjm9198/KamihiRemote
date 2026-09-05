@@ -212,34 +212,7 @@ struct DesktopDockView: View {
         let isMinimized = desktop.windows.first(where: { $0.title == title })?.isMinimized ?? false
         let isActive = desktop.activeWindow?.title == title
 
-        return VStack(spacing: 2) {
-            Image(systemName: icon)
-                .font(.system(size: DesktopShellMetrics.compactIcon, weight: .semibold))
-                .foregroundStyle(color)
-                .frame(
-                    width: DesktopShellMetrics.minimumHitTarget,
-                    height: DesktopShellMetrics.minimumHitTarget
-                )
-                .background(
-                    isActive
-                        ? DesktopShellPalette.elevatedCanvas
-                        : DesktopShellPalette.secondaryCanvas.opacity(reduceTransparency ? 1 : 0.62),
-                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                )
-                .overlay {
-                    if isActive {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(DesktopShellPalette.accent.opacity(0.36), lineWidth: 1)
-                    }
-                }
-
-            Capsule()
-                .fill(isRunning ? (isMinimized ? Color.orange : DesktopShellPalette.label) : Color.clear)
-                .frame(width: isActive ? 10 : 5, height: 4)
-                .accessibilityHidden(true)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
+        return Button {
             if isRunning, let window = desktop.windows.first(where: { $0.title == title }) {
                 desktop.restoreAndActivate(window.id)
             } else {
@@ -248,11 +221,38 @@ struct DesktopDockView: View {
                     frame: CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60)
                 )
             }
+        } label: {
+            VStack(spacing: 2) {
+                Image(systemName: icon)
+                    .font(.system(size: DesktopShellMetrics.compactIcon, weight: .semibold))
+                    .foregroundStyle(color)
+                    .frame(
+                        width: DesktopShellMetrics.minimumHitTarget,
+                        height: DesktopShellMetrics.minimumHitTarget
+                    )
+                    .background(
+                        isActive
+                            ? DesktopShellPalette.elevatedCanvas
+                            : DesktopShellPalette.secondaryCanvas.opacity(reduceTransparency ? 1 : 0.62),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    )
+                    .overlay {
+                        if isActive {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(DesktopShellPalette.accent.opacity(0.36), lineWidth: 1)
+                        }
+                    }
+
+                Capsule()
+                    .fill(isRunning ? (isMinimized ? Color.orange : DesktopShellPalette.label) : Color.clear)
+                    .frame(width: isActive ? 10 : 5, height: 4)
+                    .accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
         }
-        .accessibilityElement(children: .ignore)
+        .buttonStyle(.plain)
         .accessibilityLabel(title)
         .accessibilityValue(isActive ? "Active" : (isMinimized ? "Minimized" : (isRunning ? "Running" : "Not running")))
         .accessibilityHint("Opens or activates this app")
-        .accessibilityAddTraits(.isButton)
     }
 }
