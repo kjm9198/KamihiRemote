@@ -41,6 +41,34 @@ struct DesktopHardwareShortcutLayer: View {
                 cycleWindow(forward: false)
             }
 
+            sheetsNavigationButton(
+                "Select Previous Column",
+                key: .leftArrow,
+                rowDelta: 0,
+                columnDelta: -1
+            )
+
+            sheetsNavigationButton(
+                "Select Next Column",
+                key: .rightArrow,
+                rowDelta: 0,
+                columnDelta: 1
+            )
+
+            sheetsNavigationButton(
+                "Select Previous Row",
+                key: .upArrow,
+                rowDelta: -1,
+                columnDelta: 0
+            )
+
+            sheetsNavigationButton(
+                "Select Next Row",
+                key: .downArrow,
+                rowDelta: 1,
+                columnDelta: 0
+            )
+
             shortcutButton(
                 "Tile Window Left",
                 key: .leftArrow,
@@ -88,6 +116,23 @@ struct DesktopHardwareShortcutLayer: View {
             .disabled(desktop.activeWindowID == nil)
     }
 
+    /// Arrow keys should behave like a spreadsheet only while Sheets owns focus.
+    /// Keeping them disabled for every other app prevents the hidden shortcut
+    /// layer from stealing normal arrow-key navigation from Browser/WebKit or
+    /// native text editing surfaces.
+    private func sheetsNavigationButton(
+        _ title: String,
+        key: KeyEquivalent,
+        rowDelta: Int,
+        columnDelta: Int
+    ) -> some View {
+        Button(title) {
+            moveSheetSelection(rowDelta: rowDelta, columnDelta: columnDelta)
+        }
+        .keyboardShortcut(key, modifiers: [])
+        .disabled(desktop.activeWindow?.title != "Sheets")
+    }
+
     private func closeActiveWindow() {
         guard let id = desktop.activeWindowID else { return }
         // A hardware close command must never leave the phone's software-keyboard
@@ -109,6 +154,15 @@ struct DesktopHardwareShortcutLayer: View {
         // software-keyboard request before moving focus so text cannot redirect.
         desktop.dismissPhoneKeyboardRequest()
         desktop.cycleWindow(forward: forward)
+    }
+
+    private func moveSheetSelection(rowDelta: Int, columnDelta: Int) {
+        guard desktop.activeWindow?.title == "Sheets" else { return }
+        let sheets = DesktopSheetsStore.shared
+        sheets.select(
+            row: sheets.activeRow + rowDelta,
+            column: sheets.activeColumn + columnDelta
+        )
     }
 
     private func snapActiveWindow(to target: WindowSnapEngine.SnapTarget) {
