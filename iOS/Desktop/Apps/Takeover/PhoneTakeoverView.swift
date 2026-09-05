@@ -304,15 +304,17 @@ struct PhoneTakeoverView: View {
         // Login/session continuity is provided solely by WebKit's persistent
         // website data store. Do not persist the takeover's navigation URL in
         // DesktopBrowserState: callback URLs may contain credentials or tokens.
-        // The desktop surface can safely reload its existing URL to observe the
-        // newly authenticated WebKit session without Kamihi extracting secrets.
-        if window.title == "Browser" {
+        // Reload the existing desktop WebView after returning so Browser, ChatGPT
+        // or YouTube can observe the newly authenticated cookie/session state.
+        if ["Browser", "ChatGPT", "YouTube"].contains(window.title),
+           desktop.activeWindowID == windowID {
             desktop.browserReloadOrStop()
         }
     }
 
     private func finishTakeover() {
-        finalizeTakeoverSession()
+        // onDisappear finalizes exactly once. Calling it here as well could start
+        // a reload and then immediately turn the second call into stopLoading().
         dismiss()
     }
 }
