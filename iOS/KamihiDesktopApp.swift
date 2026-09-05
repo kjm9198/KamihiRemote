@@ -44,8 +44,21 @@ struct KamihiDesktopApp: App {
             .statusBarHidden(false)
             .onChange(of: desktop.isExternalDisplayConnected) { _, connected in
                 if connected {
+                    // A real external-display connection owns the normal product
+                    // flow. Promote the iPhone immediately into the full-screen
+                    // Desktop controller instead of leaving it stranded on the
+                    // Enter Desktop screen while the monitor is already rendering
+                    // Kamihi. This also keeps a fast reconnect seamless: the
+                    // existing desktop/window state is recovered before the user
+                    // starts interacting with the trackpad again.
+                    if router.currentMode != .externalDesktop || router.isDesktopLabActive {
+                        router.selectMode(.externalDesktop)
+                    }
                     _ = desktopRecovery.prepareForConnection(desktop: desktop)
                 } else {
+                    // Do not bounce the user back through a mode/profile chooser on
+                    // cable removal. Preserve the one-desktop state so reconnecting
+                    // can resume directly into the trackpad controller.
                     desktopRecovery.finishSession(desktop: desktop)
                 }
             }
