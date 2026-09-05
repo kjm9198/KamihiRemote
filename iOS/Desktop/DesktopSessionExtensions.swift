@@ -49,11 +49,11 @@ extension DesktopSession {
         }
 
         if window.title == "Sheets" {
-            guard let point = webContentPoint(at: cursor, in: frame) else {
+            guard let cell = sheetsCell(at: cursor, in: frame) else {
                 wantsPhoneKeyboard = false
                 return
             }
-            DesktopSheetsStore.shared.select(normalizedPoint: point)
+            DesktopSheetsStore.shared.select(row: cell.row, column: cell.column)
             wantsPhoneKeyboard = true
             return
         }
@@ -208,6 +208,47 @@ extension DesktopSession {
         windows.reversed().first(where: {
             !$0.isMinimized && effectiveFrame(for: $0).contains(point)
         })
+    }
+
+    /// Resolve the software pointer against the exact geometry used by
+    /// `DesktopSheetsView`. The previous percentage-based hit test ignored the
+    /// 42pt Sheets toolbar and used approximate header fractions, so cells near
+    /// the top/left (and resized windows) could select the wrong row or column.
+    private func sheetsCell(at point: CGPoint, in frame: CGRect) -> (row: Int, column: Int)? {
+        let titleBarHeight = DesktopWindowChrome.titleBarHeight(for: frame)
+        let contentTop = frame.minY + titleBarHeight
+        let contentHeight = frame.maxY - contentTop
+        guard frame.width > 0, contentHeight > 0 else { return nil }
+
+        let localX = point.x - frame.minX
+        let localY = point.y - contentTop
+
+        let appToolbarHeight: CGFloat = 42
+        let rowHeaderWidth: CGFloat = 44
+        let columnHeaderHeight: CGFloat = 32
+        let gridViewportHeight = contentHeight - appToolbarHeight
+        guard gridViewportHeight > columnHeaderHeight else { return nil }
+
+        let cellWidth = max(
+            54,
+            (frame.width - rowHeaderWidth) / CGFloat(DesktopSheetsStore.columnCount)
+        )
+        let cellHeight = max(
+            22,
+            (gridViewportHeight - columnHeaderHeight) / CGFloat(DesktopSheetsStore.rowCount)
+        )
+
+        let gridX = localX - rowHeaderWidth
+        let gridY = localY - appToolbarHeight - columnHeaderHeight
+        guard gridX >= 0,
+              gridY >= 0,
+              gridX < cellWidth * CGFloat(DesktopSheetsStore.columnCount),
+              gridY < cellHeight * CGFloat(DesktopSheetsStore.rowCount) else { return nil }
+
+        return (
+            row: min(Int(gridY / cellHeight), DesktopSheetsStore.rowCount - 1),
+            column: min(Int(gridX / cellWidth), DesktopSheetsStore.columnCount - 1)
+        )
     }
 
     private func webContentPoint(at point: CGPoint, in frame: CGRect) -> CGPoint? {
