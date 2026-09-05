@@ -124,7 +124,7 @@ struct DesktopControllerView: View {
                     .glassEffect(.regular.interactive(), in: .circle)
                     .accessibilityLabel("More Desktop Controls")
                     .accessibilityValue(desktop.activeWindow?.title ?? "No active window")
-                    .accessibilityHint("Opens apps, windows, status, settings, and other controls for this desktop.")
+                    .accessibilityHint("Opens active window controls, apps, windows, settings, and other desktop actions.")
 
                     if controlsLeading { Spacer(minLength: 0) }
                 }
@@ -144,13 +144,34 @@ struct DesktopControllerView: View {
         }
         .disabled(true)
 
-        Button(action: {}) {
-            Label(
-                desktop.isExternalDisplayConnected ? "External display connected" : "Desktop Lab / waiting",
-                systemImage: desktop.isExternalDisplayConnected ? "checkmark.circle" : "clock"
-            )
+        if let active = desktop.activeWindow {
+            Button {
+                setKeyboardVisible(false)
+                desktop.minimize(active.id)
+                if settings.hapticsEnabled { Haptics.touchTap() }
+            } label: {
+                Label("Minimize \(active.title)", systemImage: "minus.rectangle")
+            }
+
+            Button {
+                setKeyboardVisible(false)
+                desktop.toggleMaximize(active.id)
+                if settings.hapticsEnabled { Haptics.touchTap() }
+            } label: {
+                Label(
+                    active.isMaximized ? "Restore \(active.title)" : "Maximize \(active.title)",
+                    systemImage: active.isMaximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"
+                )
+            }
+
+            Button(role: .destructive) {
+                setKeyboardVisible(false)
+                desktop.close(active.id)
+                if settings.hapticsEnabled { Haptics.touchTap() }
+            } label: {
+                Label("Close \(active.title)", systemImage: "xmark.rectangle")
+            }
         }
-        .disabled(true)
 
         Divider()
 
@@ -214,6 +235,14 @@ struct DesktopControllerView: View {
         } label: {
             Label("Capture Desktop", systemImage: "camera.viewfinder")
         }
+
+        Button(action: {}) {
+            Label(
+                desktop.isExternalDisplayConnected ? "External display connected" : "Desktop Lab / waiting",
+                systemImage: desktop.isExternalDisplayConnected ? "checkmark.circle" : "clock"
+            )
+        }
+        .disabled(true)
 
         Divider()
 
