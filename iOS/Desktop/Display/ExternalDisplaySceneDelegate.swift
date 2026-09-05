@@ -116,6 +116,7 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
               let windowScene = scene as? UIWindowScene else { return }
 
         let screen = windowScene.screen
+        let sceneLogicalSize = windowScene.coordinateSpace.bounds.size
         let root = ExternalDesktopCanvasView()
             .environmentObject(DesktopSession.shared)
         let controller = UIHostingController(rootView: root)
@@ -135,7 +136,7 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
         DesktopCaptureService.shared.attach(externalWindow: window)
 
         Task { @MainActor in
-            ExternalDisplayCoordinator.shared.connect(screen: screen)
+            ExternalDisplayCoordinator.shared.connect(screen: screen, logicalSize: sceneLogicalSize)
 
             // The normal product is one persistent desktop. On the first external
             // connection of this app process, restore the saved desktop directly.
@@ -178,10 +179,11 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     private func applyNegotiatedGeometry(from windowScene: UIWindowScene) {
         let screen = windowScene.screen
-        window?.frame = windowScene.coordinateSpace.bounds
+        let sceneBounds = windowScene.coordinateSpace.bounds
+        window?.frame = sceneBounds
         window?.rootViewController?.view.contentScaleFactor = max(screen.nativeScale, 1)
         Task { @MainActor in
-            ExternalDisplayCoordinator.shared.refreshMetrics(from: screen)
+            ExternalDisplayCoordinator.shared.refreshMetrics(from: screen, logicalSize: sceneBounds.size)
         }
     }
 }
