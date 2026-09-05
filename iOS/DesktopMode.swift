@@ -64,8 +64,8 @@ final class DesktopSession: ObservableObject {
 
     func externalDisplayDidConnect() {
         isExternalDisplayConnected = true
-        // Startup profiles own initial placement. Connecting a cable must never
-        // silently launch Browser or any other app.
+        // The one persistent desktop owns its state. Connecting a cable must
+        // never silently launch Browser or any other app.
     }
 
     func externalDisplayDidDisconnect() {
@@ -149,7 +149,10 @@ final class DesktopSession: ObservableObject {
         restoreFrames[id] = nil
         snapTargets[id] = nil
         if activeWindowID == id {
-            activeWindowID = windows.last?.id
+            // Closing the frontmost app must never hand focus to an invisible
+            // minimized window. Otherwise scroll/keyboard input appears broken
+            // because it targets a window the user cannot see.
+            activeWindowID = windows.last(where: { !$0.isMinimized })?.id
             wantsPhoneKeyboard = false
         }
         if dragWindowID == id || resizeWindowID == id {
