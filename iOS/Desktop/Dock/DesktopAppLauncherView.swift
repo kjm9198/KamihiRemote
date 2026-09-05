@@ -36,6 +36,7 @@ struct DesktopAppLauncherView: View {
     private let apps: [AppItem] = [
         AppItem(title: "Browser", icon: "globe", color: Color(red: 0.22, green: 0.58, blue: 0.94), category: "Web"),
         AppItem(title: "Documents", icon: "doc.richtext.fill", color: Color(red: 0.26, green: 0.52, blue: 0.92), category: "Productivity"),
+        AppItem(title: "Sheets", icon: "tablecells.fill", color: Color(red: 0.20, green: 0.66, blue: 0.38), category: "Productivity"),
         AppItem(title: "Notes", icon: "note.text", color: Color(red: 0.92, green: 0.74, blue: 0.24), category: "Productivity"),
         AppItem(title: "Files", icon: "folder.fill", color: Color(red: 0.42, green: 0.68, blue: 0.94), category: "Utilities"),
         AppItem(title: "ChatGPT", icon: "sparkles", color: Color(red: 0.18, green: 0.72, blue: 0.62), category: "AI & Productivity"),
@@ -151,15 +152,9 @@ struct DesktopAppLauncherView: View {
     private func launchApp(_ app: AppItem) {
         if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
 
-        // New apps start centered at 60% of the desktop instead of appearing
-        // oversized or touching display edges.
         let frame = CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60)
 
         if let url = app.url {
-            // Bookmarks are already persisted through DesktopBrowserState's URL
-            // privacy filter. Launch them as pinned web apps by opening a fresh
-            // Browser tab on the existing persistent WebKit website data store,
-            // preserving login/session continuity without copying credentials.
             browser.newTab(url: url)
             desktop.openProductivityApp("Browser", frame: frame)
         } else {
