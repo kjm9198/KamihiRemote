@@ -219,7 +219,27 @@ final class TrackpadEngine: ObservableObject {
 
         // Evaluate click semantics only when the complete gesture has ended.
         guard remainingTouchCount == 0 else {
-            lastCentroid = .zero
+            // Keep the sampling origin on the fingers that are actually still
+            // touching the trackpad. Resetting it to .zero made the next move
+            // sample look enormous and could produce a scroll jump after a
+            // finger was lifted from a multi-touch gesture.
+            let remainingTouches = activeTouchesBeforeEnd.subtracting(endingTouches)
+            if remainingTouches.count == remainingTouchCount {
+                let now = CACurrentMediaTime()
+                lastCentroid = centroid(of: remainingTouches, in: view)
+                lastSampleTime = now
+                if activeFingers == 2 {
+                    twoFingerStartTime = now
+                    twoFingerMovementDistance = 0
+                }
+                if activeFingers == 3 {
+                    threeFingerStartCentroid = lastCentroid
+                }
+            } else {
+                // Defensive fallback for an unexpected UIKit callback shape. The
+                // gesture role guards below still prevent cross-gesture actions.
+                lastCentroid = .zero
+            }
             resetPointerSmoothing()
             return
         }
@@ -390,6 +410,11 @@ final class TrackpadEngine: ObservableObject {
         desktop: DesktopSession,
         settings: TrackpadSettings
     ) {
+        // Once a gesture has ever involved three or more fingers, the remaining
+        // fingers still belong to that gesture. Do not reinterpret a 3→2 lift as
+        // a new scroll/resize gesture; require every finger to lift first.
+        guard gestureFingerCount <= 2 else { return }
+
         // Resizing is intentionally owned by exactly two fingers. Once armed,
         // keep routing the gesture exclusively to the resize path.
         if state == .resizing {
