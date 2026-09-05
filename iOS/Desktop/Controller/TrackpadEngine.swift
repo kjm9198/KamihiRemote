@@ -30,6 +30,12 @@ final class TrackpadEngine: ObservableObject {
     private static let windowDragHoldDuration: TimeInterval = 1.50
     private static let windowDragPreHoldMovementTolerance: CGFloat = 8.0
 
+    /// Two-finger movement normally means scrolling. Resizing is only armed when
+    /// two fingers are held almost still first, so a normal smooth up/down gesture
+    /// can never be stolen just because the pointer happens to sit near a window edge.
+    private static let resizeHoldDuration: TimeInterval = 0.32
+    private static let resizePreHoldMovementTolerance: CGFloat = 3.5
+
     @Published private(set) var state: State = .idle
     @Published private(set) var activeFingers: Int = 0
     @Published var isPrecisionMode: Bool = false
@@ -50,6 +56,8 @@ final class TrackpadEngine: ObservableObject {
     /// actually present. Reusing the original one-finger centroid can inherit
     /// earlier pointer motion and accidentally trigger Overview/window switching.
     private var threeFingerStartCentroid: CGPoint?
+    private var twoFingerStartTime: TimeInterval?
+    private var twoFingerMovementDistance: CGFloat = 0
     private var scrollVelocity: CGSize = .zero
     private var previousPointerDelta: CGSize = .zero
     private var hasPreviousPointerDelta = false
@@ -84,6 +92,8 @@ final class TrackpadEngine: ObservableObject {
             dragHoldEligible = true
             threeFingerActionFired = false
             threeFingerStartCentroid = nil
+            twoFingerStartTime = nil
+            twoFingerMovementDistance = 0
             scrollVelocity = .zero
             resetPointerSmoothing()
             secondTapCandidate = now - lastTapTime <= 0.30
@@ -97,6 +107,13 @@ final class TrackpadEngine: ObservableObject {
                 threeFingerStartCentroid = center
             } else if activeFingers != 3 {
                 threeFingerStartCentroid = nil
+            }
+            if activeFingers == 2 && lastObservedFingerCount != 2 {
+                twoFingerStartTime = now
+                twoFingerMovementDistance = 0
+            } else if activeFingers != 2 {
+                twoFingerStartTime = nil
+                twoFingerMovementDistance = 0
             }
             resetPointerSmoothing()
         }
@@ -119,6 +136,13 @@ final class TrackpadEngine: ObservableObject {
             } else {
                 threeFingerStartCentroid = nil
             }
+            if activeFingers == 2 {
+                twoFingerStartTime = now
+                twoFingerMovementDistance = 0
+            } else {
+                twoFingerStartTime = nil
+                twoFingerMovementDistance = 0
+            }
             lastObservedFingerCount = activeFingers
             gestureFingerCount = max(gestureFingerCount, activeFingers)
             lastCentroid = center
@@ -135,6 +159,9 @@ final class TrackpadEngine: ObservableObject {
         lastCentroid = center
         lastSampleTime = now
         totalMovementDistance += deltaDistance
+        if activeFingers == 2 {
+            twoFingerMovementDistance += deltaDistance
+        }
         gestureFingerCount = max(gestureFingerCount, activeFingers)
 
         switch activeFingers {
@@ -153,6 +180,7 @@ final class TrackpadEngine: ObservableObject {
                 dx: rawDX,
                 dy: rawDY,
                 dt: dt,
+                now: now,
                 desktop: desktop,
                 settings: settings
             )
@@ -183,6 +211,10 @@ final class TrackpadEngine: ObservableObject {
         lastObservedFingerCount = activeFingers
         if activeFingers != 3 {
             threeFingerStartCentroid = nil
+        }
+        if activeFingers != 2 {
+            twoFingerStartTime = nil
+            twoFingerMovementDistance = 0
         }
 
         // Evaluate click semantics only when the complete gesture has ended.
@@ -234,6 +266,8 @@ final class TrackpadEngine: ObservableObject {
         dragHoldEligible = true
         threeFingerActionFired = false
         threeFingerStartCentroid = nil
+        twoFingerStartTime = nil
+        twoFingerMovementDistance = 0
         scrollVelocity = .zero
         resetPointerSmoothing()
     }
@@ -249,6 +283,8 @@ final class TrackpadEngine: ObservableObject {
         dragHoldEligible = true
         threeFingerActionFired = false
         threeFingerStartCentroid = nil
+        twoFingerStartTime = nil
+        twoFingerMovementDistance = 0
         scrollVelocity = .zero
         resetPointerSmoothing()
         desktop.cancelPointerManipulation()
@@ -350,18 +386,33 @@ final class TrackpadEngine: ObservableObject {
         dx: CGFloat,
         dy: CGFloat,
         dt: TimeInterval,
+        now: TimeInterval,
         desktop: DesktopSession,
         settings: TrackpadSettings
     ) {
-        // Resizing is intentionally owned by exactly two fingers. A one-finger
-        // move can never resize a window, even when the pointer is on its edge.
+        // Resizing is intentionally owned by exactly two fingers. Once armed,
+        // keep routing the gesture exclusively to the resize path.
         if state == .resizing {
             desktop.updatePointerResize(delta: CGSize(width: dx, height: dy))
             return
         }
 
-        if state != .scrolling,
-           totalMovementDistance > 3.5,
+        // Once ordinary two-finger movement has become a scroll, never switch it
+        // into resize midway through the same gesture just because the cursor is
+        // near an edge. This is what makes long, smooth up/down scrolling stable.
+        if state == .scrolling {
+            handleTwoFingerScroll(dx: dx, dy: dy, dt: dt, desktop: desktop, settings: settings)
+            return
+        }
+
+        let heldDuration = now - (twoFingerStartTime ?? now)
+
+        // Ignore tiny resting jitter while determining intent. A resize requires
+        // a deliberate two-finger pause first; moving past the tolerance before
+        // the hold expires immediately commits the gesture to scrolling.
+        guard twoFingerMovementDistance > Self.resizePreHoldMovementTolerance else { return }
+
+        if heldDuration >= Self.resizeHoldDuration,
            desktop.beginPointerResize() {
             state = .resizing
             scrollVelocity = .zero
@@ -370,6 +421,7 @@ final class TrackpadEngine: ObservableObject {
             return
         }
 
+        state = .scrolling
         handleTwoFingerScroll(dx: dx, dy: dy, dt: dt, desktop: desktop, settings: settings)
     }
 
