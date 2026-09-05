@@ -10,12 +10,16 @@ struct DesktopDockView: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var onOpenLauncher: () -> Void
 
+    /// Keep the dock centered on the apps that make Kamihi useful as an everyday
+    /// computer. This is intentionally a small launch set rather than permanent
+    /// desktop furniture; every other running app still appears after the divider.
     private let pinnedApps: [(title: String, icon: String, color: Color)] = [
-        ("ChatGPT", "sparkles", Color(red: 0.18, green: 0.72, blue: 0.62)),
         ("Browser", "globe", Color(red: 0.22, green: 0.58, blue: 0.94)),
-        ("YouTube", "play.rectangle.fill", Color(red: 0.94, green: 0.22, blue: 0.28)),
+        ("Documents", "doc.text.fill", Color(red: 0.38, green: 0.63, blue: 0.95)),
+        ("Files", "folder.fill", Color(red: 0.42, green: 0.68, blue: 0.94)),
         ("Notes", "note.text", Color(red: 0.92, green: 0.74, blue: 0.24)),
-        ("Files", "folder.fill", Color(red: 0.42, green: 0.68, blue: 0.94))
+        ("ChatGPT", "sparkles", Color(red: 0.18, green: 0.72, blue: 0.62)),
+        ("YouTube", "play.rectangle.fill", Color(red: 0.94, green: 0.22, blue: 0.28))
     ]
 
     private var pinnedTitles: Set<String> {
@@ -23,9 +27,9 @@ struct DesktopDockView: View {
     }
 
     /// Keep every running desktop app reachable even when it is not one of the
-    /// five default pinned apps. This makes the dock act like a real taskbar
-    /// instead of allowing Calculator, Settings, Photos, PDFs, custom web apps,
-    /// etc. to become invisible once another window covers them.
+    /// default pinned apps. This makes the dock act like a real taskbar instead
+    /// of allowing Calculator, Settings, Photos, PDFs, custom web apps, etc. to
+    /// become invisible once another window covers them.
     private var unpinnedRunningTitles: [String] {
         var seen = Set<String>()
         return desktop.windows.compactMap { window in
@@ -95,10 +99,10 @@ struct DesktopDockView: View {
         HStack(spacing: 10) {
             Label {
                 Text("External")
-                    .font(.caption2.weight(.semibold))
+                    .font(.caption.weight(.semibold))
             } icon: {
                 Image(systemName: "display")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
             }
             .foregroundStyle(.secondary)
             .labelStyle(.titleAndIcon)
@@ -109,13 +113,13 @@ struct DesktopDockView: View {
 
             HStack(spacing: 5) {
                 Image(systemName: batterySymbol)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(batteryTint)
                     .accessibilityHidden(true)
 
                 Text(power.batteryPercentageText)
-                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .font(.caption.monospacedDigit().weight(.semibold))
                     .foregroundStyle(.secondary)
             }
             .accessibilityElement(children: .ignore)
@@ -128,7 +132,7 @@ struct DesktopDockView: View {
 
             TimelineView(.periodic(from: .now, by: 60)) { context in
                 Text(context.date, style: .time)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
                     .accessibilityLabel("Current time")
@@ -194,6 +198,8 @@ struct DesktopDockView: View {
         if normalized.contains("setting") { return "gearshape.fill" }
         if normalized.contains("calculator") { return "plus.forwardslash.minus" }
         if normalized.contains("photo") { return "photo.on.rectangle.angled" }
+        if normalized.contains("document") { return "doc.text.fill" }
+        if normalized.contains("sheet") { return "tablecells.fill" }
         if normalized.contains("pdf") { return "doc.richtext.fill" }
         if normalized.contains("clipboard") { return "doc.on.clipboard.fill" }
         if normalized.contains("browser") || normalized.contains("web") { return "globe" }
