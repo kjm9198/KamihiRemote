@@ -260,12 +260,17 @@ final class DesktopBrowserController: ObservableObject {
 
     /// Keep a small warm set for instant switching, but do not let long browsing
     /// sessions retain an unbounded number of WebKit renderer processes. Under
-    /// Low Power Mode we intentionally keep only two warm renderers. Tab URL
-    /// metadata remains in DesktopBrowserState and website data remains in
-    /// WKWebsiteDataStore.default(), so an evicted tab can be recreated without
-    /// Kamihi reading or persisting credentials itself.
+    /// Low Power Mode or serious/critical thermal pressure we intentionally keep
+    /// only two warm renderers. Tab URL metadata remains in DesktopBrowserState
+    /// and website data remains in WKWebsiteDataStore.default(), so an evicted tab
+    /// can be recreated without Kamihi reading or persisting credentials itself.
     private var maximumRetainedWebViews: Int {
-        ProcessInfo.processInfo.isLowPowerModeEnabled ? 2 : 6
+        let processInfo = ProcessInfo.processInfo
+        let thermal = processInfo.thermalState
+        if processInfo.isLowPowerModeEnabled || thermal == .serious || thermal == .critical {
+            return 2
+        }
+        return 6
     }
 
     init() {
@@ -289,6 +294,28 @@ final class DesktopBrowserController: ObservableObject {
             ) { [weak self] _ in
                 Task { @MainActor in
                     self?.releaseInactiveWebViews()
+                }
+            }
+        )
+        lifecycleObservers.append(
+            center.addObserver(
+                forName: .NSProcessInfoPowerStateDidChange,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.trimForCurrentSystemPressure()
+                }
+            }
+        )
+        lifecycleObservers.append(
+            center.addObserver(
+                forName: ProcessInfo.thermalStateDidChangeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.trimForCurrentSystemPressure()
                 }
             }
         )
@@ -411,6 +438,23 @@ final class DesktopBrowserController: ObservableObject {
             activationOrder.removeAll(where: { $0 == evictionID })
             releaseWebView(for: evictionID)
         }
+    }
+
+    /// React immediately when the OS enters a constrained power or thermal state.
+    /// Previously the lower warm-pool cap was applied only after a future tab
+    /// presentation, so an already-open six-renderer session could remain hot for
+    /// the rest of a long browsing session. There is deliberately no polling timer.
+    private func trimForCurrentSystemPressure() {
+        let processInfo = ProcessInfo.processInfo
+        let thermal = processInfo.thermalState
+        guard processInfo.isLowPowerModeEnabled || thermal == .serious || thermal == .critical else {
+            return
+        }
+        guard let activeTabID else {
+            releaseInactiveWebViews()
+            return
+        }
+        trimRetainedWebViews(excluding: activeTabID)
     }
 
     /// Memory pressure and backgrounding should not keep inactive WebKit renderer
