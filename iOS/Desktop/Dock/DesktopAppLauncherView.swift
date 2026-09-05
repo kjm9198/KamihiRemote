@@ -156,7 +156,15 @@ struct DesktopAppLauncherView: View {
 
         if let url = app.url {
             browser.newTab(url: url)
-            desktop.openProductivityApp("Browser", frame: frame)
+            if let existingBrowser = desktop.windows.first(where: { $0.title == "Browser" }) {
+                desktop.restoreAndActivate(existingBrowser.id)
+            } else {
+                desktop.openProductivityApp("Browser", frame: frame)
+            }
+        } else if let existing = desktop.windows.first(where: { $0.title == app.title }) {
+            // Reopening a running/minimized app should reveal exactly that window
+            // where the user left it. Do not silently resize or reposition it.
+            desktop.restoreAndActivate(existing.id)
         } else {
             desktop.openProductivityApp(app.title, frame: frame)
         }
