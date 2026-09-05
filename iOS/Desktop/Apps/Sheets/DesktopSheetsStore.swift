@@ -5,7 +5,7 @@ import UIKit
 ///
 /// The external canvas is display-only, so pointer clicks select cells and the
 /// iPhone keyboard edits the selected cell. Data remains local unless the user
-/// explicitly exports a CSV through the standard iOS share sheet.
+/// explicitly imports/exports CSV through standard iOS document/share surfaces.
 @MainActor
 final class DesktopSheetsStore: ObservableObject {
     static let shared = DesktopSheetsStore()
@@ -140,6 +140,45 @@ final class DesktopSheetsStore: ObservableObject {
         workbook.updatedAt = Date()
     }
 
+    /// Imports a user-selected CSV into the local workbook. Security-scoped file
+    /// access is held only while reading the selected document. Values beyond the
+    /// current lightweight 20x12 grid are intentionally ignored instead of being
+    /// silently persisted somewhere inaccessible.
+    @discardableResult
+    func importCSV(from url: URL) -> Bool {
+        let didAccessSecurityScope = url.startAccessingSecurityScopedResource()
+        defer {
+            if didAccessSecurityScope { url.stopAccessingSecurityScopedResource() }
+        }
+
+        guard let data = try? Data(contentsOf: url),
+              let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) else {
+            return false
+        }
+
+        let rows = Self.parseCSV(text)
+        guard !rows.isEmpty else { return false }
+
+        var cells: [String: String] = [:]
+        for (rowIndex, row) in rows.prefix(Self.rowCount).enumerated() {
+            for (columnIndex, value) in row.prefix(Self.columnCount).enumerated() where !value.isEmpty {
+                cells[Self.cellKey(row: rowIndex, column: columnIndex)] = value
+            }
+        }
+
+        let importedTitle = url.deletingPathExtension().lastPathComponent
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        workbook = Workbook(
+            title: importedTitle.isEmpty ? "Imported Sheet" : importedTitle,
+            cells: cells,
+            activeRow: 0,
+            activeColumn: 0,
+            updatedAt: Date()
+        )
+        flushPendingSave()
+        return true
+    }
+
     @discardableResult
     func exportCSV() -> Bool {
         var lines: [String] = []
@@ -186,6 +225,58 @@ final class DesktopSheetsStore: ObservableObject {
     private static func csvEscaped(_ value: String) -> String {
         guard value.contains(",") || value.contains("\"") || value.contains("\n") else { return value }
         return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    }
+
+    /// Small RFC-4180-style parser that handles quoted commas, escaped quotes,
+    /// CRLF, and quoted line breaks without depending on a third-party library.
+    static func parseCSV(_ text: String) -> [[String]] {
+        var rows: [[String]] = []
+        var row: [String] = []
+        var field = ""
+        var insideQuotes = false
+        var index = text.startIndex
+
+        func finishField() {
+            row.append(field)
+            field.removeAll(keepingCapacity: true)
+        }
+
+        func finishRow() {
+            finishField()
+            rows.append(row)
+            row.removeAll(keepingCapacity: true)
+        }
+
+        while index < text.endIndex {
+            let character = text[index]
+            let next = text.index(after: index)
+
+            if character == "\"" {
+                if insideQuotes, next < text.endIndex, text[next] == "\"" {
+                    field.append("\"")
+                    index = text.index(after: next)
+                    continue
+                }
+                insideQuotes.toggle()
+            } else if character == "," && !insideQuotes {
+                finishField()
+            } else if (character == "\n" || character == "\r") && !insideQuotes {
+                if character == "\r", next < text.endIndex, text[next] == "\n" {
+                    index = next
+                }
+                finishRow()
+            } else {
+                field.append(character)
+            }
+
+            index = text.index(after: index)
+        }
+
+        if !field.isEmpty || !row.isEmpty {
+            finishRow()
+        }
+
+        return rows
     }
 
     private func clampSelection() {
