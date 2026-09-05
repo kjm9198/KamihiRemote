@@ -85,17 +85,16 @@ struct PhoneTakeoverView: View {
             // account information even though Kamihi never reads those values.
             // Hide the live WebView before iOS takes an app-switcher/background
             // snapshot and require an explicit user gesture before revealing it
-            // again. Stop only the current network load; cookies/session data stay
-            // inside WKWebsiteDataStore.default().
+            // again. Do not stop the navigation: passkey/SSO/external-app flows can
+            // legitimately background the app while WebKit is finishing a callback.
             isPrivacyShielded = true
-            webView?.stopLoading()
-            isLoading = false
         }
         .onDisappear {
-            // A swipe-to-dismiss after loading is a valid way to leave this sheet.
-            // Synchronize the final URL on every dismissal path so OAuth redirects
-            // are not lost merely because the user did not tap the Return button.
-            synchronizeBrowserURL()
+            // Website session state stays inside WKWebsiteDataStore.default().
+            // Never copy the takeover's final URL into Kamihi persistence because
+            // OAuth callbacks can contain authorization codes, state values or
+            // tokens in query, fragment, or even opaque path components.
+            finalizeTakeoverSession()
         }
     }
 
@@ -299,19 +298,21 @@ struct PhoneTakeoverView: View {
         }
     }
 
-    private func synchronizeBrowserURL() {
-        guard let window = desktop.windows.first(where: { $0.id == windowID }),
-              window.title == "Browser",
-              let currentURL else { return }
+    private func finalizeTakeoverSession() {
+        guard let window = desktop.windows.first(where: { $0.id == windowID }) else { return }
 
-        // Website cookies/session data already live in WKWebsiteDataStore.default().
-        // Only the final navigation URL is synchronized; Kamihi never extracts form
-        // values, passwords, passkeys, tokens or other page credentials.
-        DesktopBrowserState.shared.navigateActiveTab(to: currentURL)
+        // Login/session continuity is provided solely by WebKit's persistent
+        // website data store. Do not persist the takeover's navigation URL in
+        // DesktopBrowserState: callback URLs may contain credentials or tokens.
+        // The desktop surface can safely reload its existing URL to observe the
+        // newly authenticated WebKit session without Kamihi extracting secrets.
+        if window.title == "Browser" {
+            desktop.browserReloadOrStop()
+        }
     }
 
     private func finishTakeover() {
-        synchronizeBrowserURL()
+        finalizeTakeoverSession()
         dismiss()
     }
 }
