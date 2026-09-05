@@ -49,17 +49,35 @@ public final class TrackpadSettings: ObservableObject {
     public static let scrollSpeedRange: ClosedRange<Double> = 0.55...3.0
 
     @Published public var pointerSensitivity: Double {
-        didSet { UserDefaults.standard.set(pointerSensitivity, forKey: "kamihi.desktop.pointerSensitivity") }
+        didSet {
+            let normalized = Self.normalizedPointerSensitivity(pointerSensitivity)
+            if pointerSensitivity != normalized {
+                pointerSensitivity = normalized
+            }
+            UserDefaults.standard.set(normalized, forKey: "kamihi.desktop.pointerSensitivity")
+        }
     }
 
     /// 0 = nearly linear precision movement, 1 = balanced iPad/Mac-like acceleration,
     /// 2 = aggressive acceleration for large external displays.
     @Published public var pointerAcceleration: Double {
-        didSet { UserDefaults.standard.set(pointerAcceleration, forKey: "kamihi.desktop.pointerAcceleration") }
+        didSet {
+            let normalized = Self.normalizedPointerAcceleration(pointerAcceleration)
+            if pointerAcceleration != normalized {
+                pointerAcceleration = normalized
+            }
+            UserDefaults.standard.set(normalized, forKey: "kamihi.desktop.pointerAcceleration")
+        }
     }
 
     @Published public var scrollSpeed: Double {
-        didSet { UserDefaults.standard.set(scrollSpeed, forKey: "kamihi.desktop.scrollSpeed") }
+        didSet {
+            let normalized = Self.normalizedScrollSpeed(scrollSpeed)
+            if scrollSpeed != normalized {
+                scrollSpeed = normalized
+            }
+            UserDefaults.standard.set(normalized, forKey: "kamihi.desktop.scrollSpeed")
+        }
     }
 
     @Published public var naturalScrolling: Bool {
