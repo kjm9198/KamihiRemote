@@ -95,7 +95,7 @@ struct ExternalDesktopCanvasView: View {
             }
         }
         .overlay {
-            if display.horizontalSafeMargin > 0 || display.verticalSafeMargin > 0 {
+            if display.hasCalibration {
                 Rectangle()
                     .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
                     .allowsHitTesting(false)
@@ -105,7 +105,7 @@ struct ExternalDesktopCanvasView: View {
     }
 
     private var shouldShowDisplayCalibrationGuides: Bool {
-        showDisplayCalibrationGuides || display.horizontalSafeMargin > 0 || display.verticalSafeMargin > 0
+        showDisplayCalibrationGuides || display.hasCalibration
     }
 
     private func presentDisplayCalibrationGuides() {
