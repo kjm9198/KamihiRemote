@@ -8,6 +8,14 @@ import UIKit
 @MainActor
 private var hasRestoredInitialPersistentDesktop = false
 
+/// Track every external-display scene iOS currently considers connected. During
+/// a fast USB-C unplug/replug iOS can briefly overlap the retiring scene and its
+/// replacement. Without scene ownership, a late `sceneDidDisconnect` from the old
+/// scene can incorrectly mark the whole desktop disconnected after the new scene
+/// is already live. The set makes disconnect a last-scene-only transition.
+@MainActor
+private var activeExternalDisplaySceneIDs: Set<String> = []
+
 /// User-initiated capture bridge for the Kamihi-owned external-display scene.
 ///
 /// This snapshots only Kamihi's external UIWindow, at the backing scale iOS
@@ -136,6 +144,7 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
         DesktopCaptureService.shared.attach(externalWindow: window)
 
         Task { @MainActor in
+            activeExternalDisplaySceneIDs.insert(session.persistentIdentifier)
             ExternalDisplayCoordinator.shared.connect(screen: screen, logicalSize: sceneLogicalSize)
 
             // The normal product is one persistent desktop. On the first external
@@ -170,9 +179,17 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneDidDisconnect(_ scene: UIScene) {
         DesktopCaptureService.shared.detach(externalWindow: window)
+        let disconnectedSceneID = scene.session.persistentIdentifier
         Task { @MainActor in
+            // Always preserve current windows, but only tell the shared desktop it
+            // disconnected when this was the last live external scene. This avoids
+            // a stale retiring scene tearing down controller state for a replacement
+            // scene that iOS already connected during a quick cable replug.
             DesktopFeatureState.shared.saveSession(desktop: DesktopSession.shared)
-            ExternalDisplayCoordinator.shared.disconnect()
+            activeExternalDisplaySceneIDs.remove(disconnectedSceneID)
+            if activeExternalDisplaySceneIDs.isEmpty {
+                ExternalDisplayCoordinator.shared.disconnect()
+            }
         }
         window = nil
     }
