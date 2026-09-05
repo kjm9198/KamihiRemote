@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import WebKit
 
 /// Turns desktop-style `target=_blank` / `window.open` navigations into retained
@@ -15,19 +16,42 @@ extension DesktopBrowserNavigationDelegate {
             return
         }
 
-        guard navigationAction.targetFrame == nil,
-              let url = navigationAction.request.url,
-              let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https" else {
+        guard let url = navigationAction.request.url,
+              let scheme = url.scheme?.lowercased() else {
             decisionHandler(.allow)
             return
         }
 
-        // Cancel the orphaned WebKit new-window request first, then let the
-        // browser state create/select a normal retained tab on the main actor.
+        if scheme == "http" || scheme == "https" {
+            guard navigationAction.targetFrame == nil else {
+                decisionHandler(.allow)
+                return
+            }
+
+            // Cancel the orphaned WebKit new-window request first, then let the
+            // browser state create/select a normal retained tab on the main actor.
+            decisionHandler(.cancel)
+            Task { @MainActor in
+                DesktopBrowserState.shared.newTab(url: url)
+            }
+            return
+        }
+
+        // Web apps commonly hand off mailto/tel links, Maps/App Store links, and
+        // OAuth/deep-link callbacks to an iPhone app. A noninteractive external
+        // WKWebView cannot present those system/app destinations itself, so route
+        // public external schemes through UIApplication on the phone instead of
+        // leaving the user on a dead/blank navigation. WebKit-owned schemes stay
+        // inside WebKit; Kamihi never reads credentials or redirect payloads.
+        let webKitOwnedSchemes: Set<String> = ["about", "blob", "data", "javascript"]
+        guard !webKitOwnedSchemes.contains(scheme) else {
+            decisionHandler(.allow)
+            return
+        }
+
         decisionHandler(.cancel)
         Task { @MainActor in
-            DesktopBrowserState.shared.newTab(url: url)
+            UIApplication.shared.open(url, options: [:], completionHandler: nil)
         }
     }
 
