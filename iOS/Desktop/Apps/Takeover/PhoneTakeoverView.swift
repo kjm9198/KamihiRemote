@@ -28,16 +28,26 @@ struct PhoneTakeoverView: View {
                 securityBanner
 
                 if let window = desktop.windows.first(where: { $0.id == windowID }) {
-                    TakeoverWebView(
-                        initialURL: initialURL(for: window.title),
-                        currentURL: $currentURL,
-                        pageTitle: $pageTitle,
-                        isLoading: $isLoading,
-                        canGoBack: $canGoBack,
-                        canGoForward: $canGoForward,
-                        webView: $webView
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if let initialURL = takeoverURL(for: window.title) {
+                        TakeoverWebView(
+                            initialURL: initialURL,
+                            currentURL: $currentURL,
+                            pageTitle: $pageTitle,
+                            isLoading: $isLoading,
+                            canGoBack: $canGoBack,
+                            canGoForward: $canGoForward,
+                            webView: $webView
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        ContentUnavailableView(
+                            "No Phone Takeover Needed",
+                            systemImage: "iphone.slash",
+                            description: Text("\(window.title) is a native Kamihi app. Continue on iPhone is reserved for Browser, ChatGPT, and YouTube authentication or touch-only web flows.")
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .accessibilityLabel("Phone Takeover unavailable for \(window.title)")
+                    }
                 } else {
                     ContentUnavailableView(
                         "Window Closed",
@@ -69,7 +79,7 @@ struct PhoneTakeoverView: View {
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
-            guard newPhase != .active else { return }
+            guard newPhase != .active, webView != nil else { return }
 
             // Authentication pages can contain passwords, one-time codes and
             // account information even though Kamihi never reads those values.
@@ -213,7 +223,7 @@ struct PhoneTakeoverView: View {
                 Image(systemName: "chevron.backward")
                     .frame(width: 44, height: 44)
             }
-            .disabled(!canGoBack)
+            .disabled(!canGoBack || webView == nil)
             .accessibilityLabel("Back")
 
             Button {
@@ -222,7 +232,7 @@ struct PhoneTakeoverView: View {
                 Image(systemName: "chevron.forward")
                     .frame(width: 44, height: 44)
             }
-            .disabled(!canGoForward)
+            .disabled(!canGoForward || webView == nil)
             .accessibilityLabel("Forward")
 
             Button {
@@ -235,6 +245,7 @@ struct PhoneTakeoverView: View {
                 Image(systemName: isLoading ? "xmark" : "arrow.clockwise")
                     .frame(width: 44, height: 44)
             }
+            .disabled(webView == nil)
             .accessibilityLabel(isLoading ? "Stop loading" : "Reload")
 
             VStack(alignment: .leading, spacing: 1) {
@@ -272,7 +283,7 @@ struct PhoneTakeoverView: View {
         return "\(scheme)://\(host)"
     }
 
-    private func initialURL(for title: String) -> URL? {
+    private func takeoverURL(for title: String) -> URL? {
         switch title {
         case "Browser":
             return DesktopBrowserState.shared.activeTab?.url ?? URL(string: "https://www.google.com")
@@ -281,7 +292,10 @@ struct PhoneTakeoverView: View {
         case "YouTube":
             return URL(string: "https://www.youtube.com")
         default:
-            return URL(string: "https://www.google.com")
+            // Native Kamihi apps do not need a credential-capable WebView. Never
+            // silently send a Notes/Files/Documents/etc. takeover request to an
+            // unrelated fallback website.
+            return nil
         }
     }
 
