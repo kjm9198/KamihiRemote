@@ -2,8 +2,8 @@ import Foundation
 import WebKit
 
 /// Turns desktop-style `target=_blank` / `window.open` navigations into retained
-/// Kamihi Browser tabs and lets normal WebKit downloads land in a Kamihi-owned
-/// Downloads directory without exposing credentials or arbitrary filesystem access.
+/// Kamihi Browser tabs and lets normal WebKit downloads land in Kamihi's native
+/// Files library without exposing credentials or arbitrary filesystem access.
 extension DesktopBrowserNavigationDelegate {
     func webView(
         _ webView: WKWebView,
@@ -80,8 +80,9 @@ extension DesktopBrowserNavigationDelegate: WKDownloadDelegate {
     }
 
     func downloadDidFinish(_ download: WKDownload) {
-        // The file is already committed atomically by WebKit at the destination
-        // chosen above. No credential, response-body, or browsing-data logging.
+        // WebKit committed the file directly into Kamihi Desktop Files, so the
+        // native Files app can preview, share/export, or delete it on next open.
+        // No credential, response-body, or browsing-data logging is involved.
     }
 
     func download(
@@ -90,7 +91,7 @@ extension DesktopBrowserNavigationDelegate: WKDownloadDelegate {
         resumeData: Data?
     ) {
         // Intentionally do not persist resumeData: it can contain request/session
-        // material. A later Browser downloads UI can surface a safe retry action.
+        // material. A safe retry can start a fresh request instead.
     }
 
     private static func browserDownloadsDirectory() throws -> URL {
@@ -101,14 +102,40 @@ extension DesktopBrowserNavigationDelegate: WKDownloadDelegate {
             appropriateFor: nil,
             create: true
         )
+
+        // Browser downloads belong to the same Kamihi-owned library used by the
+        // native Files app. This makes a completed download immediately useful:
+        // Files can preview it with PDFKit/Quick Look, share/export it, or remove it.
         let directory = applicationSupport
-            .appendingPathComponent("Kamihi Desktop", isDirectory: true)
-            .appendingPathComponent("Browser Downloads", isDirectory: true)
+            .appendingPathComponent("Kamihi Desktop Files", isDirectory: true)
         try fileManager.createDirectory(
             at: directory,
             withIntermediateDirectories: true,
             attributes: nil
         )
+
+        // Migrate downloads created by older builds from the browser-only silo.
+        // Collision-safe moves preserve both files and avoid touching anything
+        // outside Kamihi's Application Support container.
+        let legacyDirectory = applicationSupport
+            .appendingPathComponent("Kamihi Desktop", isDirectory: true)
+            .appendingPathComponent("Browser Downloads", isDirectory: true)
+        if fileManager.fileExists(atPath: legacyDirectory.path),
+           let legacyFiles = try? fileManager.contentsOfDirectory(
+                at: legacyDirectory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+           ) {
+            for legacyFile in legacyFiles {
+                let destination = uniqueDownloadURL(
+                    in: directory,
+                    suggestedFilename: legacyFile.lastPathComponent
+                )
+                try? fileManager.moveItem(at: legacyFile, to: destination)
+            }
+            try? fileManager.removeItem(at: legacyDirectory)
+        }
+
         return directory
     }
 
