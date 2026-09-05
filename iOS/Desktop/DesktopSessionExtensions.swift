@@ -48,6 +48,16 @@ extension DesktopSession {
             return
         }
 
+        if window.title == "Sheets" {
+            guard let point = webContentPoint(at: cursor, in: frame) else {
+                wantsPhoneKeyboard = false
+                return
+            }
+            DesktopSheetsStore.shared.select(normalizedPoint: point)
+            wantsPhoneKeyboard = true
+            return
+        }
+
         guard let point = webContentPoint(at: cursor, in: frame) else {
             wantsPhoneKeyboard = false
             return
@@ -68,6 +78,7 @@ extension DesktopSession {
         guard let window = topWindowForInput(at: cursor),
               window.title != "Notes",
               window.title != "Documents",
+              window.title != "Sheets",
               let point = webContentPoint(at: cursor, in: effectiveFrame(for: window)) else { return }
 
         wantsPhoneKeyboard = false
@@ -114,7 +125,8 @@ extension DesktopSession {
     public func scrollActiveWindow(deltaX: CGFloat, deltaY: CGFloat) {
         guard let key = activeWindow?.title,
               key != "Notes",
-              key != "Documents" else { return }
+              key != "Documents",
+              key != "Sheets" else { return }
         DesktopWebInputRegistry.shared.scroll(key: key, deltaX: deltaX, deltaY: deltaY)
     }
 
@@ -132,6 +144,9 @@ extension DesktopSession {
         case "Documents":
             DesktopDocumentsStore.shared.appendToActiveBody(text)
             return
+        case "Sheets":
+            DesktopSheetsStore.shared.appendToActiveCell(text)
+            return
         default:
             break
         }
@@ -147,6 +162,9 @@ extension DesktopSession {
         case "Documents":
             DesktopDocumentsStore.shared.deleteBackwardFromActiveBody()
             return
+        case "Sheets":
+            DesktopSheetsStore.shared.deleteBackwardFromActiveCell()
+            return
         default:
             break
         }
@@ -161,6 +179,9 @@ extension DesktopSession {
             return
         case "Documents":
             DesktopDocumentsStore.shared.insertNewlineIntoActiveBody()
+            return
+        case "Sheets":
+            DesktopSheetsStore.shared.commitAndMoveDown()
             return
         default:
             break
