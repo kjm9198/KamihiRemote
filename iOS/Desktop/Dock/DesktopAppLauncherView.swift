@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// App Library for Kamihi Desktop. Direct touch (Desktop Lab / iPhone sheets)
-/// opens with one tap; the non-interactive external display still uses the
-/// software-cursor hit registry and its deliberate desktop click semantics.
+/// macOS-inspired Applications chooser for Kamihi Desktop. Direct touch
+/// (Desktop Lab / iPhone sheets) opens with one tap; the non-interactive external
+/// display still uses the software-cursor hit registry and deliberate desktop
+/// click semantics.
 struct DesktopAppLauncherView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var desktop: DesktopSession
@@ -30,16 +31,16 @@ struct DesktopAppLauncherView: View {
 
     private let apps: [AppItem] = [
         AppItem(title: "Browser", icon: "safari.fill", color: .blue, category: "Web"),
-        AppItem(title: "Documents", icon: "doc.richtext.fill", color: .blue, category: "Productivity"),
+        AppItem(title: "Documents", icon: "doc.text.fill", color: .blue, category: "Productivity"),
         AppItem(title: "Sheets", icon: "tablecells.fill", color: .green, category: "Productivity"),
         AppItem(title: "Notes", icon: "note.text", color: .yellow, category: "Productivity"),
         AppItem(title: "Files", icon: "folder.fill", color: .blue, category: "Utilities"),
         AppItem(title: "ChatGPT", icon: "sparkles", color: .mint, category: "AI & Productivity"),
         AppItem(title: "YouTube", icon: "play.rectangle.fill", color: .red, category: "Media"),
-        AppItem(title: "Photos", icon: "photo.stack.fill", color: .purple, category: "Media"),
+        AppItem(title: "Photos", icon: "photo.on.rectangle.angled", color: .purple, category: "Media"),
         AppItem(title: "Calculator", icon: "plus.forwardslash.minus", color: .orange, category: "Utilities"),
         AppItem(title: "Clipboard", icon: "doc.on.clipboard.fill", color: .indigo, category: "Utilities"),
-        AppItem(title: "PDF Viewer", icon: "doc.text.fill", color: .red, category: "Documents"),
+        AppItem(title: "PDF Viewer", icon: "doc.richtext.fill", color: .red, category: "Documents"),
         AppItem(title: "Settings", icon: "gearshape.fill", color: .gray, category: "System"),
         AppItem(title: "Display Diagnostics", icon: "waveform.path.ecg.rectangle", color: .teal, category: "System")
     ]
@@ -69,27 +70,40 @@ struct DesktopAppLauncherView: View {
         }
     }
 
-    private let columns = [GridItem(.adaptive(minimum: 104, maximum: 132), spacing: 18)]
+    private let columns = Array(repeating: GridItem(.flexible(minimum: 92, maximum: 124), spacing: 22), count: 6)
 
     var body: some View {
-        VStack(spacing: 14) {
-            header
+        ZStack {
+            // The parent supplies the full glass surface. This subtle overlay gives
+            // the chooser the soft depth of macOS Launchpad without double-blurring.
+            LinearGradient(
+                colors: [Color.white.opacity(0.055), Color.clear, Color.black.opacity(0.035)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .allowsHitTesting(false)
 
-            if filteredApps.isEmpty {
-                emptyState
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: 18) {
-                        ForEach(filteredApps) { app in appTile(app) }
+            VStack(spacing: 12) {
+                header
+
+                if filteredApps.isEmpty {
+                    emptyState
+                } else {
+                    ScrollView {
+                        LazyVGrid(columns: columns, spacing: 18) {
+                            ForEach(filteredApps) { app in
+                                appTile(app)
+                            }
+                        }
+                        .padding(.horizontal, 34)
+                        .padding(.top, 8)
+                        .padding(.bottom, 24)
                     }
-                    .padding(.horizontal, 22)
-                    .padding(.vertical, 10)
+                    .scrollIndicators(.hidden)
                 }
-                .scrollIndicators(.hidden)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .desktopGlassSurface(cornerRadius: 24)
         .background(
             GeometryReader { geo in
                 Color.clear.preference(
@@ -104,51 +118,51 @@ struct DesktopAppLauncherView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
+        VStack(spacing: 10) {
+            Text("Applications")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.primary.opacity(0.90))
+
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
-                TextField("Search apps & websites", text: $searchText)
+
+                TextField("Search", text: $searchText)
                     .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+
                 if !searchText.isEmpty {
                     Button { searchText = "" } label: {
-                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
                 }
             }
-            .padding(.horizontal, 13)
-            .frame(maxWidth: 390, minHeight: 38)
-            .desktopGlassSurface(cornerRadius: 12, elevated: false)
-
-            Spacer()
-
-            Text("Apps")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            Button(action: closeLauncher) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
-                    .frame(width: 34, height: 34)
+            .padding(.horizontal, 12)
+            .frame(width: 350, height: 34)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.20), lineWidth: 0.7)
             }
-            .buttonStyle(.plain)
-            .desktopGlassSurface(cornerRadius: 17, elevated: false)
-            .accessibilityLabel("Close App Library")
         }
-        .padding(.horizontal, 22)
         .padding(.top, 18)
+        .padding(.bottom, 2)
     }
 
     private var emptyState: some View {
         VStack(spacing: 10) {
             Spacer()
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 34))
+                .font(.system(size: 30, weight: .medium))
                 .foregroundStyle(.secondary)
-            Text("No apps found").font(.headline)
-            Text("Try another app name, category or website.")
-                .font(.subheadline)
+            Text("No applications found")
+                .font(.system(size: 15, weight: .semibold))
+            Text("Try another app, category, or website name.")
+                .font(.system(size: 12.5))
                 .foregroundStyle(.secondary)
             Button("Clear Search") { searchText = "" }
                 .buttonStyle(.bordered)
@@ -166,42 +180,42 @@ struct DesktopAppLauncherView: View {
             launchApp(app)
         } label: {
             VStack(spacing: 8) {
-                ZStack(alignment: .bottomTrailing) {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(app.color.opacity(highlighted ? 0.24 : 0.13))
+                ZStack {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [app.color.opacity(0.98), app.color.opacity(0.66)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
                         .overlay {
-                            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                .strokeBorder(Color.white.opacity(highlighted ? 0.44 : 0.16), lineWidth: highlighted ? 1.2 : 0.7)
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.30), lineWidth: 0.8)
                         }
+                        .shadow(color: Color.black.opacity(highlighted ? 0.28 : 0.18), radius: highlighted ? 10 : 6, y: highlighted ? 6 : 4)
 
                     Image(systemName: app.icon)
-                        .font(.system(size: 29, weight: .semibold))
-                        .foregroundStyle(app.color)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    if running {
-                        Circle()
-                            .fill(Color.green)
-                            .frame(width: 8, height: 8)
-                            .overlay(Circle().stroke(Color.black.opacity(0.25), lineWidth: 1))
-                            .padding(6)
-                    }
+                        .font(.system(size: 30, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .shadow(color: Color.black.opacity(0.16), radius: 1, y: 1)
                 }
-                .frame(width: 68, height: 68)
-                .scaleEffect(highlighted ? 1.06 : 1)
+                .frame(width: 70, height: 70)
+                .scaleEffect(highlighted ? 1.08 : 1)
+                .offset(y: highlighted ? -4 : 0)
                 .animation(KamihiTheme.Animation.fast, value: highlighted)
 
                 Text(app.title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.primary)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.primary.opacity(0.94))
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
-                Text(app.category)
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+
+                Circle()
+                    .fill(running ? Color.primary.opacity(0.72) : Color.clear)
+                    .frame(width: 4, height: 4)
             }
-            .frame(maxWidth: .infinity, minHeight: 112, alignment: .top)
+            .frame(maxWidth: .infinity, minHeight: 116, alignment: .top)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
