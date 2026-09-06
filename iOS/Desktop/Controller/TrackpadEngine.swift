@@ -36,6 +36,10 @@ final class TrackpadEngine: ObservableObject {
     private static let resizeHoldDuration: TimeInterval = 0.32
     private static let resizePreHoldMovementTolerance: CGFloat = 3.5
 
+    /// Momentum should feel like a physical continuation of the user's lift, not
+    /// stale velocity replayed after they deliberately paused before releasing.
+    private static let momentumReleaseGrace: TimeInterval = 0.14
+
     @Published private(set) var state: State = .idle
     @Published private(set) var activeFingers: Int = 0
     @Published var isPrecisionMode: Bool = false
@@ -201,7 +205,8 @@ final class TrackpadEngine: ObservableObject {
         desktop: DesktopSession,
         settings: TrackpadSettings
     ) {
-        let duration = CACurrentMediaTime() - gestureStartTime
+        let now = CACurrentMediaTime()
+        let duration = now - gestureStartTime
         let wasTap = duration < 0.26 && totalMovementDistance < 10
         let completedFingerCount = max(gestureFingerCount, activeTouchesBeforeEnd.count)
         let endedState = state
@@ -225,11 +230,11 @@ final class TrackpadEngine: ObservableObject {
             // finger was lifted from a multi-touch gesture.
             let remainingTouches = activeTouchesBeforeEnd.subtracting(endingTouches)
             if remainingTouches.count == remainingTouchCount {
-                let now = CACurrentMediaTime()
+                let sampleTime = CACurrentMediaTime()
                 lastCentroid = centroid(of: remainingTouches, in: view)
-                lastSampleTime = now
+                lastSampleTime = sampleTime
                 if activeFingers == 2 {
-                    twoFingerStartTime = now
+                    twoFingerStartTime = sampleTime
                     twoFingerMovementDistance = 0
                 }
                 if activeFingers == 3 {
@@ -261,7 +266,7 @@ final class TrackpadEngine: ObservableObject {
             } else if completedFingerCount == 1 && settings.tapToClick {
                 if settings.hapticsEnabled { Haptics.click() }
                 desktop.clickAtCursor()
-                lastTapTime = CACurrentMediaTime()
+                lastTapTime = now
             } else if completedFingerCount == 2 {
                 // A two-finger tap becomes context click only if no scrolling or
                 // resize movement crossed the tap threshold. Route it through the
@@ -271,7 +276,11 @@ final class TrackpadEngine: ObservableObject {
             }
         } else if endedState == .scrolling,
                   completedFingerCount == 2,
-                  settings.scrollMomentum {
+                  settings.scrollMomentum,
+                  now - lastSampleTime <= Self.momentumReleaseGrace {
+            // Only carry momentum when the user lifts promptly after the final
+            // scrolling sample. A deliberate pause means "stop here" and must not
+            // replay stale velocity when the fingers finally leave the trackpad.
             startMomentum(initialVelocity: scrollVelocity, desktop: desktop)
         }
 
