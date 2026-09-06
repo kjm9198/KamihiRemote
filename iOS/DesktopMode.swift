@@ -439,7 +439,7 @@ final class DesktopSession: ObservableObject {
         let frame = effectiveFrame(for: window)
         let titleHeight = DesktopWindowChrome.titleBarHeight(for: frame)
         guard cursor.y >= frame.minY, cursor.y <= frame.minY + titleHeight else { return false }
-        return cursor.x >= frame.minX && cursor.x < (frame.maxX - 0.105)
+        return cursor.x > (frame.minX + 0.105) && cursor.x <= frame.maxX
     }
 
     private func resizeHit(at point: CGPoint) -> (id: UUID, edge: ResizeEdge)? {

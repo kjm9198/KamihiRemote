@@ -137,17 +137,14 @@ public enum DesktopRefactorTests {
             let frame = CGRect(x: 0.12, y: 0.10, width: 0.66, height: 0.68)
             let titleHeight = DesktopWindowChrome.titleBarHeight(for: frame)
             let y = frame.minY + titleHeight / 2
-            let extent = min(max(frame.width * 0.066, 0.020), 0.030)
-            let gap = min(max(frame.width * 0.012, 0.004), 0.008)
-            let trailing = min(max(frame.width * 0.018, 0.006), 0.012)
 
-            let closeX = frame.maxX - trailing - extent / 2
-            let maximizeX = closeX - extent - gap
-            let minimizeX = maximizeX - extent - gap
+            let closeX = frame.minX + 0.018
+            let minimizeX = frame.minX + 0.052
+            let maximizeX = frame.minX + 0.086
 
             guard DesktopWindowChrome.action(at: CGPoint(x: closeX, y: y), in: frame) == .close,
-                  DesktopWindowChrome.action(at: CGPoint(x: maximizeX, y: y), in: frame) == .maximizeRestore,
                   DesktopWindowChrome.action(at: CGPoint(x: minimizeX, y: y), in: frame) == .minimize,
+                  DesktopWindowChrome.action(at: CGPoint(x: maximizeX, y: y), in: frame) == .maximizeRestore,
                   DesktopWindowChrome.action(at: CGPoint(x: frame.midX, y: frame.midY), in: frame) == nil else {
                 throw NSError(domain: "Test", code: 10, userInfo: [NSLocalizedDescriptionKey: "Window chrome pointer hit testing failed"])
             }
@@ -286,11 +283,7 @@ public enum DesktopRefactorTests {
             }
             let frame = desktop.effectiveFrame(for: window)
             let titleHeight = DesktopWindowChrome.titleBarHeight(for: frame)
-            let extent = min(max(frame.width * 0.066, 0.020), 0.030)
-            let gap = min(max(frame.width * 0.012, 0.004), 0.008)
-            let trailing = min(max(frame.width * 0.018, 0.006), 0.012)
-            let closeX = frame.maxX - trailing - extent / 2
-            let maximizeX = closeX - extent - gap
+            let maximizeX = frame.minX + 0.086
 
             desktop.cursor = CGPoint(x: maximizeX, y: frame.minY + titleHeight / 2)
             desktop.clickAtCursor()
@@ -374,33 +367,33 @@ public enum DesktopRefactorTests {
             let titleHeight = DesktopWindowChrome.titleBarHeight(for: frame)
             let titleMidY = frame.minY + titleHeight / 2
 
-            // Check 1: Traffic light action partitioning
-            // Close zone: [frame.maxX - 0.036, frame.maxX]
-            let closeAction = DesktopWindowChrome.action(at: CGPoint(x: frame.maxX - 0.018, y: titleMidY), in: frame)
-            // Maximize zone: [frame.maxX - 0.070, frame.maxX - 0.036)
-            let maxAction = DesktopWindowChrome.action(at: CGPoint(x: frame.maxX - 0.052, y: titleMidY), in: frame)
-            // Minimize zone: [frame.maxX - 0.105, frame.maxX - 0.070)
-            let minAction = DesktopWindowChrome.action(at: CGPoint(x: frame.maxX - 0.086, y: titleMidY), in: frame)
-            // Drag zone (fall-through): < frame.maxX - 0.105
-            let dragAction = DesktopWindowChrome.action(at: CGPoint(x: frame.maxX - 0.150, y: titleMidY), in: frame)
+            // Check 1: Traffic light action partitioning (macOS Left side)
+            // Close zone: [frame.minX, frame.minX + 0.036)
+            let closeAction = DesktopWindowChrome.action(at: CGPoint(x: frame.minX + 0.018, y: titleMidY), in: frame)
+            // Minimize zone: [frame.minX + 0.036, frame.minX + 0.070)
+            let minAction = DesktopWindowChrome.action(at: CGPoint(x: frame.minX + 0.052, y: titleMidY), in: frame)
+            // Maximize zone: [frame.minX + 0.070, frame.minX + 0.105]
+            let maxAction = DesktopWindowChrome.action(at: CGPoint(x: frame.minX + 0.086, y: titleMidY), in: frame)
+            // Drag zone (fall-through): > frame.minX + 0.105
+            let dragAction = DesktopWindowChrome.action(at: CGPoint(x: frame.minX + 0.150, y: titleMidY), in: frame)
 
             guard closeAction == .close,
-                  maxAction == .maximizeRestore,
                   minAction == .minimize,
+                  maxAction == .maximizeRestore,
                   dragAction == nil else {
                 desktop.close(testWindowID)
                 throw NSError(domain: "Test", code: 28, userInfo: [NSLocalizedDescriptionKey: "Traffic light action partitioning failed: close=\(String(describing: closeAction)), max=\(String(describing: maxAction)), min=\(String(describing: minAction)), drag=\(String(describing: dragAction))"])
             }
 
             // Check 2: isCursorOverTitleBar detection
-            desktop.cursor = CGPoint(x: frame.minX + 0.05, y: titleMidY)
+            desktop.cursor = CGPoint(x: frame.maxX - 0.05, y: titleMidY)
             guard desktop.isCursorOverTitleBar() == true else {
                 desktop.close(testWindowID)
                 throw NSError(domain: "Test", code: 29, userInfo: [NSLocalizedDescriptionKey: "isCursorOverTitleBar failed to detect cursor over title bar"])
             }
 
-            // In traffic light region (>= frame.maxX - 0.105), should NOT trigger title bar drag
-            desktop.cursor = CGPoint(x: frame.maxX - 0.05, y: titleMidY)
+            // In traffic light region (<= frame.minX + 0.105), should NOT trigger title bar drag
+            desktop.cursor = CGPoint(x: frame.minX + 0.05, y: titleMidY)
             guard desktop.isCursorOverTitleBar() == false else {
                 desktop.close(testWindowID)
                 throw NSError(domain: "Test", code: 30, userInfo: [NSLocalizedDescriptionKey: "isCursorOverTitleBar falsely matched traffic light button region"])
