@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import OSLog
 
 private enum DesktopSmokeLog {
@@ -63,17 +64,11 @@ struct KamihiDesktopApp: App {
             }
             .onChange(of: desktop.isExternalDisplayConnected) { _, connected in
                 if connected {
-                    // A real external-display connection owns the normal product
-                    // flow. Promote the iPhone immediately into the full-screen
-                    // Desktop controller instead of leaving it stranded on the
-                    // entry screen while the monitor is already rendering Kamihi.
                     if router.currentMode != .externalDesktop || router.isDesktopLabActive {
                         router.selectMode(.externalDesktop)
                     }
                     _ = desktopRecovery.prepareForConnection(desktop: desktop)
                 } else {
-                    // Cable removal is a save boundary, never a reset. The phone
-                    // stays in Desktop mode and the next connection resumes this OS.
                     desktopRecovery.finishSession(desktop: desktop)
                 }
             }
@@ -81,8 +76,6 @@ struct KamihiDesktopApp: App {
                 desktopRecovery.autosave(desktop: desktop)
             }
             .onChange(of: desktop.activeWindowID) { _, _ in
-                // Focus is part of the user's desktop state too. Persist it even
-                // when no window geometry changed so relaunch restores the same app.
                 desktopRecovery.autosave(desktop: desktop)
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
