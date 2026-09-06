@@ -327,17 +327,18 @@ struct PhoneTakeoverView: View {
     }
 
     private func finalizeTakeoverSession() {
-        guard let window = desktop.windows.first(where: { $0.id == windowID }) else { return }
+        guard let window = desktop.windows.first(where: { $0.id == windowID }),
+              ["Browser", "ChatGPT", "YouTube"].contains(window.title) else { return }
 
         // Login/session continuity is provided solely by WebKit's persistent
         // website data store. Do not persist the takeover's navigation URL in
         // DesktopBrowserState: callback URLs may contain credentials or tokens.
-        // Reload the existing desktop WebView after returning so Browser, ChatGPT
-        // or YouTube can observe the newly authenticated cookie/session state.
-        if ["Browser", "ChatGPT", "YouTube"].contains(window.title),
-           desktop.activeWindowID == windowID {
-            desktop.browserReloadOrStop()
-        }
+        // Refresh the exact originating web app after returning so it observes
+        // newly authenticated cookies/session state. Do not route this through
+        // browserReloadOrStop(): that method consults Browser's global loading
+        // state and can accidentally stop ChatGPT/YouTube after a successful
+        // takeover when an unrelated Browser tab is loading.
+        DesktopWebInputRegistry.shared.reload(key: window.title)
     }
 
     private func finishTakeover() {
