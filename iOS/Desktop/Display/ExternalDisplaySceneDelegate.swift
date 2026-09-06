@@ -16,6 +16,19 @@ private var hasRestoredInitialPersistentDesktop = false
 @MainActor
 private var activeExternalDisplaySceneIDs: Set<String> = []
 
+/// The most recently connected external scene owns the shared display metrics.
+/// During USB-C replacement overlap an older scene may still receive geometry
+/// callbacks; those callbacks must not overwrite the resolution/refresh state for
+/// the newer scene that the user is actually looking at.
+@MainActor
+private var primaryExternalDisplaySceneID: String?
+
+/// Keep the last public UIKit metrics for each live scene so that, if the newest
+/// scene disappears while another external scene is still alive, diagnostics can
+/// fall back immediately without producing a false disconnected transition.
+@MainActor
+private var externalDisplaySceneMetrics: [String: (screen: UIScreen, logicalSize: CGSize)] = [:]
+
 /// User-initiated capture bridge for the Kamihi-owned external-display scene.
 ///
 /// This snapshots only Kamihi's external UIWindow, at the backing scale iOS
@@ -144,7 +157,10 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
         DesktopCaptureService.shared.attach(externalWindow: window)
 
         Task { @MainActor in
-            activeExternalDisplaySceneIDs.insert(session.persistentIdentifier)
+            let sceneID = session.persistentIdentifier
+            activeExternalDisplaySceneIDs.insert(sceneID)
+            externalDisplaySceneMetrics[sceneID] = (screen: screen, logicalSize: sceneLogicalSize)
+            primaryExternalDisplaySceneID = sceneID
             ExternalDisplayCoordinator.shared.connect(screen: screen, logicalSize: sceneLogicalSize)
 
             // The normal product is one persistent desktop. On the first external
@@ -187,8 +203,19 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
             // scene that iOS already connected during a quick cable replug.
             DesktopFeatureState.shared.saveSession(desktop: DesktopSession.shared)
             activeExternalDisplaySceneIDs.remove(disconnectedSceneID)
+            externalDisplaySceneMetrics.removeValue(forKey: disconnectedSceneID)
+
             if activeExternalDisplaySceneIDs.isEmpty {
+                primaryExternalDisplaySceneID = nil
                 ExternalDisplayCoordinator.shared.disconnect()
+            } else if primaryExternalDisplaySceneID == disconnectedSceneID,
+                      let fallbackSceneID = activeExternalDisplaySceneIDs.first,
+                      let fallbackMetrics = externalDisplaySceneMetrics[fallbackSceneID] {
+                primaryExternalDisplaySceneID = fallbackSceneID
+                ExternalDisplayCoordinator.shared.refreshMetrics(
+                    from: fallbackMetrics.screen,
+                    logicalSize: fallbackMetrics.logicalSize
+                )
             }
         }
         window = nil
@@ -197,9 +224,12 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
     private func applyNegotiatedGeometry(from windowScene: UIWindowScene) {
         let screen = windowScene.screen
         let sceneBounds = windowScene.coordinateSpace.bounds
+        let sceneID = windowScene.session.persistentIdentifier
         window?.frame = sceneBounds
         window?.rootViewController?.view.contentScaleFactor = max(screen.nativeScale, 1)
         Task { @MainActor in
+            externalDisplaySceneMetrics[sceneID] = (screen: screen, logicalSize: sceneBounds.size)
+            guard primaryExternalDisplaySceneID == sceneID else { return }
             ExternalDisplayCoordinator.shared.refreshMetrics(from: screen, logicalSize: sceneBounds.size)
         }
     }
