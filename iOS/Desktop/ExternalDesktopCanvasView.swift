@@ -1,7 +1,9 @@
 import SwiftUI
 import Photos
 
-/// Renders the complete desktop environment on the external display (or simulated in Desktop Lab).
+/// Renders the complete persistent desktop environment on the external display or
+/// in Desktop Lab. Every launcher route now resolves to a real app surface rather
+/// than falling through to a placeholder window.
 struct ExternalDesktopCanvasView: View {
     @EnvironmentObject private var desktop: DesktopSession
     @StateObject private var settings = TrackpadSettings.shared
@@ -126,7 +128,7 @@ struct ExternalDesktopCanvasView: View {
             .clipShape(Rectangle())
             .overlay {
                 if showLauncher {
-                    (colorScheme == .dark ? Color.black.opacity(0.40) : Color.black.opacity(0.20))
+                    (colorScheme == .dark ? Color.black.opacity(0.38) : Color.black.opacity(0.18))
                         .ignoresSafeArea()
                         .onTapGesture {
                             showLauncher = false
@@ -136,11 +138,11 @@ struct ExternalDesktopCanvasView: View {
                     DesktopAppLauncherView()
                         .environmentObject(desktop)
                         .frame(maxWidth: 860, maxHeight: 560)
-                        .desktopGlassSurface(cornerRadius: 26)
+                        .desktopGlassSurface(cornerRadius: 24)
                 }
 
                 if showWallpaperPicker {
-                    (colorScheme == .dark ? Color.black.opacity(0.35) : Color.black.opacity(0.20))
+                    (colorScheme == .dark ? Color.black.opacity(0.34) : Color.black.opacity(0.18))
                         .onTapGesture { showWallpaperPicker = false }
 
                     DesktopWallpaperPickerView()
@@ -210,94 +212,267 @@ struct ExternalDesktopCanvasView: View {
     @ViewBuilder
     private func windowContent(for title: String) -> some View {
         switch title {
-        case "Browser": DesktopBrowserView()
-        case "ChatGPT": DesktopChatGPTView()
-        case "YouTube": DesktopYouTubeView()
-        case "Documents": DesktopDocumentsView()
-        case "Sheets": DesktopSheetsView()
-        case "Notes": DesktopNotesView()
-        case "Files": DesktopFilesView()
-        case "Photos": DesktopPhotosView()
-        case "Settings": DesktopSettingsAppView().environmentObject(desktop)
+        case "Browser":
+            DesktopBrowserView()
+        case "ChatGPT":
+            DesktopChatGPTView()
+        case "YouTube":
+            DesktopYouTubeView()
+        case "Documents":
+            DesktopDocumentsView()
+        case "Sheets":
+            DesktopSheetsView()
+        case "Notes":
+            DesktopNotesView()
+        case "Files":
+            DesktopFilesView()
+        case "Photos":
+            DesktopPhotosView()
+        case "Calculator":
+            DesktopCalculatorView()
+        case "Clipboard":
+            DesktopClipboardCenterView().environmentObject(desktop)
+        case "PDF Viewer":
+            DesktopPreviewAppView()
+        case "Settings":
+            DesktopSettingsAppView().environmentObject(desktop)
+        case "Display Diagnostics":
+            DesktopDisplayDiagnosticsAppView()
         default:
-            VStack {
-                Text(title)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(KamihiTheme.Colors.surfaceBackground)
+            DesktopUnknownAppView(title: title)
         }
     }
 }
 
+/// Photos counterpart with a proper toolbar and library sidebar rather than a bare
+/// thumbnail grid. The actual assets still come from the user's iOS Photos access.
 private struct DesktopPhotosView: View {
     @StateObject private var model = DesktopPhotosModel()
 
-    private let columns = [GridItem(.adaptive(minimum: 110, maximum: 190), spacing: 8)]
+    private let columns = [GridItem(.adaptive(minimum: 104, maximum: 170), spacing: 7)]
 
     var body: some View {
-        Group {
-            switch model.authorizationStatus {
-            case .authorized, .limited:
-                if model.assets.isEmpty {
-                    photosState(
-                        symbol: "photo.on.rectangle.angled",
-                        title: "No photos available",
-                        detail: model.authorizationStatus == .limited
-                            ? "iOS is sharing a limited selection with Kamihi."
-                            : "Your photo library does not currently contain images."
-                    )
-                } else {
-                    ScrollView {
-                        LazyVGrid(columns: columns, spacing: 8) {
-                            ForEach(model.assets, id: \.localIdentifier) { asset in
-                                DesktopPhotoThumbnail(asset: asset)
-                                    .aspectRatio(1, contentMode: .fit)
-                            }
-                        }
-                        .padding(10)
-                    }
-                    .overlay(alignment: .topTrailing) {
-                        if model.authorizationStatus == .limited {
-                            Label("Limited Photos", systemImage: "checkmark.shield.fill")
-                                .font(.caption2.weight(.semibold))
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 6)
-                                .background(.ultraThinMaterial, in: Capsule())
-                                .padding(10)
-                                .accessibilityLabel("Limited Photos access")
-                        }
-                    }
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .foregroundStyle(.purple)
+                    Text("Photos")
+                        .font(.system(size: 13, weight: .semibold))
+                    Spacer()
                 }
-            case .denied, .restricted:
-                photosState(symbol: "photo.badge.exclamationmark", title: "Photos access is off", detail: "Kamihi cannot read the photo library. Change Photos access for Kamihi in iPhone Settings to use this window.")
-            case .notDetermined:
-                photosState(symbol: "photo.stack", title: "Choose Photos access on iPhone", detail: "iOS will ask whether Kamihi may show your photos on the connected desktop. Limited access is supported.")
-            @unknown default:
-                photosState(symbol: "photo.stack", title: "Photos unavailable", detail: "iOS returned an unknown Photos permission state.")
+                .padding(.horizontal, 11)
+                .frame(height: DesktopShellMetrics.toolbarHeight)
+                .desktopAppToolbar()
+
+                VStack(spacing: 3) {
+                    photosSidebarRow("Library", icon: "photo.stack.fill", selected: true)
+                    photosSidebarRow("Favorites", icon: "heart.fill", selected: false)
+                    photosSidebarRow("Recent", icon: "clock.fill", selected: false)
+                }
+                .padding(7)
+                Spacer()
+
+                Text(model.authorizationStatus == .limited ? "Limited Library" : "On My iPhone")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.secondary)
+                    .padding(10)
+            }
+            .frame(width: 174)
+            .desktopSidebarSurface()
+
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Text("Library")
+                        .font(.system(size: 12.5, weight: .semibold))
+                    Spacer()
+                    if model.authorizationStatus == .limited {
+                        Label("Limited", systemImage: "checkmark.shield.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("\(model.assets.count) photos")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 12)
+                .frame(height: DesktopShellMetrics.toolbarHeight)
+                .desktopAppToolbar()
+
+                photosContent
             }
         }
-        .background(KamihiTheme.Colors.surfaceBackground)
+        .background(DesktopShellPalette.canvas)
         .task { await model.start() }
     }
 
-    private func photosState(symbol: String, title: String, detail: String) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: symbol)
-                .font(.system(size: 34, weight: .medium))
-                .foregroundStyle(.secondary)
+    private func photosSidebarRow(_ title: String, icon: String, selected: Bool) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(selected ? Color.purple : Color.secondary)
+                .frame(width: 19)
             Text(title)
-                .font(.headline)
+                .font(.system(size: 11.5, weight: selected ? .semibold : .medium))
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 30)
+        .background(selected ? Color.accentColor.opacity(0.13) : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var photosContent: some View {
+        switch model.authorizationStatus {
+        case .authorized, .limited:
+            if model.assets.isEmpty {
+                photosState(
+                    symbol: "photo.on.rectangle.angled",
+                    title: "No photos available",
+                    detail: model.authorizationStatus == .limited
+                        ? "iOS is sharing a limited selection with Kamihi."
+                        : "Your photo library does not currently contain images."
+                )
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 7) {
+                        ForEach(model.assets, id: \.localIdentifier) { asset in
+                            DesktopPhotoThumbnail(asset: asset)
+                                .aspectRatio(1, contentMode: .fit)
+                        }
+                    }
+                    .padding(10)
+                }
+            }
+        case .denied, .restricted:
+            photosState(symbol: "photo.badge.exclamationmark", title: "Photos access is off", detail: "Change Photos access for Kamihi in iPhone Settings to use this window.")
+        case .notDetermined:
+            photosState(symbol: "photo.stack", title: "Choose Photos access on iPhone", detail: "iOS will ask whether Kamihi may show photos on the connected desktop. Limited access is supported.")
+        @unknown default:
+            photosState(symbol: "photo.stack", title: "Photos unavailable", detail: "iOS returned an unknown Photos permission state.")
+        }
+    }
+
+    private func photosState(symbol: String, title: String, detail: String) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(.tertiary)
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
                 .multilineTextAlignment(.center)
             Text(detail)
-                .font(.subheadline)
+                .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 430)
+                .frame(maxWidth: 400)
         }
         .padding(28)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Preview counterpart. PDF/image/document preview itself is provided by the same
+/// secure sandbox library as Files, so the launcher no longer opens a placeholder.
+private struct DesktopPreviewAppView: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "doc.richtext.fill")
+                    .foregroundStyle(.red)
+                Text("Preview")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Text("Open a document from Files")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 11)
+            .frame(height: DesktopShellMetrics.toolbarHeight)
+            .desktopAppToolbar()
+            DesktopFilesView()
+        }
+        .background(DesktopShellPalette.canvas)
+    }
+}
+
+private struct DesktopDisplayDiagnosticsAppView: View {
+    @StateObject private var display = ExternalDisplayCoordinator.shared
+    @StateObject private var power = DesktopPowerMonitor.shared
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "waveform.path.ecg.rectangle")
+                    .foregroundStyle(.teal)
+                Text("Display Diagnostics")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Text(display.isConnected ? "Connected" : "Desktop Lab")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 11)
+            .frame(height: DesktopShellMetrics.toolbarHeight)
+            .desktopAppToolbar()
+
+            ScrollView {
+                VStack(spacing: 12) {
+                    diagnosticCard("Output", icon: "display", value: display.capabilitySummary)
+                    diagnosticCard("Calibration", icon: "viewfinder", value: display.calibrationSummary)
+                    diagnosticCard("Preferred refresh", icon: "speedometer", value: "\(display.preferredRefreshRate) Hz")
+                    diagnosticCard("Battery", icon: "battery.75percent", value: power.batteryPercentageText)
+                    diagnosticCard("Thermal", icon: "thermometer.medium", value: power.thermalText)
+                    VStack(alignment: .leading, spacing: 7) {
+                        Label("Physical check", systemImage: "checklist")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Confirm all four corners are visible, the pointer reaches every edge, text is sharp, window controls respond, and reconnect restores the same desktop.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .desktopInsetPanel()
+                }
+                .padding(16)
+                .frame(maxWidth: 680)
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .background(DesktopShellPalette.canvas)
+    }
+
+    private func diagnosticCard(_ title: String, icon: String, value: String) -> some View {
+        HStack(spacing: 11) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.teal)
+                .frame(width: 34, height: 34)
+                .background(Color.teal.opacity(0.10), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 12, weight: .semibold))
+                Text(value).font(.system(size: 10.5)).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(12)
+        .desktopInsetPanel()
+    }
+}
+
+private struct DesktopUnknownAppView: View {
+    let title: String
+    var body: some View {
+        VStack(spacing: 9) {
+            Image(systemName: "app.dashed")
+                .font(.system(size: 32, weight: .light))
+                .foregroundStyle(.tertiary)
+            Text(title).font(.system(size: 15, weight: .semibold))
+            Text("This application is not available in this build.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(DesktopShellPalette.canvas)
     }
 }
 
@@ -321,7 +496,7 @@ private final class DesktopPhotosModel: ObservableObject {
             return
         }
         let options = PHFetchOptions()
-        options.fetchLimit = 60
+        options.fetchLimit = 80
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         let result = PHAsset.fetchAssets(with: .image, options: options)
         var nextAssets: [PHAsset] = []
@@ -336,7 +511,7 @@ private struct DesktopPhotoThumbnail: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .fill(Color.primary.opacity(0.055))
             if let image {
                 Image(uiImage: image).resizable().scaledToFill()
@@ -344,10 +519,10 @@ private struct DesktopPhotoThumbnail: View {
                 ProgressView().controlSize(.small)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Photo")

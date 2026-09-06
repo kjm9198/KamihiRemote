@@ -3,7 +3,9 @@ import UIKit
 import UniformTypeIdentifiers
 import WebKit
 
-/// Desktop browser with persistent tabs and one retained WKWebView per tab.
+/// Persistent desktop browser with one retained WKWebView per warm tab. The tab
+/// strip and navigation controls use the same uniform Golden Gate toolbar system
+/// as native Kamihi apps while preserving desktop Safari-style web behavior.
 struct DesktopBrowserView: View {
     @StateObject private var state = DesktopBrowserState.shared
     @StateObject private var controller = DesktopBrowserController()
@@ -16,12 +18,12 @@ struct DesktopBrowserView: View {
     var body: some View {
         VStack(spacing: 0) {
             tabBar
-                .frame(height: 38)
-                .background(.thinMaterial)
+                .frame(height: 36)
+                .desktopAppToolbar()
 
             navigationBar
-                .frame(height: 46)
-                .background(.ultraThinMaterial)
+                .frame(height: 42)
+                .desktopAppToolbar()
 
             if showFind {
                 findBar
@@ -36,7 +38,7 @@ struct DesktopBrowserView: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Color(.systemBackground))
+        .background(DesktopShellPalette.canvas)
         .sheet(isPresented: $showLibrary) {
             BrowserLibrarySheet(state: state) { url in
                 state.navigateActiveTab(to: url)
@@ -44,126 +46,127 @@ struct DesktopBrowserView: View {
                 showLibrary = false
             }
         }
-        .animation(.easeInOut(duration: 0.18), value: showFind)
+        .animation(KamihiTheme.Animation.fast, value: showFind)
     }
 
     private var tabBar: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
+            Image(systemName: "safari.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.blue)
+                .frame(width: 25, height: 25)
+                .background(Color.blue.opacity(0.10), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .padding(.leading, 8)
+
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 5) {
+                HStack(spacing: 4) {
                     ForEach(state.tabs) { tab in
                         HStack(spacing: 0) {
                             Button {
                                 state.selectTab(id: tab.id)
                             } label: {
-                                HStack(spacing: 7) {
+                                HStack(spacing: 6) {
                                     if tab.isLoading {
                                         ProgressView().controlSize(.mini)
                                     } else {
                                         Image(systemName: tab.id == state.activeTabID ? "globe" : "circle.fill")
-                                            .font(.system(size: tab.id == state.activeTabID ? 11 : 5, weight: .semibold))
-                                            .foregroundStyle(tab.id == state.activeTabID ? Color.accentColor : Color.secondary)
+                                            .font(.system(size: tab.id == state.activeTabID ? 10 : 4.5, weight: .semibold))
+                                            .foregroundStyle(tab.id == state.activeTabID ? Color.accentColor : Color.secondary.opacity(0.55))
                                     }
 
                                     Text(tab.title)
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(Color.primary)
+                                        .font(.system(size: 11.5, weight: tab.id == state.activeTabID ? .semibold : .medium))
+                                        .foregroundStyle(.primary.opacity(0.90))
                                         .lineLimit(1)
-                                        .frame(maxWidth: 150, alignment: .leading)
+                                        .frame(maxWidth: 146, alignment: .leading)
                                 }
-                                .padding(.leading, 10)
-                                .padding(.trailing, 4)
-                                .frame(height: 30)
+                                .padding(.leading, 9)
+                                .padding(.trailing, 3)
+                                .frame(height: 28)
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Tab \(tab.title)")
-                            .accessibilityHint("Selects this browser tab")
 
                             Button {
                                 controller.closeTab(tab.id)
                                 state.closeTab(id: tab.id)
                             } label: {
                                 Image(systemName: "xmark")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .frame(width: 28, height: 30)
-                                    .contentShape(Rectangle())
+                                    .font(.system(size: 8.5, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 24, height: 28)
                             }
                             .buttonStyle(.plain)
-                            .foregroundStyle(Color.secondary)
                             .accessibilityLabel("Close \(tab.title) tab")
-                            .accessibilityHint("Closes only this browser tab")
                         }
                         .padding(.trailing, 2)
                         .background(
-                            tab.id == state.activeTabID ? Color.primary.opacity(0.09) : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            tab.id == state.activeTabID ? Color.primary.opacity(0.075) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
                         )
+                        .overlay {
+                            if tab.id == state.activeTabID {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .strokeBorder(Color.primary.opacity(0.07), lineWidth: 0.5)
+                            }
+                        }
                     }
                 }
-                .padding(.horizontal, 6)
+                .padding(.horizontal, 3)
             }
 
-            Button {
-                state.newTab()
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 13, weight: .semibold))
-                    .frame(width: 30, height: 30)
+            Button { state.newTab() } label: {
+                DesktopToolbarIconLabel("plus")
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color.primary)
             .accessibilityLabel("New tab")
-            .padding(.trailing, 6)
+            .padding(.trailing, 7)
         }
     }
 
     private var navigationBar: some View {
-        HStack(spacing: 6) {
-            browserButton("chevron.left", label: "Back", enabled: state.canGoBack) {
-                controller.goBack()
-            }
-
-            browserButton("chevron.right", label: "Forward", enabled: state.canGoForward) {
-                controller.goForward()
-            }
-
+        HStack(spacing: 5) {
+            browserButton("chevron.left", label: "Back", enabled: state.canGoBack) { controller.goBack() }
+            browserButton("chevron.right", label: "Forward", enabled: state.canGoForward) { controller.goForward() }
             browserButton(state.isLoading ? "xmark" : "arrow.clockwise", label: state.isLoading ? "Stop" : "Reload") {
                 state.isLoading ? controller.stopLoading() : controller.reload()
             }
 
             HStack(spacing: 7) {
                 Image(systemName: state.currentURLText.hasPrefix("https://") ? "lock.fill" : "globe")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.secondary)
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(.secondary)
 
                 TextField("Search or enter website name", text: $state.urlInput)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.primary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.primary)
                     .submitLabel(.go)
                     .onSubmit(navigateFromAddressBar)
 
                 if !state.urlInput.isEmpty {
-                    Button {
-                        state.urlInput = ""
-                    } label: {
+                    Button { state.urlInput = "" } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.secondary)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear address")
                 }
             }
-            .padding(.horizontal, 11)
-            .frame(height: 32)
-            .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(.horizontal, 10)
+            .frame(maxWidth: 620)
+            .frame(height: 30)
+            .background(Color.primary.opacity(0.065), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+            }
 
             browserButton(state.isActivePageBookmarked ? "star.fill" : "star", label: state.isActivePageBookmarked ? "Remove Bookmark" : "Bookmark") {
                 state.toggleBookmarkForActivePage()
             }
-
             browserButton("text.magnifyingglass", label: "Find on Page") {
                 showFind.toggle()
                 if !showFind {
@@ -171,18 +174,11 @@ struct DesktopBrowserView: View {
                     controller.find("")
                 }
             }
-
-            browserButton("book.pages", label: "Bookmarks and History") {
-                showLibrary = true
-            }
+            browserButton("book.pages", label: "Bookmarks and History") { showLibrary = true }
 
             if let url = state.activeTab?.url {
                 ShareLink(item: url) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.primary)
-                        .frame(width: 32, height: 32)
-                        .contentShape(Rectangle())
+                    DesktopToolbarIconLabel("square.and.arrow.up")
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Share Page")
@@ -190,10 +186,7 @@ struct DesktopBrowserView: View {
 
             if let onContinueOnPhone {
                 Button(action: onContinueOnPhone) {
-                    Image(systemName: "iphone.and.arrow.forward")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.accentColor)
-                        .frame(width: 32, height: 32)
+                    DesktopToolbarIconLabel("iphone.and.arrow.forward")
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Continue on iPhone")
@@ -205,24 +198,24 @@ struct DesktopBrowserView: View {
     private var findBar: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(Color.secondary)
-
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.secondary)
             TextField("Find on this page", text: $findText)
                 .textFieldStyle(.plain)
+                .font(.system(size: 12))
                 .onSubmit { controller.find(findText) }
                 .onChange(of: findText) { _, value in controller.find(value) }
-
             Button("Done") {
                 showFind = false
                 findText = ""
                 controller.find("")
             }
             .buttonStyle(.plain)
-            .font(.system(size: 12, weight: .semibold))
+            .font(.system(size: 11.5, weight: .semibold))
         }
         .padding(.horizontal, 12)
-        .frame(height: 38)
-        .background(.thinMaterial)
+        .frame(height: 34)
+        .desktopAppToolbar()
     }
 
     private func browserButton(
@@ -233,9 +226,10 @@ struct DesktopBrowserView: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(enabled ? Color.primary : Color.secondary.opacity(0.45))
-                .frame(width: 32, height: 32)
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(enabled ? Color.primary.opacity(0.86) : Color.secondary.opacity(0.35))
+                .frame(width: 30, height: 30)
+                .background(Color.primary.opacity(enabled ? 0.04 : 0.02), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -258,12 +252,6 @@ final class DesktopBrowserController: ObservableObject {
     private var activeTabID: UUID?
     private var lifecycleObservers: [NSObjectProtocol] = []
 
-    /// Keep a small warm set for instant switching, but do not let long browsing
-    /// sessions retain an unbounded number of WebKit renderer processes. Under
-    /// Low Power Mode or serious/critical thermal pressure we intentionally keep
-    /// only two warm renderers. Tab URL metadata remains in DesktopBrowserState
-    /// and website data remains in WKWebsiteDataStore.default(), so an evicted tab
-    /// can be recreated without Kamihi reading or persisting credentials itself.
     private var maximumRetainedWebViews: Int {
         let processInfo = ProcessInfo.processInfo
         let thermal = processInfo.thermalState
@@ -281,9 +269,7 @@ final class DesktopBrowserController: ObservableObject {
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
-                Task { @MainActor in
-                    self?.releaseInactiveWebViews()
-                }
+                Task { @MainActor in self?.releaseInactiveWebViews() }
             }
         )
         lifecycleObservers.append(
@@ -292,9 +278,7 @@ final class DesktopBrowserController: ObservableObject {
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
-                Task { @MainActor in
-                    self?.releaseInactiveWebViews()
-                }
+                Task { @MainActor in self?.releaseInactiveWebViews() }
             }
         )
         lifecycleObservers.append(
@@ -303,9 +287,7 @@ final class DesktopBrowserController: ObservableObject {
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
-                Task { @MainActor in
-                    self?.trimForCurrentSystemPressure()
-                }
+                Task { @MainActor in self?.trimForCurrentSystemPressure() }
             }
         )
         lifecycleObservers.append(
@@ -314,17 +296,13 @@ final class DesktopBrowserController: ObservableObject {
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
-                Task { @MainActor in
-                    self?.trimForCurrentSystemPressure()
-                }
+                Task { @MainActor in self?.trimForCurrentSystemPressure() }
             }
         )
     }
 
     deinit {
-        for observer in lifecycleObservers {
-            NotificationCenter.default.removeObserver(observer)
-        }
+        for observer in lifecycleObservers { NotificationCenter.default.removeObserver(observer) }
     }
 
     func present(tabID: UUID, url: URL?, in container: UIView, state: DesktopBrowserState) {
@@ -332,8 +310,6 @@ final class DesktopBrowserController: ObservableObject {
         activeTabID = tabID
         markTabActive(tabID)
         trimRetainedWebViews(excluding: tabID)
-
-        // Trackpad/phone-keyboard input always points at the retained active tab.
         DesktopWebInputRegistry.shared.register(webView, key: "Browser")
 
         if webView.superview !== container {
@@ -363,27 +339,11 @@ final class DesktopBrowserController: ObservableObject {
         if activeTabID == id { activeTabID = nil }
     }
 
-    func navigate(to url: URL) {
-        currentWebView?.load(URLRequest(url: url))
-    }
-
-    func goBack() {
-        guard currentWebView?.canGoBack == true else { return }
-        currentWebView?.goBack()
-    }
-
-    func goForward() {
-        guard currentWebView?.canGoForward == true else { return }
-        currentWebView?.goForward()
-    }
-
-    func reload() {
-        currentWebView?.reload()
-    }
-
-    func stopLoading() {
-        currentWebView?.stopLoading()
-    }
+    func navigate(to url: URL) { currentWebView?.load(URLRequest(url: url)) }
+    func goBack() { guard currentWebView?.canGoBack == true else { return }; currentWebView?.goBack() }
+    func goForward() { guard currentWebView?.canGoForward == true else { return }; currentWebView?.goForward() }
+    func reload() { currentWebView?.reload() }
+    func stopLoading() { currentWebView?.stopLoading() }
 
     func find(_ text: String) {
         guard let webView = currentWebView else { return }
@@ -404,7 +364,6 @@ final class DesktopBrowserController: ObservableObject {
 
     private func webView(for id: UUID, state: DesktopBrowserState) -> WKWebView {
         if let existing = webViews[id] { return existing }
-
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
         configuration.defaultWebpagePreferences.preferredContentMode = .desktop
@@ -430,27 +389,16 @@ final class DesktopBrowserController: ObservableObject {
 
     private func trimRetainedWebViews(excluding activeID: UUID) {
         while webViews.count > maximumRetainedWebViews {
-            guard let evictionID = activationOrder.first(where: {
-                $0 != activeID && webViews[$0] != nil
-            }) else {
-                return
-            }
-
+            guard let evictionID = activationOrder.first(where: { $0 != activeID && webViews[$0] != nil }) else { return }
             activationOrder.removeAll(where: { $0 == evictionID })
             releaseWebView(for: evictionID)
         }
     }
 
-    /// React immediately when the OS enters a constrained power or thermal state.
-    /// Previously the lower warm-pool cap was applied only after a future tab
-    /// presentation, so an already-open six-renderer session could remain hot for
-    /// the rest of a long browsing session. There is deliberately no polling timer.
     private func trimForCurrentSystemPressure() {
         let processInfo = ProcessInfo.processInfo
         let thermal = processInfo.thermalState
-        guard processInfo.isLowPowerModeEnabled || thermal == .serious || thermal == .critical else {
-            return
-        }
+        guard processInfo.isLowPowerModeEnabled || thermal == .serious || thermal == .critical else { return }
         guard let activeTabID else {
             releaseInactiveWebViews()
             return
@@ -458,10 +406,6 @@ final class DesktopBrowserController: ObservableObject {
         trimRetainedWebViews(excluding: activeTabID)
     }
 
-    /// Memory pressure and backgrounding should not keep inactive WebKit renderer
-    /// processes alive. Keep the active page intact so foregrounding remains fast;
-    /// inactive tabs retain only their persisted URL/title/session metadata and are
-    /// lazily recreated on selection.
     private func releaseInactiveWebViews() {
         let inactiveIDs = webViews.keys.filter { $0 != activeTabID }
         for id in inactiveIDs {
@@ -506,25 +450,11 @@ final class DesktopBrowserNavigationDelegate: NSObject, WKNavigationDelegate {
         self.state = state
     }
 
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        sync(webView, recordVisit: false)
-    }
-
-    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        sync(webView, recordVisit: false)
-    }
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        sync(webView, recordVisit: true)
-    }
-
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        sync(webView, recordVisit: false)
-    }
-
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        sync(webView, recordVisit: false)
-    }
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) { sync(webView, recordVisit: false) }
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) { sync(webView, recordVisit: false) }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { sync(webView, recordVisit: true) }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { sync(webView, recordVisit: false) }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { sync(webView, recordVisit: false) }
 
     private func sync(_ webView: WKWebView, recordVisit: Bool) {
         let tabID = tabID
@@ -565,9 +495,9 @@ private struct BrowserLibrarySheet: View {
                     } label: {
                         Label("Import Safari / Chrome Bookmarks", systemImage: "square.and.arrow.down")
                     }
-                    .accessibilityHint("Choose a bookmark HTML export from Safari, Chrome, or another browser. Passwords and cookies are never imported.")
+                    .accessibilityHint("Choose a bookmark HTML or Safari property-list export. Passwords and cookies are never imported.")
 
-                    Text("Imports only bookmarks from a user-selected HTML export. Kamihi never reads passwords, cookies, tokens, or another browser's private storage.")
+                    Text("Imports only bookmarks from a file you select. Kamihi never reads passwords, cookies, tokens, or another browser's private storage.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -575,24 +505,19 @@ private struct BrowserLibrarySheet: View {
                         Text(bookmarkImportMessage)
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
-                            .accessibilityLabel(bookmarkImportMessage)
                     }
 
                     if state.bookmarks.isEmpty {
                         Text("No bookmarks yet").foregroundStyle(.secondary)
                     } else {
                         ForEach(state.bookmarks) { bookmark in
-                            Button {
-                                openURL(bookmark.url)
-                            } label: {
+                            Button { openURL(bookmark.url) } label: {
                                 libraryRow(title: bookmark.title, url: bookmark.url)
                             }
                             .buttonStyle(.plain)
                         }
                         .onDelete { offsets in
-                            for index in offsets {
-                                state.removeBookmark(id: state.bookmarks[index].id)
-                            }
+                            for index in offsets { state.removeBookmark(id: state.bookmarks[index].id) }
                         }
                     }
                 }
@@ -602,9 +527,7 @@ private struct BrowserLibrarySheet: View {
                         Text("No browsing history yet").foregroundStyle(.secondary)
                     } else {
                         ForEach(state.history) { item in
-                            Button {
-                                openURL(item.url)
-                            } label: {
+                            Button { openURL(item.url) } label: {
                                 libraryRow(title: item.title, url: item.url)
                             }
                             .buttonStyle(.plain)
@@ -643,12 +566,8 @@ private struct BrowserLibrarySheet: View {
                 bookmarkImportMessage = "No bookmark file was selected."
                 return
             }
-
             let accessed = url.startAccessingSecurityScopedResource()
-            defer {
-                if accessed { url.stopAccessingSecurityScopedResource() }
-            }
-
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
             let data = try Data(contentsOf: url, options: [.mappedIfSafe])
             let importedCount = try state.importBookmarksHTML(data)
             bookmarkImportMessage = "Imported \(importedCount) bookmark\(importedCount == 1 ? "" : "s")."

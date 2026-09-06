@@ -14,7 +14,7 @@ final class DesktopRecoveryCoordinator: ObservableObject {
             switch self {
             case .disconnected: return "Display disconnected"
             case .connected: return "Desktop connected"
-            case .recovered: return "Desktop recovered"
+            case .recovered: return "Desktop resumed"
             }
         }
 
@@ -32,11 +32,14 @@ final class DesktopRecoveryCoordinator: ObservableObject {
         let workspaceRawValue: String
         let savedAt: Date
         let windows: [DesktopFeatureState.SavedWindow]
+        /// Optional for backwards compatibility with v1 snapshots.
+        let activeWindowTitle: String?
     }
 
     private struct SnapshotContent: Equatable {
         let workspaceRawValue: String
         let windows: [DesktopFeatureState.SavedWindow]
+        let activeWindowTitle: String?
     }
 
     @Published private(set) var displayHealth: DisplayHealth = .disconnected
@@ -58,18 +61,26 @@ final class DesktopRecoveryCoordinator: ObservableObject {
         if let existingSnapshot {
             lastPersistedContent = SnapshotContent(
                 workspaceRawValue: existingSnapshot.workspaceRawValue,
-                windows: existingSnapshot.windows
+                windows: existingSnapshot.windows,
+                activeWindowTitle: existingSnapshot.activeWindowTitle
             )
         }
     }
 
+    /// A connection is a resume boundary. If the process still owns windows, keep
+    /// them exactly as-is. If iOS relaunched/evicted the app and memory is empty,
+    /// restore the last durable snapshot even when the previous cable disconnect
+    /// was clean. This is what makes the iPhone feel like one persistent computer.
     @discardableResult
     func prepareForConnection(desktop: DesktopSession) -> Bool {
         pendingAutosaveTask?.cancel()
         pendingAutosaveTask = nil
+
         let previousSessionWasClean = defaults.object(forKey: cleanExitKey) == nil || defaults.bool(forKey: cleanExitKey)
-        let restored = !previousSessionWasClean && restoreSnapshot(desktop: desktop)
-        recoveredAfterInterruption = restored
+        let shouldRestore = desktop.windows.isEmpty
+        let restored = shouldRestore && restoreSnapshot(desktop: desktop)
+
+        recoveredAfterInterruption = restored && !previousSessionWasClean
         displayHealth = restored ? .recovered : .connected
         defaults.set(false, forKey: cleanExitKey)
         saveSnapshot(desktop: desktop, force: true)
@@ -90,9 +101,6 @@ final class DesktopRecoveryCoordinator: ObservableObject {
             return
         }
 
-        // Window drag/resize can publish dozens of state changes per second. Keep
-        // the first recovery write immediate, then coalesce the burst into one
-        // trailing write instead of repeatedly serializing into UserDefaults.
         pendingAutosaveTask?.cancel()
         let remaining = max(0.10, autosaveMinimumInterval - elapsed)
         let delayNanoseconds = UInt64(remaining * 1_000_000_000)
@@ -109,6 +117,7 @@ final class DesktopRecoveryCoordinator: ObservableObject {
         pendingAutosaveTask?.cancel()
         pendingAutosaveTask = nil
         saveSnapshot(desktop: desktop, force: true)
+        DesktopFeatureState.shared.saveSession(desktop: desktop)
         lastAutosaveDate = Date()
         defaults.set(true, forKey: cleanExitKey)
         displayHealth = .disconnected
@@ -118,18 +127,21 @@ final class DesktopRecoveryCoordinator: ObservableObject {
     func saveSnapshot(desktop: DesktopSession, force: Bool = false) {
         let workspaceRawValue = DesktopFeatureState.shared.workspace.rawValue
         let windows = Self.savedWindows(desktop: desktop)
-        let content = SnapshotContent(workspaceRawValue: workspaceRawValue, windows: windows)
+        let activeWindowTitle = Self.activeWindowTitle(desktop: desktop)
+        let content = SnapshotContent(
+            workspaceRawValue: workspaceRawValue,
+            windows: windows,
+            activeWindowTitle: activeWindowTitle
+        )
 
-        // DesktopSession publishes more state than recovery needs. Avoid repeatedly
-        // serializing and writing an identical window/workspace snapshot when a
-        // cursor, focus, or other unrelated desktop update triggers autosave.
         guard force || content != lastPersistedContent else { return }
 
         let snapshot = Snapshot(
-            version: 1,
+            version: 2,
             workspaceRawValue: workspaceRawValue,
             savedAt: Date(),
-            windows: windows
+            windows: windows,
+            activeWindowTitle: activeWindowTitle
         )
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         defaults.set(data, forKey: snapshotKey)
@@ -144,7 +156,8 @@ final class DesktopRecoveryCoordinator: ObservableObject {
         }
 
         desktop.closeAllDesktopWindows()
-        for item in snapshot.windows.prefix(8) {
+        var restoredActiveID: UUID?
+        for item in snapshot.windows.prefix(12) {
             let id = desktop.openProductivityApp(
                 item.title,
                 frame: CGRect(x: item.x, y: item.y, width: item.width, height: item.height)
@@ -153,14 +166,27 @@ final class DesktopRecoveryCoordinator: ObservableObject {
                 desktop.windows[index].isMinimized = item.minimized
                 desktop.windows[index].isMaximized = item.maximized
             }
+            if item.title == snapshot.activeWindowTitle {
+                restoredActiveID = id
+            }
         }
+
+        if let restoredActiveID,
+           let active = desktop.windows.first(where: { $0.id == restoredActiveID }),
+           !active.isMinimized {
+            desktop.activate(restoredActiveID)
+        } else {
+            desktop.activeWindowID = desktop.windows.last(where: { !$0.isMinimized })?.id
+        }
+
         if let workspace = DesktopFeatureState.Workspace(rawValue: snapshot.workspaceRawValue) {
             DesktopFeatureState.shared.workspace = workspace
             DesktopFeatureState.shared.focusMode = workspace == .focus
         }
         lastPersistedContent = SnapshotContent(
             workspaceRawValue: snapshot.workspaceRawValue,
-            windows: snapshot.windows
+            windows: snapshot.windows,
+            activeWindowTitle: snapshot.activeWindowTitle
         )
         lastSnapshotDate = snapshot.savedAt
         return true
@@ -172,16 +198,22 @@ final class DesktopRecoveryCoordinator: ObservableObject {
         savedAt: Date = Date()
     ) -> Snapshot {
         Snapshot(
-            version: 1,
+            version: 2,
             workspaceRawValue: workspace.rawValue,
             savedAt: savedAt,
-            windows: savedWindows(desktop: desktop)
+            windows: savedWindows(desktop: desktop),
+            activeWindowTitle: activeWindowTitle(desktop: desktop)
         )
     }
 
     static func decodeSnapshot(_ data: Data?) -> Snapshot? {
         guard let data else { return nil }
         return try? JSONDecoder().decode(Snapshot.self, from: data)
+    }
+
+    private static func activeWindowTitle(desktop: DesktopSession) -> String? {
+        guard let id = desktop.activeWindowID else { return nil }
+        return desktop.windows.first(where: { $0.id == id })?.title
     }
 
     private static func savedWindows(desktop: DesktopSession) -> [DesktopFeatureState.SavedWindow] {

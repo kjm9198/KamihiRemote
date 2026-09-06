@@ -3,29 +3,28 @@ import UniformTypeIdentifiers
 import QuickLook
 import PDFKit
 
-/// Native document and media manager for Kamihi Desktop.
-///
-/// The iPhone system document picker is deliberately configured with `asCopy: true`.
-/// Selected files are then moved into a Kamihi-owned Application Support folder so
-/// they remain available after reconnect/relaunch without retaining broad external
-/// filesystem access or security-scoped bookmarks.
+/// Kamihi's file manager counterpart: an edge-to-edge Finder-like sidebar with a
+/// compact toolbar and native PDFKit/Quick Look preview. Imported files remain
+/// private copies in the app sandbox unless the user explicitly shares them.
 struct DesktopFilesView: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     @State private var importedFiles: [URL] = DesktopDocumentLibrary.load()
     @State private var showDocumentPicker = false
     @State private var selectedFile: URL?
+    @State private var searchText = ""
+
+    private var visibleFiles: [URL] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return importedFiles }
+        return importedFiles.filter { $0.lastPathComponent.localizedCaseInsensitiveContains(query) }
+    }
 
     var body: some View {
         HStack(spacing: 0) {
             sidebar
-                .frame(width: 180)
-
-            Divider()
-
+                .frame(width: DesktopShellMetrics.sidebarWidth)
             previewPane
         }
-        .background(canvasBackground)
+        .background(DesktopShellPalette.canvas)
         .sheet(isPresented: $showDocumentPicker) {
             DocumentPicker { pickedFiles in
                 let imported = DesktopDocumentLibrary.importCopies(from: pickedFiles)
@@ -41,6 +40,8 @@ struct DesktopFilesView: View {
             importedFiles = DesktopDocumentLibrary.load()
             if let selectedFile, !importedFiles.contains(selectedFile) {
                 self.selectedFile = importedFiles.first
+            } else if selectedFile == nil {
+                selectedFile = importedFiles.first
             }
         }
     }
@@ -48,205 +49,187 @@ struct DesktopFilesView: View {
     private var sidebar: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Label("Files", systemImage: "folder.fill")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.primary)
-
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.blue)
+                Text("Files")
+                    .font(.system(size: 13, weight: .semibold))
                 Spacer()
-
-                Button {
-                    showDocumentPicker = true
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 13, weight: .bold))
-                        .frame(width: 30, height: 30)
-                        .contentShape(Rectangle())
+                Button { showDocumentPicker = true } label: {
+                    DesktopToolbarIconLabel("plus")
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.primary)
-                .background(.thinMaterial, in: Circle())
                 .accessibilityLabel("Import files")
-                .accessibilityHint("Opens the iPhone document picker")
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
+            .padding(.horizontal, 10)
+            .frame(height: DesktopShellMetrics.toolbarHeight)
+            .desktopAppToolbar()
 
-            Divider()
-
-            if importedFiles.isEmpty {
-                VStack(spacing: 10) {
-                    Image(systemName: "doc.badge.plus")
-                        .font(.system(size: 28, weight: .light))
-                        .foregroundStyle(.secondary)
-
-                    Text("No Files Added")
-                        .font(.system(size: 12, weight: .semibold))
-
-                    Text("Import documents from Files to keep a private copy available on your desktop.")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Button("Import Files") {
-                        showDocumentPicker = true
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                TextField("Search", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
+                if !searchText.isEmpty {
+                    Button { searchText = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .buttonStyle(.plain)
                 }
-                .padding(16)
+            }
+            .padding(.horizontal, 9)
+            .frame(height: 30)
+            .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(8)
+
+            HStack(spacing: 8) {
+                Image(systemName: "iphone")
+                    .foregroundStyle(.blue)
+                    .frame(width: 18)
+                Text("On My iPhone")
+                    .font(.system(size: 11.5, weight: .semibold))
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+
+            if visibleFiles.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: searchText.isEmpty ? "doc.badge.plus" : "magnifyingglass")
+                        .font(.system(size: 26, weight: .light))
+                        .foregroundStyle(.tertiary)
+                    Text(searchText.isEmpty ? "No Files" : "No Results")
+                        .font(.system(size: 12, weight: .semibold))
+                    if searchText.isEmpty {
+                        Button("Import Files") { showDocumentPicker = true }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                    }
+                }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List(selection: $selectedFile) {
-                    ForEach(importedFiles, id: \.self) { file in
-                        HStack(spacing: 9) {
-                            Image(systemName: fileIcon(for: file))
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(fileTint(for: file))
-                                .frame(width: 20)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(file.deletingPathExtension().lastPathComponent)
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-
-                                Text(fileDetail(for: file))
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.vertical, 2)
-                        .tag(file)
-                        .contextMenu {
-                            ShareLink(item: file) {
-                                Label("Share or Export", systemImage: "square.and.arrow.up")
-                            }
-
-                            Button(role: .destructive) {
-                                remove(file)
-                            } label: {
-                                Label("Remove from Files", systemImage: "trash")
-                            }
+                ScrollView {
+                    LazyVStack(spacing: 3) {
+                        ForEach(visibleFiles, id: \.self) { file in
+                            fileRow(file)
                         }
                     }
-                    .onDelete(perform: remove)
+                    .padding(7)
                 }
-                .listStyle(.sidebar)
-                .scrollContentBackground(.hidden)
             }
+
+            HStack {
+                Text("\(importedFiles.count) item\(importedFiles.count == 1 ? "" : "s")")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 28)
         }
-        .background(sidebarBackground)
+        .desktopSidebarSurface()
+    }
+
+    private func fileRow(_ file: URL) -> some View {
+        let selected = selectedFile == file
+        return Button {
+            selectedFile = file
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: fileIcon(for: file))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(fileTint(for: file))
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(file.deletingPathExtension().lastPathComponent)
+                        .font(.system(size: 11.5, weight: selected ? .semibold : .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(fileDetail(for: file))
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 9)
+            .frame(height: 42)
+            .background(selected ? Color.accentColor.opacity(0.14) : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            ShareLink(item: file) { Label("Share or Export", systemImage: "square.and.arrow.up") }
+            Button(role: .destructive) { remove(file) } label: { Label("Remove", systemImage: "trash") }
+        }
     }
 
     @ViewBuilder
     private var previewPane: some View {
         if let file = selectedFile {
             VStack(spacing: 0) {
-                HStack(spacing: 10) {
+                HStack(spacing: 9) {
                     Image(systemName: fileIcon(for: file))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(fileTint(for: file))
-
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: 0) {
                         Text(file.lastPathComponent)
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.primary)
+                            .font(.system(size: 12.5, weight: .semibold))
                             .lineLimit(1)
-
                         Text(fileDetail(for: file))
-                            .font(.system(size: 9))
+                            .font(.system(size: 9.5))
                             .foregroundStyle(.secondary)
                     }
-
                     Spacer()
-
-                    if file.pathExtension.lowercased() == "pdf" {
-                        Label("PDF", systemImage: "doc.richtext")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background(.thinMaterial, in: Capsule())
-                    }
-
                     ShareLink(item: file) {
-                        Label("Share", systemImage: "square.and.arrow.up")
-                            .font(.system(size: 10, weight: .semibold))
+                        DesktopToolbarIconLabel("square.and.arrow.up")
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .accessibilityHint("Opens the iPhone share sheet to export this Kamihi-owned copy")
-
-                    Button {
-                        showDocumentPicker = true
-                    } label: {
-                        Label("Add", systemImage: "plus")
-                            .font(.system(size: 10, weight: .semibold))
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Share file")
+                    Button { showDocumentPicker = true } label: {
+                        DesktopToolbarIconLabel("plus")
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Import another file")
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(.ultraThinMaterial)
+                .padding(.horizontal, 11)
+                .frame(height: DesktopShellMetrics.toolbarHeight)
+                .desktopAppToolbar()
 
                 NativeFilePreview(url: file)
                     .id(file)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(canvasBackground)
+                    .background(DesktopShellPalette.canvas)
             }
         } else {
             VStack(spacing: 10) {
                 Image(systemName: "doc.text.magnifyingglass")
                     .font(.system(size: 38, weight: .light))
-                    .foregroundStyle(.secondary)
-
+                    .foregroundStyle(.tertiary)
                 Text("Select a file to preview")
-                    .font(.system(size: 13, weight: .semibold))
-
-                Text("PDFs use the native PDFKit viewer. Images, Office/iWork files and supported text formats use Quick Look.")
-                    .font(.system(size: 10))
+                    .font(.system(size: 14, weight: .semibold))
+                Text("PDFs use PDFKit. Images, Office/iWork files and supported formats use Quick Look.")
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                    .frame(maxWidth: 320)
+                    .frame(maxWidth: 360)
+                Button("Import Files") { showDocumentPicker = true }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(canvasBackground)
+            .background(DesktopShellPalette.canvas)
         }
-    }
-
-    private var sidebarBackground: some ShapeStyle {
-        colorScheme == .dark
-            ? AnyShapeStyle(Color.white.opacity(0.055))
-            : AnyShapeStyle(Color.black.opacity(0.035))
-    }
-
-    private var canvasBackground: Color {
-        colorScheme == .dark
-            ? Color(red: 0.055, green: 0.06, blue: 0.075)
-            : Color(uiColor: .systemBackground)
     }
 
     private func remove(_ file: URL) {
         DesktopDocumentLibrary.remove(file)
         importedFiles = DesktopDocumentLibrary.load()
-        if selectedFile == file {
-            selectedFile = importedFiles.first
-        }
-    }
-
-    private func remove(at offsets: IndexSet) {
-        let removed = offsets.compactMap { index in
-            importedFiles.indices.contains(index) ? importedFiles[index] : nil
-        }
-        removed.forEach(DesktopDocumentLibrary.remove)
-        importedFiles = DesktopDocumentLibrary.load()
-        if let selectedFile, removed.contains(selectedFile) {
-            self.selectedFile = importedFiles.first
-        }
+        if selectedFile == file { selectedFile = importedFiles.first }
     }
 
     private func fileIcon(for url: URL) -> String {
@@ -266,21 +249,19 @@ struct DesktopFilesView: View {
         case "pdf": return .red
         case "jpg", "jpeg", "png", "heic", "heif", "gif", "webp": return .blue
         case "txt", "md", "swift", "json", "js", "ts", "html", "css", "xml", "csv": return .teal
+        case "numbers", "xls", "xlsx": return .green
         default: return .accentColor
         }
     }
 
     private func fileDetail(for url: URL) -> String {
         let ext = url.pathExtension.isEmpty ? "Document" : url.pathExtension.uppercased()
-        if let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
-           let size = values.fileSize {
+        if let values = try? url.resourceValues(forKeys: [.fileSizeKey]), let size = values.fileSize {
             return "\(ext) · \(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))"
         }
         return ext
     }
 }
-
-// MARK: - Persistent sandbox document library
 
 private enum DesktopDocumentLibrary {
     private static let folderName = "Kamihi Desktop Files"
@@ -291,9 +272,7 @@ private enum DesktopDocumentLibrary {
                 at: directory,
                 includingPropertiesForKeys: [.contentModificationDateKey],
                 options: [.skipsHiddenFiles]
-              ) else {
-            return []
-        }
+              ) else { return [] }
 
         return files.sorted { lhs, rhs in
             let lhsDate = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
@@ -305,41 +284,30 @@ private enum DesktopDocumentLibrary {
     static func importCopies(from urls: [URL]) -> [URL] {
         guard let directory = directory(createIfNeeded: true) else { return [] }
         var imported: [URL] = []
-
         for source in urls {
             let destination = uniqueDestination(for: source.lastPathComponent, in: directory)
             do {
                 try FileManager.default.copyItem(at: source, to: destination)
                 imported.append(destination)
             } catch {
-                // The picker already hands Kamihi copies. If a provider returns a URL
-                // that cannot be copied, skip it rather than retaining external access.
                 continue
             }
         }
-
         return imported
     }
 
     static func remove(_ url: URL) {
         guard let directory = directory(createIfNeeded: false),
-              url.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL else {
-            return
-        }
+              url.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL else { return }
         try? FileManager.default.removeItem(at: url)
     }
 
     private static func directory(createIfNeeded: Bool) -> URL? {
-        guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            return nil
-        }
+        guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
         let directory = base.appendingPathComponent(folderName, isDirectory: true)
         if createIfNeeded && !FileManager.default.fileExists(atPath: directory.path) {
-            do {
-                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            } catch {
-                return nil
-            }
+            do { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
+            catch { return nil }
         }
         return directory
     }
@@ -350,7 +318,6 @@ private enum DesktopDocumentLibrary {
         let ext = sourceURL.pathExtension
         var candidate = directory.appendingPathComponent(filename)
         var suffix = 2
-
         while FileManager.default.fileExists(atPath: candidate.path) {
             let nextName = ext.isEmpty ? "\(stem) \(suffix)" : "\(stem) \(suffix).\(ext)"
             candidate = directory.appendingPathComponent(nextName)
@@ -360,22 +327,14 @@ private enum DesktopDocumentLibrary {
     }
 }
 
-// MARK: - Native previews
-
 private struct NativeFilePreview: View {
     let url: URL
-
     var body: some View {
-        if url.pathExtension.lowercased() == "pdf" {
-            NativePDFPreview(url: url)
-        } else {
-            QuickLookPreview(url: url)
-        }
+        if url.pathExtension.lowercased() == "pdf" { NativePDFPreview(url: url) }
+        else { QuickLookPreview(url: url) }
     }
 }
 
-/// PDFKit is used directly for PDFs so the desktop gets native page rendering,
-/// zooming and selection behavior instead of treating PDFs as a generic preview.
 private struct NativePDFPreview: UIViewRepresentable {
     let url: URL
 
@@ -400,9 +359,7 @@ private struct NativePDFPreview: UIViewRepresentable {
 private struct QuickLookPreview: UIViewControllerRepresentable {
     let url: URL
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(url: url)
-    }
+    func makeCoordinator() -> Coordinator { Coordinator(url: url) }
 
     func makeUIViewController(context: Context) -> QLPreviewController {
         let controller = QLPreviewController()
@@ -419,22 +376,11 @@ private struct QuickLookPreview: UIViewControllerRepresentable {
 
     final class Coordinator: NSObject, QLPreviewControllerDataSource {
         var url: URL
-
-        init(url: URL) {
-            self.url = url
-        }
-
-        func numberOfPreviewItems(in controller: QLPreviewController) -> Int {
-            1
-        }
-
-        func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
-            url as NSURL
-        }
+        init(url: URL) { self.url = url }
+        func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
+        func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem { url as NSURL }
     }
 }
-
-// MARK: - Document Picker Representable
 
 private struct DocumentPicker: UIViewControllerRepresentable {
     let onPicked: ([URL]) -> Void
@@ -447,20 +393,11 @@ private struct DocumentPicker: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     final class Coordinator: NSObject, UIDocumentPickerDelegate {
         let parent: DocumentPicker
-
-        init(_ parent: DocumentPicker) {
-            self.parent = parent
-        }
-
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            parent.onPicked(urls)
-        }
+        init(_ parent: DocumentPicker) { self.parent = parent }
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { parent.onPicked(urls) }
     }
 }

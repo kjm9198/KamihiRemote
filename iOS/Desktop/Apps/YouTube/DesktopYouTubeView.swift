@@ -1,49 +1,44 @@
 import SwiftUI
 import WebKit
 
-/// Dedicated application container for YouTube on Kamihi Desktop.
+/// Dedicated YouTube application container with the same compact desktop toolbar
+/// and semantic materials used throughout Kamihi Desktop.
 struct DesktopYouTubeView: View {
     var onContinueOnPhone: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
-            // App Bar
-            HStack(spacing: 8) {
+            HStack(spacing: 9) {
                 Image(systemName: "play.rectangle.fill")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Color(red: 0.94, green: 0.22, blue: 0.28))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.red)
+                    .frame(width: 26, height: 26)
+                    .background(Color.red.opacity(0.11), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
                 Text("YouTube")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary.opacity(0.90))
 
                 Spacer()
 
                 if let onContinueOnPhone {
                     Button(action: onContinueOnPhone) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "iphone.and.arrow.forward")
-                            Text("Continue on iPhone")
-                                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        }
-                        .foregroundStyle(.cyan)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.cyan.opacity(0.12), in: Capsule())
+                        DesktopToolbarIconLabel("iphone.and.arrow.forward")
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Continue YouTube on iPhone")
                 }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color(red: 0.12, green: 0.13, blue: 0.17))
+            .frame(height: DesktopShellMetrics.compactToolbarHeight)
+            .desktopAppToolbar()
 
-            // Web Content
             WKWebViewRepresentable(
                 url: URL(string: "https://www.youtube.com"),
                 registryKey: "YouTube"
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .background(DesktopShellPalette.canvas)
     }
 }

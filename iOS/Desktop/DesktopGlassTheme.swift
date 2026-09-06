@@ -9,15 +9,17 @@ public enum DesktopGlassStyle: String, CaseIterable, Identifiable {
     public var title: String {
         switch self {
         case .soft: return "Soft"
-        case .balanced: return "macOS Glass"
-        case .vivid: return "High Contrast Glass"
+        case .balanced: return "Golden Gate"
+        case .vivid: return "High Contrast"
         }
     }
 }
 
 /// One persisted glass policy for the external desktop, Applications chooser,
-/// Dock, menu bar, window chrome and Settings. Accessibility Reduce Transparency
-/// and Increased Contrast always win over decorative translucency.
+/// Dock, menu bar, window chrome and Settings. The continuous clarity control
+/// mirrors the macOS 27 idea of letting people move from a clearer glass surface
+/// toward a more tinted, legible one without changing every app independently.
+/// Accessibility Reduce Transparency and Increased Contrast always win.
 @MainActor
 public final class DesktopGlassAppearance: ObservableObject {
     public static let shared = DesktopGlassAppearance()
@@ -28,36 +30,59 @@ public final class DesktopGlassAppearance: ObservableObject {
     @Published public var highlightsEnabled: Bool {
         didSet { UserDefaults.standard.set(highlightsEnabled, forKey: "kamihi.desktop.glass.highlights") }
     }
+    /// 0 = strongly tinted/diffused, 1 = clearest supported desktop glass.
+    @Published public var clarity: Double {
+        didSet {
+            let bounded = min(max(clarity, 0), 1)
+            if bounded != clarity {
+                clarity = bounded
+                return
+            }
+            UserDefaults.standard.set(bounded, forKey: "kamihi.desktop.glass.clarity.v1")
+        }
+    }
 
     private init() {
         let defaults = UserDefaults.standard
         style = DesktopGlassStyle(rawValue: defaults.string(forKey: "kamihi.desktop.glass.style") ?? "") ?? .balanced
         highlightsEnabled = defaults.object(forKey: "kamihi.desktop.glass.highlights") as? Bool ?? true
+        clarity = defaults.object(forKey: "kamihi.desktop.glass.clarity.v1") as? Double ?? 0.62
     }
 
     var borderOpacity: Double {
+        let base: Double
         switch style {
-        case .soft: return 0.12
-        case .balanced: return 0.20
-        case .vivid: return 0.30
+        case .soft: base = 0.11
+        case .balanced: base = 0.18
+        case .vivid: base = 0.28
         }
+        return min(0.42, base + (1 - clarity) * 0.08)
     }
 
     var highlightOpacity: Double {
         guard highlightsEnabled else { return 0 }
+        let base: Double
         switch style {
-        case .soft: return 0.06
-        case .balanced: return 0.13
-        case .vivid: return 0.20
+        case .soft: base = 0.055
+        case .balanced: base = 0.12
+        case .vivid: base = 0.18
         }
+        return min(0.28, base + clarity * 0.055)
     }
 
     var shadowOpacity: Double {
+        let base: Double
         switch style {
-        case .soft: return 0.10
-        case .balanced: return 0.16
-        case .vivid: return 0.23
+        case .soft: base = 0.10
+        case .balanced: base = 0.16
+        case .vivid: base = 0.23
         }
+        return min(0.32, base + (1 - clarity) * 0.035)
+    }
+
+    /// Golden Gate's clearer end still needs diffusion over busy wallpaper.
+    var tintOpacity: Double {
+        0.035 + (1 - clarity) * 0.16
     }
 }
 
@@ -78,6 +103,12 @@ private struct DesktopGlassSurfaceModifier: ViewModifier {
                     shape.fill(KamihiTheme.Colors.secondarySurface)
                 } else {
                     material(shape)
+                        .overlay {
+                            shape.fill(
+                                (colorScheme == .dark ? Color.black : Color.white)
+                                    .opacity(appearance.tintOpacity)
+                            )
+                        }
                 }
             }
             .overlay {
@@ -87,7 +118,7 @@ private struct DesktopGlassSurfaceModifier: ViewModifier {
                             LinearGradient(
                                 colors: [
                                     Color.white.opacity(appearance.highlightOpacity),
-                                    Color.white.opacity(0.014),
+                                    Color.white.opacity(0.012),
                                     Color.clear
                                 ],
                                 startPoint: .top,

@@ -56,6 +56,11 @@ final class DesktopDocumentsStore: ObservableObject {
         activeDocumentID = document.id
     }
 
+    func select(_ id: UUID) {
+        guard documents.contains(where: { $0.id == id }) else { return }
+        activeDocumentID = id
+    }
+
     func cycleDocument(forward: Bool = true) {
         guard !documents.isEmpty else { return }
         guard let activeDocumentID,
@@ -106,9 +111,6 @@ final class DesktopDocumentsStore: ObservableObject {
         appendToActiveBody("\n")
     }
 
-    /// Export the active document as a plain-text file through the standard iOS
-    /// share sheet. This gives the user a Files/Drive/AirDrop path without Kamihi
-    /// taking broad filesystem access or silently uploading the document.
     @discardableResult
     func exportActiveDocument() -> Bool {
         guard let document = activeDocument,
