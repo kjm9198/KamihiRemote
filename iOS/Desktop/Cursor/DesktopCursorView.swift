@@ -1,11 +1,12 @@
 import SwiftUI
 
 /// Renders the software cursor on Kamihi Desktop.
-/// The default Kamihi Dot intentionally behaves more like an iPadOS pointer:
-/// compact at rest, tactile on click, and contextual for drag/resize states.
+/// The default cursor is the high-contrast arrow used by TrackpadSettings so any
+/// fallback/debug surface that omits an explicit style matches the production
+/// desktop instead of silently reverting to the older Kamihi Dot default.
 struct DesktopCursorView: View {
     var cursorPosition: CGPoint
-    var cursorStyle: CursorStyle = .kamihiDot
+    var cursorStyle: CursorStyle = .classicArrow
     var interactionState: CursorInteractionState = .defaultState
     var cursorScale: Double = 1.0
 
