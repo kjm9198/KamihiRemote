@@ -9,11 +9,11 @@ on:
 permissions:
   contents: read
 
-# Keep only the newest validation for a branch/PR. Superseded commits are
-# cancelled instead of continuing to produce stale failure notifications.
+# Every commit keeps its own first-attempt evidence. A newer push must never
+# cancel an in-flight simulator smoke for an older SHA.
 concurrency:
-  group: apple-integration-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: apple-integration-${{ github.workflow }}-${{ github.sha }}
+  cancel-in-progress: false
 
 jobs:
   desktop-simulator-smoke:
@@ -30,10 +30,9 @@ jobs:
       - name: Verify trackpad-first controller contract
         run: bash scripts/desktop-controller-contract-smoke.sh
 
-      # The script performs bounded simulator recovery/retry internally. Real
-      # compile/product regressions still fail the job; transient simulator boot,
-      # install, launch, or screenshot issues get recovered before GitHub marks
-      # the workflow as failed and sends a notification.
+      # The script may recover transient simulator infrastructure internally,
+      # but product/build/protocol failures remain hard failures. Do not rerun a
+      # failed same-SHA workflow to manufacture a passing first-attempt result.
       - name: Run Kamihi Desktop simulator smoke
         run: bash scripts/apple-integration-smoke.sh
 
