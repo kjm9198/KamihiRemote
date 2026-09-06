@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// Floating glass dock shared by Desktop Lab and the physical external display.
-/// App hit regions are still published into DesktopDockHitRegistry so the iPhone
-/// trackpad can operate the non-interactive display precisely.
+/// Floating macOS-inspired glass Dock shared by Desktop Lab and the physical
+/// external display. App hit regions are still published into
+/// DesktopDockHitRegistry so the iPhone trackpad can operate the non-interactive
+/// display precisely, including pointer-driven icon magnification.
 struct DesktopDockView: View {
     @EnvironmentObject private var desktop: DesktopSession
+    @ObservedObject private var hitRegistry = DesktopDockHitRegistry.shared
     var onOpenLauncher: () -> Void
     var onOpenWallpaperPicker: (() -> Void)? = nil
 
@@ -31,38 +33,57 @@ struct DesktopDockView: View {
     }
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(alignment: .bottom, spacing: 7) {
             launcherButton
-            Divider().frame(height: 28).opacity(0.24)
+            dockDivider
 
             ForEach(pinnedApps, id: \.title) { app in
                 dockAppTile(title: app.title, icon: app.icon, color: app.color)
             }
 
             if !unpinnedRunningTitles.isEmpty {
-                Divider().frame(height: 28).opacity(0.24)
+                dockDivider
                 ForEach(unpinnedRunningTitles, id: \.self) { title in
                     dockAppTile(title: title, icon: symbolForRunningApp(title), color: .secondary)
                 }
             }
 
             if let onOpenWallpaperPicker {
-                Divider().frame(height: 28).opacity(0.24)
+                dockDivider
                 Button(action: onOpenWallpaperPicker) {
-                    dockIcon(symbol: "paintpalette.fill", color: .cyan, selected: false)
+                    dockIcon(
+                        symbol: "photo.on.rectangle.angled",
+                        color: .cyan,
+                        selected: false,
+                        hovered: false
+                    )
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Wallpaper Chooser")
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .desktopGlassSurface(cornerRadius: 22)
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
+        .desktopGlassSurface(cornerRadius: 18)
+    }
+
+    private var dockDivider: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.18))
+            .frame(width: 0.7, height: 36)
+            .padding(.horizontal, 2)
+            .padding(.bottom, 8)
     }
 
     private var launcherButton: some View {
         Button(action: onOpenLauncher) {
-            dockIcon(symbol: "circle.grid.3x3.fill", color: .purple, selected: false)
+            dockIcon(
+                symbol: "circle.grid.3x3.fill",
+                color: .purple,
+                selected: hitRegistry.isLauncherOpen,
+                hovered: hitRegistry.isLauncherToggleHovered
+            )
         }
         .buttonStyle(.plain)
         .background(
@@ -76,23 +97,36 @@ struct DesktopDockView: View {
                 )
             }
         )
-        .accessibilityLabel("Open App Library")
+        .accessibilityLabel("Open Applications")
     }
 
     @ViewBuilder
-    private func dockIcon(symbol: String, color: Color, selected: Bool) -> some View {
-        Image(systemName: symbol)
-            .font(.system(size: 20, weight: .semibold))
-            .foregroundStyle(color)
-            .frame(width: 44, height: 44)
-            .background(
-                selected ? Color.white.opacity(0.20) : Color.white.opacity(0.07),
-                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.white.opacity(selected ? 0.34 : 0.10), lineWidth: 0.7)
-            }
+    private func dockIcon(symbol: String, color: Color, selected: Bool, hovered: Bool) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [color.opacity(0.96), color.opacity(0.66)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .strokeBorder(Color.white.opacity(selected ? 0.48 : 0.22), lineWidth: selected ? 1.0 : 0.7)
+                }
+                .shadow(color: Color.black.opacity(hovered ? 0.30 : 0.18), radius: hovered ? 9 : 5, y: hovered ? 6 : 3)
+
+            Image(systemName: symbol)
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(.white)
+                .shadow(color: Color.black.opacity(0.14), radius: 1, y: 1)
+        }
+        .frame(width: 48, height: 48)
+        .scaleEffect(hovered ? 1.18 : (selected ? 1.04 : 1.0))
+        .offset(y: hovered ? -7 : 0)
+        .animation(KamihiTheme.Animation.fast, value: hovered)
+        .animation(KamihiTheme.Animation.fast, value: selected)
     }
 
     private func symbolForRunningApp(_ title: String) -> String {
@@ -113,6 +147,7 @@ struct DesktopDockView: View {
         let isRunning = window != nil
         let isMinimized = window?.isMinimized ?? false
         let isActive = desktop.activeWindow?.title == title
+        let isHovered = hitRegistry.hoveredDockTitle == title
 
         return Button {
             if let window {
@@ -121,18 +156,18 @@ struct DesktopDockView: View {
                 desktop.openProductivityApp(title, frame: CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60))
             }
         } label: {
-            VStack(spacing: 3) {
-                dockIcon(symbol: icon, color: color, selected: isActive)
+            VStack(spacing: 4) {
+                dockIcon(symbol: icon, color: color, selected: isActive, hovered: isHovered)
 
                 Circle()
                     .fill(
                         isRunning
-                            ? (isMinimized ? Color.orange : (isActive ? Color.primary : Color.secondary.opacity(0.82)))
+                            ? (isMinimized ? Color.orange : Color.primary.opacity(isActive ? 0.90 : 0.62))
                             : Color.clear
                     )
-                    .frame(width: 4, height: 4)
+                    .frame(width: 4.5, height: 4.5)
             }
-            .opacity(isMinimized ? 0.72 : 1)
+            .opacity(isMinimized ? 0.78 : 1)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
