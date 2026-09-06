@@ -11,7 +11,7 @@ struct ExternalDesktopCanvasView: View {
     @State private var showLauncher = false
     @State private var showDisplayCalibrationGuides = false
     @State private var showWallpaperPicker = false
-    @State private var showWidgets = true
+    @AppStorage("kamihi.desktop.showWidgets") private var showWidgets = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
@@ -43,9 +43,6 @@ struct ExternalDesktopCanvasView: View {
             }
         }
         .preferredColorScheme(appearance.preferredColorScheme)
-        .sheet(isPresented: $showWallpaperPicker) {
-            DesktopWallpaperPickerView()
-        }
         .onAppear { presentDisplayCalibrationGuides() }
         .onChange(of: display.metricsRevision) { _, _ in presentDisplayCalibrationGuides() }
     }
@@ -139,16 +136,7 @@ struct ExternalDesktopCanvasView: View {
                     DesktopAppLauncherView()
                         .environmentObject(desktop)
                         .frame(maxWidth: 860, maxHeight: 560)
-                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.22), lineWidth: 1)
-                        }
-                        .shadow(
-                            color: .black.opacity(shouldSuppressDecorativeMotion ? 0 : 0.40),
-                            radius: shouldSuppressDecorativeMotion ? 0 : 36,
-                            y: shouldSuppressDecorativeMotion ? 0 : 18
-                        )
+                        .desktopGlassSurface(cornerRadius: 26)
                 }
 
                 if showWallpaperPicker {
@@ -156,12 +144,7 @@ struct ExternalDesktopCanvasView: View {
                         .onTapGesture { showWallpaperPicker = false }
 
                     DesktopWallpaperPickerView()
-                        .clipShape(RoundedRectangle(cornerRadius: KamihiTheme.Radius.lg, style: .continuous))
-                        .shadow(
-                            color: .black.opacity(shouldSuppressDecorativeMotion ? 0 : (colorScheme == .dark ? 0.35 : 0.18)),
-                            radius: shouldSuppressDecorativeMotion ? 0 : 24,
-                            y: shouldSuppressDecorativeMotion ? 0 : 12
-                        )
+                        .desktopGlassSurface(cornerRadius: KamihiTheme.Radius.lg)
                 }
             }
             .overlay {
@@ -173,8 +156,6 @@ struct ExternalDesktopCanvasView: View {
                 }
             }
             .overlay {
-                // Software cursor elevated to top-level overlay with zIndex(999)
-                // so it always floats visibly and smoothly above windows, Launchpad, and modals.
                 DesktopCursorView(
                     cursorPosition: desktop.cursor,
                     cursorStyle: settings.cursorStyle,
@@ -237,6 +218,7 @@ struct ExternalDesktopCanvasView: View {
         case "Notes": DesktopNotesView()
         case "Files": DesktopFilesView()
         case "Photos": DesktopPhotosView()
+        case "Settings": DesktopSettingsAppView().environmentObject(desktop)
         default:
             VStack {
                 Text(title)
