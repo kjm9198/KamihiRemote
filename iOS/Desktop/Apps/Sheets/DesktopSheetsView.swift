@@ -1,9 +1,12 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Lightweight native spreadsheet surface for the external desktop.
 /// Pointer clicks select a cell; editing is routed through the iPhone keyboard.
 struct DesktopSheetsView: View {
     @StateObject private var store = DesktopSheetsStore.shared
+    @State private var showCSVImporter = false
+    @State private var importErrorMessage: String?
 
     private let rowHeaderWidth: CGFloat = 44
     private let columnHeaderHeight: CGFloat = 32
@@ -23,6 +26,28 @@ struct DesktopSheetsView: View {
                 Text("Type on the iPhone • Return moves down")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Button {
+                    showCSVImporter = true
+                } label: {
+                    Label("Import CSV", systemImage: "square.and.arrow.down")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityHint("Opens the iOS document picker and replaces this sheet with the selected CSV file.")
+
+                Button {
+                    if !store.exportCSV() {
+                        importErrorMessage = "Kamihi could not open the iOS share sheet for this CSV."
+                    }
+                } label: {
+                    Label("Export", systemImage: "square.and.arrow.up")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityHint("Exports the current sheet as CSV through the standard iOS share sheet.")
             }
             .padding(.horizontal, 12)
             .frame(height: 42)
@@ -90,6 +115,34 @@ struct DesktopSheetsView: View {
             }
         }
         .background(KamihiTheme.Colors.surfaceBackground)
+        .fileImporter(
+            isPresented: $showCSVImporter,
+            allowedContentTypes: [.commaSeparatedText, .plainText],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first, store.importCSV(from: url) else {
+                    importErrorMessage = "Kamihi could not read that file as CSV. Choose a UTF-8 or UTF-16 comma-separated file."
+                    return
+                }
+                importErrorMessage = nil
+            case .failure(let error):
+                if (error as NSError).code != NSUserCancelledError {
+                    importErrorMessage = "The iOS document picker could not open that CSV."
+                }
+            }
+        }
+        .alert("Sheets File Error", isPresented: Binding(
+            get: { importErrorMessage != nil },
+            set: { if !$0 { importErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {
+                importErrorMessage = nil
+            }
+        } message: {
+            Text(importErrorMessage ?? "Unknown file error")
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Spreadsheet \(store.workbook.title), active cell \(store.activeCellName)")
     }
