@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Geometry tracking and hit-testing registry for external desktop dock items.
 /// Allows software cursor clicks from the iPhone trackpad to activate dock apps
-/// and toggle the App Library launcher without requiring physical touch on the monitor.
+/// and toggle the Applications chooser without requiring physical touch on the monitor.
 @MainActor
 public final class DesktopDockHitRegistry: ObservableObject {
     public static let shared = DesktopDockHitRegistry()
@@ -36,8 +36,11 @@ public final class DesktopDockHitRegistry: ObservableObject {
             }
         }
     }
+
     @Published public var hoveredAppTitle: String? = nil
     @Published public var selectedLauncherTitle: String? = nil
+    @Published public var hoveredDockTitle: String? = nil
+    @Published public var isLauncherToggleHovered: Bool = false
     public var lastLauncherClickSample: (title: String, time: TimeInterval)? = nil
 
     public var onToggleLauncher: (() -> Void)?
@@ -54,32 +57,55 @@ public final class DesktopDockHitRegistry: ObservableObject {
         self.entries.removeAll()
         hoveredAppTitle = nil
         selectedLauncherTitle = nil
+        hoveredDockTitle = nil
+        isLauncherToggleHovered = false
     }
 
     public func updateHover(at point: CGPoint) {
-        guard isLauncherOpen else {
+        if isLauncherOpen {
+            hoveredDockTitle = nil
+            isLauncherToggleHovered = false
+
+            for entry in entries.reversed() {
+                if case .launcherApp(let title, _) = entry.target {
+                    let expanded = entry.normalizedFrame.insetBy(dx: -0.008, dy: -0.008)
+                    if expanded.contains(point) {
+                        if hoveredAppTitle != title {
+                            hoveredAppTitle = title
+                        }
+                        return
+                    }
+                }
+            }
             if hoveredAppTitle != nil { hoveredAppTitle = nil }
             return
         }
+
+        if hoveredAppTitle != nil { hoveredAppTitle = nil }
+
+        var nextDockTitle: String?
+        var nextLauncherHover = false
         for entry in entries.reversed() {
-            if case .launcherApp(let title, _) = entry.target {
-                let expanded = entry.normalizedFrame.insetBy(dx: -0.008, dy: -0.008)
-                if expanded.contains(point) {
-                    if hoveredAppTitle != title {
-                        hoveredAppTitle = title
-                    }
-                    return
-                }
+            let expanded = entry.normalizedFrame.insetBy(dx: -0.006, dy: -0.006)
+            guard expanded.contains(point) else { continue }
+            switch entry.target {
+            case .app(let title):
+                nextDockTitle = title
+            case .launcherToggle:
+                nextLauncherHover = true
+            default:
+                break
             }
+            if nextDockTitle != nil || nextLauncherHover { break }
         }
-        if hoveredAppTitle != nil {
-            hoveredAppTitle = nil
-        }
+
+        if hoveredDockTitle != nextDockTitle { hoveredDockTitle = nextDockTitle }
+        if isLauncherToggleHovered != nextLauncherHover { isLauncherToggleHovered = nextLauncherHover }
     }
 
     public func hitTest(at point: CGPoint) -> Target? {
         if isLauncherOpen {
-            // First hit-test launcher app tiles
+            // First hit-test launcher app tiles.
             for entry in entries.reversed() {
                 if case .launcherApp = entry.target {
                     let expanded = entry.normalizedFrame.insetBy(dx: -0.008, dy: -0.008)
@@ -89,20 +115,19 @@ public final class DesktopDockHitRegistry: ObservableObject {
                 }
             }
 
-            // Next check if inside launcher container
+            // Next check if inside launcher container.
             for entry in entries {
-                if case .launcherContainer = entry.target {
-                    if entry.normalizedFrame.contains(point) {
-                        return .launcherContainer
-                    }
+                if case .launcherContainer = entry.target,
+                   entry.normalizedFrame.contains(point) {
+                    return .launcherContainer
                 }
             }
 
-            // Clicked outside launcher while open -> dismiss
+            // Clicked outside launcher while open -> dismiss.
             return .launcherDismiss
         }
 
-        // Normal dock hit test
+        // Normal dock hit test.
         for entry in entries.reversed() {
             switch entry.target {
             case .app, .launcherToggle:
