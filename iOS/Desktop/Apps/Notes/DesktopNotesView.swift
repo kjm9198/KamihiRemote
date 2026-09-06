@@ -1,10 +1,8 @@
 import SwiftUI
 
-/// Native offline notes application for Kamihi Desktop.
-///
-/// The interaction model intentionally follows familiar iPad note-taking patterns
-/// (sidebar, search, note list, editor and contextual actions) while using Kamihi's
-/// own semantic styling rather than copying another app's proprietary trade dress.
+/// Native offline Notes app using Kamihi's persistent store. The layout follows
+/// the desktop system language: edge-to-edge translucent sidebar, compact toolbar,
+/// coloured app identity and a quiet content canvas.
 struct DesktopNotesView: View {
     @StateObject private var store = DesktopNotesStore.shared
     @State private var searchText = ""
@@ -22,100 +20,85 @@ struct DesktopNotesView: View {
     var body: some View {
         HStack(spacing: 0) {
             sidebar
-                .frame(width: 238)
-
-            Divider()
+                .frame(width: DesktopShellMetrics.sidebarWidth)
 
             editor
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Color(.systemBackground))
+        .background(DesktopShellPalette.canvas)
     }
 
     private var sidebar: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                Image(systemName: "note.text")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.yellow)
+                VStack(alignment: .leading, spacing: 0) {
                     Text("Notes")
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.system(size: 13, weight: .semibold))
                     Text("On My iPhone")
-                        .font(.caption)
+                        .font(.system(size: 9.5))
                         .foregroundStyle(.secondary)
                 }
-
                 Spacer()
-
-                Button {
-                    store.createNewNote()
-                } label: {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 15, weight: .semibold))
-                        .frame(width: 36, height: 36)
-                        .background(Color.accentColor.opacity(0.12), in: Circle())
+                Button { store.createNewNote() } label: {
+                    DesktopToolbarIconLabel("square.and.pencil")
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Color.accentColor)
                 .accessibilityLabel("New note")
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 14)
-            .padding(.bottom, 10)
+            .padding(.horizontal, 10)
+            .frame(height: DesktopShellMetrics.toolbarHeight)
+            .desktopAppToolbar()
 
-            HStack(spacing: 8) {
+            HStack(spacing: 7) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
-
                 TextField("Search", text: $searchText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-
+                    .font(.system(size: 12))
                 if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
+                    Button { searchText = "" } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 12))
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear search")
                 }
             }
-            .padding(.horizontal, 10)
-            .frame(height: 34)
-            .background(Color.primary.opacity(0.065), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .padding(.horizontal, 12)
-            .padding(.bottom, 10)
-
-            Divider()
+            .padding(.horizontal, 9)
+            .frame(height: 30)
+            .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
 
             if visibleNotes.isEmpty {
-                VStack(spacing: 8) {
+                VStack(spacing: 7) {
                     Image(systemName: searchText.isEmpty ? "note.text" : "magnifyingglass")
-                        .font(.system(size: 24))
+                        .font(.system(size: 22, weight: .light))
                         .foregroundStyle(.tertiary)
                     Text(searchText.isEmpty ? "No Notes" : "No Results")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.system(size: 12, weight: .semibold))
                     if !searchText.isEmpty {
                         Text("Try another search")
-                            .font(.caption)
+                            .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 4) {
-                        ForEach(visibleNotes) { note in
-                            noteRow(note)
-                        }
+                    LazyVStack(spacing: 3) {
+                        ForEach(visibleNotes) { note in noteRow(note) }
                     }
-                    .padding(8)
+                    .padding(7)
                 }
             }
         }
-        .background(.thinMaterial)
+        .desktopSidebarSurface()
     }
 
     private func noteRow(_ note: DesktopNotesStore.Note) -> some View {
@@ -124,37 +107,33 @@ struct DesktopNotesView: View {
             store.activeNoteID = note.id
             store.text = note.body
         } label: {
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(displayTitle(for: note))
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12.5, weight: selected ? .semibold : .medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(note.updatedAt, format: .dateTime.hour().minute())
-                        .font(.caption2.weight(.medium))
+                        .font(.system(size: 9.5, weight: .medium))
                         .foregroundStyle(.secondary)
-
                     Text(previewText(for: note))
-                        .font(.caption)
+                        .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 9)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 8)
             .background(
-                selected ? Color.accentColor.opacity(0.12) : Color.clear,
-                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                selected ? Color.accentColor.opacity(0.14) : Color.clear,
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .contextMenu {
-            Button(role: .destructive) {
-                store.deleteNote(id: note.id)
-            } label: {
+            Button(role: .destructive) { store.deleteNote(id: note.id) } label: {
                 Label("Delete Note", systemImage: "trash")
             }
         }
@@ -169,78 +148,70 @@ struct DesktopNotesView: View {
             VStack(spacing: 0) {
                 editorToolbar(note: store.notes[index])
 
-                Divider()
-
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 9) {
                         TextField("Title", text: titleBinding(for: index))
                             .textFieldStyle(.plain)
-                            .font(.system(size: 25, weight: .bold))
+                            .font(.system(size: 24, weight: .bold))
+                            .tracking(-0.45)
                             .foregroundStyle(.primary)
 
                         Text(store.notes[index].updatedAt, format: .dateTime.month().day().year().hour().minute())
-                            .font(.caption)
+                            .font(.system(size: 10.5))
                             .foregroundStyle(.tertiary)
                             .accessibilityLabel("Last edited \(store.notes[index].updatedAt.formatted(date: .long, time: .shortened))")
 
                         TextEditor(text: bodyBinding(for: index))
-                            .font(.system(size: 16))
+                            .font(.system(size: 15.5))
                             .foregroundStyle(.primary)
                             .scrollContentBackground(.hidden)
                             .frame(minHeight: 430)
                             .padding(.horizontal, -5)
                             .accessibilityLabel("Note body")
                     }
-                    .frame(maxWidth: 700, alignment: .leading)
-                    .padding(.horizontal, 34)
-                    .padding(.vertical, 24)
+                    .frame(maxWidth: 720, alignment: .leading)
+                    .padding(.horizontal, 38)
+                    .padding(.vertical, 30)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-                .background(Color(.systemBackground))
+                .background(DesktopShellPalette.canvas)
             }
         } else {
-            VStack(spacing: 10) {
+            VStack(spacing: 9) {
                 Image(systemName: "note.text")
-                    .font(.system(size: 34, weight: .light))
+                    .font(.system(size: 32, weight: .light))
                     .foregroundStyle(.tertiary)
                 Text("Select a Note")
-                    .font(.title3.weight(.semibold))
-                Text("Choose a note from the sidebar or create a new one.")
-                    .font(.subheadline)
+                    .font(.system(size: 15, weight: .semibold))
+                Text("Choose a note in the sidebar or create a new one.")
+                    .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(.systemBackground))
+            .background(DesktopShellPalette.canvas)
         }
     }
 
     private func editorToolbar(note: DesktopNotesStore.Note) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
+            Text(displayTitle(for: note))
+                .font(.system(size: 12.5, weight: .semibold))
+                .lineLimit(1)
             Spacer()
-
-            Button {
-                store.createNewNote()
-            } label: {
-                Image(systemName: "square.and.pencil")
-                    .frame(width: 34, height: 34)
+            Button { store.createNewNote() } label: {
+                DesktopToolbarIconLabel("square.and.pencil")
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color.accentColor)
             .accessibilityLabel("New note")
-
-            Button(role: .destructive) {
-                store.deleteNote(id: note.id)
-            } label: {
-                Image(systemName: "trash")
-                    .frame(width: 34, height: 34)
+            Button(role: .destructive) { store.deleteNote(id: note.id) } label: {
+                DesktopToolbarIconLabel("trash")
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
             .accessibilityLabel("Delete note")
         }
-        .padding(.horizontal, 12)
-        .frame(height: 44)
-        .background(.ultraThinMaterial)
+        .padding(.horizontal, 11)
+        .frame(height: DesktopShellMetrics.toolbarHeight)
+        .desktopAppToolbar()
     }
 
     private func titleBinding(for index: Int) -> Binding<String> {
