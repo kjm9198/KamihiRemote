@@ -175,6 +175,9 @@ extension DesktopSession {
         let window = DesktopWindow(title: title, normalizedFrame: defaultFrame)
         windows.append(window)
         activeWindowID = window.id
+        if title == "Documents" || title == "Notes" {
+            wantsPhoneKeyboard = true
+        }
         return window.id
     }
 

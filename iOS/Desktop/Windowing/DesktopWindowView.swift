@@ -89,8 +89,8 @@ struct DesktopWindowView<Content: View>: View {
                     )
             }
             .overlay {
-                if isActive && !window.isMaximized {
-                    DesktopResizeAffordances(activeEdge: desktop.resizeEdgeAtCursor())
+                if isActive && !window.isMaximized, let activeEdge = desktop.resizeEdgeAtCursor() {
+                    DesktopResizeAffordances(activeEdge: activeEdge)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }
@@ -288,54 +288,49 @@ struct DesktopWindowView<Content: View>: View {
 /// resize model visible and highlight the exact edge/corner currently targeted by
 /// the shared DesktopSession cursor. There is no timer/display-link work here.
 private struct DesktopResizeAffordances: View {
-    let activeEdge: DesktopSession.ResizeEdge?
+    let activeEdge: DesktopSession.ResizeEdge
 
     var body: some View {
         GeometryReader { geo in
             let width = geo.size.width
             let height = geo.size.height
-            let horizontalLength = min(max(width * 0.18, 34), 82)
-            let verticalLength = min(max(height * 0.18, 28), 70)
 
             ZStack {
-                edge(.top, width: horizontalLength, height: 3)
-                    .position(x: width / 2, y: 2)
-                edge(.bottom, width: horizontalLength, height: 3)
-                    .position(x: width / 2, y: height - 2)
-                edge(.left, width: 3, height: verticalLength)
-                    .position(x: 2, y: height / 2)
-                edge(.right, width: 3, height: verticalLength)
-                    .position(x: width - 2, y: height / 2)
-
-                corner(.topLeft)
-                    .position(x: 7, y: 7)
-                corner(.topRight)
-                    .position(x: width - 7, y: 7)
-                corner(.bottomLeft)
-                    .position(x: 7, y: height - 7)
-                corner(.bottomRight)
-                    .position(x: width - 7, y: height - 7)
+                switch activeEdge {
+                case .left:
+                    Capsule(style: .continuous)
+                        .fill(Color.accentColor.opacity(0.85))
+                        .frame(width: 3.5, height: min(max(height * 0.35, 40), 90))
+                        .position(x: 2, y: height / 2)
+                case .right:
+                    Capsule(style: .continuous)
+                        .fill(Color.accentColor.opacity(0.85))
+                        .frame(width: 3.5, height: min(max(height * 0.35, 40), 90))
+                        .position(x: width - 2, y: height / 2)
+                case .bottom:
+                    Capsule(style: .continuous)
+                        .fill(Color.accentColor.opacity(0.85))
+                        .frame(width: min(max(width * 0.35, 40), 90), height: 3.5)
+                        .position(x: width / 2, y: height - 2)
+                case .bottomLeft:
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(0.90), lineWidth: 2.2)
+                        .frame(width: 14, height: 14)
+                        .position(x: 7, y: height - 7)
+                case .bottomRight:
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(0.90), lineWidth: 2.2)
+                        .frame(width: 14, height: 14)
+                        .position(x: width - 7, y: height - 7)
+                case .topRight:
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(0.90), lineWidth: 2.2)
+                        .frame(width: 14, height: 14)
+                        .position(x: width - 7, y: 7)
+                default:
+                    EmptyView()
+                }
             }
         }
-    }
-
-    private func edge(_ edge: DesktopSession.ResizeEdge, width: CGFloat, height: CGFloat) -> some View {
-        Capsule(style: .continuous)
-            .fill(Color.primary.opacity(opacity(for: edge)))
-            .frame(width: width, height: height)
-    }
-
-    private func corner(_ edge: DesktopSession.ResizeEdge) -> some View {
-        RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .strokeBorder(Color.primary.opacity(opacity(for: edge)), lineWidth: isActive(edge) ? 2.4 : 1.2)
-            .frame(width: 12, height: 12)
-    }
-
-    private func isActive(_ edge: DesktopSession.ResizeEdge) -> Bool {
-        activeEdge == edge
-    }
-
-    private func opacity(for edge: DesktopSession.ResizeEdge) -> Double {
-        isActive(edge) ? 0.78 : 0.18
     }
 }

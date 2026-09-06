@@ -16,6 +16,7 @@ struct DesktopDockView: View {
         ("Sheets", "tablecells.fill", .green),
         ("Files", "folder.fill", .blue),
         ("Notes", "note.text", .yellow),
+        ("Photos", "photo.on.rectangle.angled", .purple),
         ("ChatGPT", "sparkles", .mint),
         ("YouTube", "play.rectangle.fill", .red),
         ("Settings", "gearshape.fill", .gray)
@@ -51,12 +52,15 @@ struct DesktopDockView: View {
             if let onOpenWallpaperPicker {
                 dockDivider
                 Button(action: onOpenWallpaperPicker) {
-                    dockIcon(
-                        symbol: "photo.on.rectangle.angled",
-                        color: .cyan,
-                        selected: false,
-                        hovered: false
-                    )
+                    VStack(spacing: 4) {
+                        dockIcon(
+                            symbol: "paintpalette.fill",
+                            color: .cyan,
+                            selected: false,
+                            hovered: false
+                        )
+                        Color.clear.frame(width: 4.5, height: 4.5)
+                    }
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Wallpaper Chooser")
@@ -78,12 +82,15 @@ struct DesktopDockView: View {
 
     private var launcherButton: some View {
         Button(action: onOpenLauncher) {
-            dockIcon(
-                symbol: "circle.grid.3x3.fill",
-                color: .purple,
-                selected: hitRegistry.isLauncherOpen,
-                hovered: hitRegistry.isLauncherToggleHovered
-            )
+            VStack(spacing: 4) {
+                dockIcon(
+                    symbol: "circle.grid.3x3.fill",
+                    color: .purple,
+                    selected: hitRegistry.isLauncherOpen,
+                    hovered: hitRegistry.isLauncherToggleHovered
+                )
+                Color.clear.frame(width: 4.5, height: 4.5)
+            }
         }
         .buttonStyle(.plain)
         .background(

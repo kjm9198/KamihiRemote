@@ -148,6 +148,34 @@ struct ExternalDesktopCanvasView: View {
                     DesktopWallpaperPickerView()
                         .desktopGlassSurface(cornerRadius: KamihiTheme.Radius.lg)
                 }
+
+                if desktop.showNotifications {
+                    ZStack(alignment: .topTrailing) {
+                        Color.black.opacity(0.001)
+                            .ignoresSafeArea()
+                            .onTapGesture { desktop.showNotifications = false }
+
+                        DesktopNotificationCenterView()
+                            .padding(.top, 32)
+                            .padding(.trailing, 16)
+                    }
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .zIndex(20)
+                }
+
+                if desktop.showControlCenter {
+                    ZStack(alignment: .topTrailing) {
+                        Color.black.opacity(0.001)
+                            .ignoresSafeArea()
+                            .onTapGesture { desktop.showControlCenter = false }
+
+                        DesktopControlCenterView()
+                            .padding(.top, 32)
+                            .padding(.trailing, 54)
+                    }
+                    .transition(.opacity)
+                    .zIndex(20)
+                }
             }
             .overlay {
                 if display.hasCalibration {
@@ -614,5 +642,164 @@ private struct DisplayCalibrationGuideView: View {
                 path.addLine(to: CGPoint(x: point.x, y: point.y + length * yDirection))
             }
         }
+    }
+}
+
+private struct DesktopNotificationCenterView: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var currentDate = Date()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Notifications")
+                    .font(.system(size: 14, weight: .semibold))
+                Spacer()
+                Text(Date.now.formatted(date: .abbreviated, time: .omitted))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 8) {
+                notificationCard(
+                    icon: "sparkles",
+                    color: .blue,
+                    title: "Kamihi Desktop Ready",
+                    detail: "External display active at 120Hz ProMotion with hardware acceleration."
+                )
+                notificationCard(
+                    icon: "safari.fill",
+                    color: .cyan,
+                    title: "Safari Bookmarks Available",
+                    detail: "Import complete. All web bookmarks and history are ready."
+                )
+                notificationCard(
+                    icon: "checkmark.shield.fill",
+                    color: .green,
+                    title: "Local Isolation Active",
+                    detail: "Zero telemetry and strict sandboxing enforced across all native workspaces."
+                )
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Today")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.secondary)
+
+                HStack {
+                    Image(systemName: "calendar")
+                        .foregroundStyle(.red)
+                    Text("No upcoming meetings or calendar events")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            }
+        }
+        .padding(16)
+        .frame(width: 330)
+        .desktopGlassSurface(cornerRadius: 18, elevated: true)
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.35 : 0.15), radius: 18, x: 0, y: 10)
+    }
+
+    private func notificationCard(icon: String, color: Color, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 28, height: 28)
+                .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(detail)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .desktopInsetPanel()
+    }
+}
+
+private struct DesktopControlCenterView: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @StateObject private var power = DesktopPowerMonitor.shared
+    @StateObject private var display = ExternalDisplayCoordinator.shared
+    @State private var soundVolume: Double = 0.75
+    @State private var displayBrightness: Double = 0.90
+
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
+                controlTile(icon: "wifi", title: "Wi-Fi", subtitle: "Connected", active: true)
+                controlTile(icon: "dot.radiowaves.left.and.right", title: "AirDrop", subtitle: "Contacts Only", active: true)
+            }
+
+            HStack(spacing: 10) {
+                controlTile(icon: "speedometer", title: "Refresh Rate", subtitle: "\(display.preferredRefreshRate) Hz", active: true)
+                controlTile(icon: "battery.100.bolt", title: "Battery", subtitle: power.batteryPercentageText, active: false)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Image(systemName: "sun.max.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    Text("Display")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                Slider(value: $displayBrightness, in: 0.1...1.0)
+                    .tint(.white)
+            }
+            .padding(10)
+            .desktopInsetPanel()
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Image(systemName: "speaker.wave.3.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    Text("Sound")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                Slider(value: $soundVolume, in: 0.0...1.0)
+                    .tint(.white)
+            }
+            .padding(10)
+            .desktopInsetPanel()
+        }
+        .padding(14)
+        .frame(width: 300)
+        .desktopGlassSurface(cornerRadius: 18, elevated: true)
+        .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.35 : 0.15), radius: 18, x: 0, y: 10)
+    }
+
+    private func controlTile(icon: String, title: String, subtitle: String, active: Bool) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(active ? Color.white : Color.primary)
+                .frame(width: 28, height: 28)
+                .background(active ? Color.blue : Color.primary.opacity(0.08), in: Circle())
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(subtitle)
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(8)
+        .desktopInsetPanel()
     }
 }

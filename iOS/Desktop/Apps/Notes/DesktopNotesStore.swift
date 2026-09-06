@@ -59,11 +59,22 @@ public final class DesktopNotesStore: ObservableObject {
         text = note.body
     }
 
+    public func select(_ id: UUID) {
+        activeNoteID = id
+        text = activeNote?.body ?? ""
+    }
+
     public func deleteNote(id: UUID) {
         notes.removeAll(where: { $0.id == id })
         if activeNoteID == id {
             activeNoteID = notes.first?.id
             text = activeNote?.body ?? ""
+        }
+    }
+
+    public func deleteActiveNote() {
+        if let id = activeNoteID {
+            deleteNote(id: id)
         }
     }
 

@@ -6,7 +6,7 @@ import WebKit
 final class DesktopSession: ObservableObject {
     static let shared = DesktopSession()
 
-    struct DesktopWindow: Identifiable, Equatable {
+    struct DesktopWindow: Identifiable, Equatable, Codable {
         let id: UUID
         var title: String
         var normalizedFrame: CGRect
@@ -41,11 +41,20 @@ final class DesktopSession: ObservableObject {
 
     @Published private(set) var isExternalDisplayConnected = false
     @Published var cursor = CGPoint(x: 0.5, y: 0.45)
-    @Published var windows: [DesktopWindow] = []
-    @Published var activeWindowID: UUID?
+    @Published var windows: [DesktopWindow] = [] {
+        didSet { saveWindows() }
+    }
+    @Published var activeWindowID: UUID? {
+        didSet { saveWindows() }
+    }
     @Published var wantsPhoneKeyboard = false
+    @Published var showNotifications = false
+    @Published var showControlCenter = false
     @Published private(set) var cursorInteractionState: CursorInteractionState = .defaultState
     @Published private(set) var snapPreviewTarget: WindowSnapEngine.SnapTarget?
+
+    private let windowsStorageKey = "kamihi.desktop.windows.v2"
+    private let activeWindowStorageKey = "kamihi.desktop.activeWindow.v2"
 
     private var dragWindowID: UUID?
     private var dragOffset = CGPoint.zero
@@ -60,7 +69,35 @@ final class DesktopSession: ObservableObject {
     private var restoreFrames: [UUID: CGRect] = [:]
     private var snapTargets: [UUID: WindowSnapEngine.SnapTarget] = [:]
 
-    private init() {}
+    private init() {
+        loadWindows()
+    }
+
+    private func saveWindows() {
+        if let data = try? JSONEncoder().encode(windows) {
+            UserDefaults.standard.set(data, forKey: windowsStorageKey)
+        }
+        if let activeWindowID {
+            UserDefaults.standard.set(activeWindowID.uuidString, forKey: activeWindowStorageKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: activeWindowStorageKey)
+        }
+    }
+
+    private func loadWindows() {
+        if let data = UserDefaults.standard.data(forKey: windowsStorageKey),
+           let saved = try? JSONDecoder().decode([DesktopWindow].self, from: data),
+           !saved.isEmpty {
+            self.windows = saved
+        }
+        if let rawID = UserDefaults.standard.string(forKey: activeWindowStorageKey),
+           let id = UUID(uuidString: rawID),
+           windows.contains(where: { $0.id == id }) {
+            self.activeWindowID = id
+        } else {
+            self.activeWindowID = windows.first(where: { !$0.isMinimized })?.id
+        }
+    }
 
     func externalDisplayDidConnect() {
         isExternalDisplayConnected = true
@@ -443,31 +480,40 @@ final class DesktopSession: ObservableObject {
     }
 
     private func resizeHit(at point: CGPoint) -> (id: UUID, edge: ResizeEdge)? {
-        let threshold: CGFloat = 0.024
-        let cornerThreshold: CGFloat = 0.036
+        // Precise, small border threshold so resizing requires being exactly on the border
+        let threshold: CGFloat = 0.010
+        let cornerThreshold: CGFloat = 0.014
 
         for window in windows.reversed() where !window.isMinimized && !window.isMaximized {
             let frame = window.normalizedFrame
+            let titleHeight = DesktopWindowChrome.titleBarHeight(for: frame)
+
+            // Resizing is NEVER triggered over the title bar or anywhere near traffic lights
+            if point.y >= (frame.minY - threshold) && point.y <= (frame.minY + titleHeight + 0.006) {
+                // Top-right corner outside title bar is permitted only if strictly on right edge
+                let nearRight = abs(point.x - frame.maxX) <= threshold
+                let nearTop = abs(point.y - frame.minY) <= threshold
+                if nearRight && nearTop {
+                    return (window.id, .topRight)
+                }
+                continue
+            }
+
             let expanded = frame.insetBy(dx: -threshold, dy: -threshold)
             guard expanded.contains(point) else { continue }
 
             let nearLeft = abs(point.x - frame.minX) <= threshold
             let nearRight = abs(point.x - frame.maxX) <= threshold
-            let nearTop = abs(point.y - frame.minY) <= threshold
             let nearBottom = abs(point.y - frame.maxY) <= threshold
 
             let cornerLeft = abs(point.x - frame.minX) <= cornerThreshold
             let cornerRight = abs(point.x - frame.maxX) <= cornerThreshold
-            let cornerTop = abs(point.y - frame.minY) <= cornerThreshold
             let cornerBottom = abs(point.y - frame.maxY) <= cornerThreshold
 
-            if cornerLeft && cornerTop { return (window.id, .topLeft) }
-            if cornerRight && cornerTop { return (window.id, .topRight) }
             if cornerLeft && cornerBottom { return (window.id, .bottomLeft) }
             if cornerRight && cornerBottom { return (window.id, .bottomRight) }
             if nearLeft { return (window.id, .left) }
             if nearRight { return (window.id, .right) }
-            if nearTop { return (window.id, .top) }
             if nearBottom { return (window.id, .bottom) }
         }
         return nil

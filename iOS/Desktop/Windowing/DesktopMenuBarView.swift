@@ -51,12 +51,12 @@ public struct DesktopMenuBarView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.primary)
 
-                HStack(spacing: 16) {
-                    menuItem("File")
-                    menuItem("Edit")
-                    menuItem("View")
-                    menuItem("Window")
-                    menuItem("Help")
+                HStack(spacing: 14) {
+                    fileMenu
+                    editMenu
+                    viewMenu
+                    windowMenu
+                    helpMenu
                 }
             }
 
@@ -74,18 +74,28 @@ public struct DesktopMenuBarView: View {
                         .font(.system(size: 11.5, weight: .medium))
                 }
 
-                Button { showWallpaperPicker.toggle() } label: {
-                    Image(systemName: "rectangle.3.group.bubble.left.fill")
+                Button {
+                    desktop.showControlCenter.toggle()
+                    desktop.showNotifications = false
+                } label: {
+                    Image(systemName: "switch.2")
                         .font(.system(size: 12.5, weight: .semibold))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Desktop controls")
+                .accessibilityLabel("Control Center")
 
-                TimelineView(.periodic(from: .now, by: 30)) { context in
-                    Text(formattedDate(context.date))
-                        .font(.system(size: 12.5, weight: .medium))
-                        .monospacedDigit()
+                Button {
+                    desktop.showNotifications.toggle()
+                    desktop.showControlCenter = false
+                } label: {
+                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                        Text(formattedDate(context.date))
+                            .font(.system(size: 12.5, weight: .medium))
+                            .monospacedDigit()
+                    }
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Date and Time Notifications")
             }
         }
         .padding(.horizontal, 14)
@@ -98,7 +108,103 @@ public struct DesktopMenuBarView: View {
         }
     }
 
-    private func menuItem(_ title: String) -> some View {
+    private var fileMenu: some View {
+        Menu {
+            Button("New Window…") {
+                desktop.openProductivityApp("Documents", frame: CGRect(x: 0.22, y: 0.18, width: 0.58, height: 0.62))
+            }
+            Button("New Browser Tab") {
+                desktop.openProductivityApp("Browser", frame: CGRect(x: 0.18, y: 0.15, width: 0.64, height: 0.68))
+            }
+            Divider()
+            Button("Close Window") {
+                if let active = desktop.activeWindowID {
+                    desktop.close(active)
+                }
+            }
+        } label: {
+            menuTitle("File")
+        }
+        .menuStyle(.borderlessButton)
+    }
+
+    private var editMenu: some View {
+        Menu {
+            Button("Undo") {}
+                .disabled(true)
+            Button("Redo") {}
+                .disabled(true)
+            Divider()
+            Button("Cut") {}
+            Button("Copy") {}
+            Button("Paste") {}
+            Button("Select All") {}
+        } label: {
+            menuTitle("Edit")
+        }
+        .menuStyle(.borderlessButton)
+    }
+
+    private var viewMenu: some View {
+        Menu {
+            Button(showWidgets ? "Hide Widgets" : "Show Widgets") {
+                showWidgets.toggle()
+            }
+            Button("Change Wallpaper…") {
+                showWallpaperPicker.toggle()
+            }
+            Divider()
+            Button("Reset Windows Layout") {
+                desktop.openVibeWorkspace()
+            }
+        } label: {
+            menuTitle("View")
+        }
+        .menuStyle(.borderlessButton)
+    }
+
+    private var windowMenu: some View {
+        Menu {
+            Button("Minimize") {
+                if let active = desktop.activeWindowID {
+                    desktop.minimize(active)
+                }
+            }
+            Button("Zoom / Fullscreen") {
+                if let active = desktop.activeWindowID {
+                    desktop.toggleMaximize(active)
+                }
+            }
+            Divider()
+            Button("Tile Window to Left") {
+                desktop.snapActiveLeft()
+            }
+            Button("Tile Window to Right") {
+                desktop.snapActiveRight()
+            }
+            Divider()
+            Button("Bring All to Front") {}
+        } label: {
+            menuTitle("Window")
+        }
+        .menuStyle(.borderlessButton)
+    }
+
+    private var helpMenu: some View {
+        Menu {
+            Button("Desktop Tutorial…") {
+                UserDefaults.standard.set(false, forKey: "hasCompletedDesktopOnboarding")
+            }
+            Button("Display Diagnostics…") {
+                desktop.openProductivityApp("Display Diagnostics", frame: CGRect(x: 0.16, y: 0.10, width: 0.68, height: 0.72))
+            }
+        } label: {
+            menuTitle("Help")
+        }
+        .menuStyle(.borderlessButton)
+    }
+
+    private func menuTitle(_ title: String) -> some View {
         Text(title)
             .font(.system(size: 13, weight: .regular))
             .foregroundStyle(Color.primary.opacity(0.88))

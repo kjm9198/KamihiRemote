@@ -82,6 +82,31 @@ extension DesktopSession {
             return
         }
 
+        if cursor.y <= 0.035 {
+            primaryClick()
+            if cursor.x >= 0.85 {
+                showNotifications.toggle()
+                showControlCenter = false
+                if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                return
+            } else if cursor.x >= 0.76 && cursor.x < 0.85 {
+                showControlCenter.toggle()
+                showNotifications = false
+                if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                return
+            } else if cursor.x >= 0.70 && cursor.x < 0.76 {
+                openProductivityApp("Display Diagnostics", frame: CGRect(x: 0.16, y: 0.10, width: 0.68, height: 0.72))
+                return
+            }
+        }
+
+        if showNotifications || showControlCenter {
+            if cursor.y > 0.035 && cursor.x < 0.68 {
+                showNotifications = false
+                showControlCenter = false
+            }
+        }
+
         guard let topID = topWindow(at: cursor),
               let window = windows.first(where: { $0.id == topID }) else {
             wantsPhoneKeyboard = false
@@ -109,8 +134,13 @@ extension DesktopSession {
         primaryClick()
 
         // Native text apps use the phone keyboard as their explicit editor.
-        if window.title == "Notes" || window.title == "Documents" {
-            wantsPhoneKeyboard = true
+        if window.title == "Documents" {
+            handleDocumentsClick(at: cursor, in: frame)
+            return
+        }
+
+        if window.title == "Notes" {
+            handleNotesClick(at: cursor, in: frame)
             return
         }
 
@@ -360,5 +390,84 @@ extension DesktopSession {
             x: min(max((point.x - frame.minX) / frame.width, 0), 1),
             y: min(max((point.y - contentTop) / contentHeight, 0), 1)
         )
+    }
+
+    private func handleDocumentsClick(at point: CGPoint, in frame: CGRect) {
+        let titleBarHeight = DesktopWindowChrome.titleBarHeight(for: frame)
+        let contentTop = frame.minY + titleBarHeight
+        guard point.y > contentTop, frame.width > 0, frame.height > 0 else { return }
+
+        let localX = (point.x - frame.minX) / frame.width
+        let localY = (point.y - contentTop) / (frame.maxY - contentTop)
+        let sidebarFraction: CGFloat = 0.28
+
+        if localX <= sidebarFraction {
+            // Sidebar region
+            if localY <= 0.12 && localX >= (sidebarFraction - 0.08) {
+                // "New document" button on top of sidebar
+                DesktopDocumentsStore.shared.createDocument()
+                wantsPhoneKeyboard = true
+                if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                return
+            } else if localY > 0.12 {
+                // Document row selection
+                let store = DesktopDocumentsStore.shared
+                let count = store.documents.count
+                if count > 0 {
+                    let clickedIndex = min(max(Int((localY - 0.12) / 0.11), 0), count - 1)
+                    store.select(store.documents[clickedIndex].id)
+                    wantsPhoneKeyboard = true
+                    if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                    return
+                }
+            }
+        } else {
+            // Canvas region: top right "+" button
+            if localY <= 0.12 && localX >= 0.88 {
+                DesktopDocumentsStore.shared.createDocument()
+                wantsPhoneKeyboard = true
+                if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                return
+            }
+        }
+
+        wantsPhoneKeyboard = true
+    }
+
+    private func handleNotesClick(at point: CGPoint, in frame: CGRect) {
+        let titleBarHeight = DesktopWindowChrome.titleBarHeight(for: frame)
+        let contentTop = frame.minY + titleBarHeight
+        guard point.y > contentTop, frame.width > 0, frame.height > 0 else { return }
+
+        let localX = (point.x - frame.minX) / frame.width
+        let localY = (point.y - contentTop) / (frame.maxY - contentTop)
+        let sidebarFraction: CGFloat = 0.28
+
+        if localX <= sidebarFraction {
+            if localY <= 0.12 && localX >= (sidebarFraction - 0.08) {
+                DesktopNotesStore.shared.createNewNote()
+                wantsPhoneKeyboard = true
+                if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                return
+            } else if localY > 0.18 {
+                let store = DesktopNotesStore.shared
+                let sorted = store.notes.sorted { $0.updatedAt > $1.updatedAt }
+                if !sorted.isEmpty {
+                    let clickedIndex = min(max(Int((localY - 0.18) / 0.12), 0), sorted.count - 1)
+                    store.select(sorted[clickedIndex].id)
+                    wantsPhoneKeyboard = true
+                    if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                    return
+                }
+            }
+        } else {
+            if localY <= 0.12 && localX >= 0.88 {
+                DesktopNotesStore.shared.deleteActiveNote()
+                if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                return
+            }
+        }
+
+        wantsPhoneKeyboard = true
     }
 }
