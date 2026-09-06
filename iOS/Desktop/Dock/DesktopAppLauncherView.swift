@@ -87,15 +87,19 @@ struct DesktopAppLauncherView: View {
             ZStack {
                 DesktopShellPalette.canvas.ignoresSafeArea()
 
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: DesktopShellMetrics.sectionSpacing) {
-                        ForEach(filteredApps) { app in
-                            appTile(app)
+                if filteredApps.isEmpty {
+                    emptySearchState
+                } else {
+                    ScrollView {
+                        LazyVGrid(columns: columns, spacing: DesktopShellMetrics.sectionSpacing) {
+                            ForEach(filteredApps) { app in
+                                appTile(app)
+                            }
                         }
+                        .padding(DesktopShellMetrics.sectionSpacing)
                     }
-                    .padding(DesktopShellMetrics.sectionSpacing)
+                    .scrollIndicators(.hidden)
                 }
-                .scrollIndicators(.hidden)
             }
             .searchable(text: $searchText, prompt: "Search Apps & Utilities")
             .navigationTitle("App Library")
@@ -108,6 +112,37 @@ struct DesktopAppLauncherView: View {
             }
         }
         .desktopShellTheme()
+    }
+
+    private var emptySearchState: some View {
+        VStack(spacing: DesktopShellMetrics.standardSpacing) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 32, weight: .medium))
+                .foregroundStyle(DesktopShellPalette.secondaryLabel)
+                .accessibilityHidden(true)
+
+            Text("No Apps Found")
+                .font(.headline)
+                .foregroundStyle(DesktopShellPalette.label)
+
+            Text("Try another app, category, or website name.")
+                .font(.subheadline)
+                .foregroundStyle(DesktopShellPalette.secondaryLabel)
+                .multilineTextAlignment(.center)
+
+            Button {
+                searchText = ""
+            } label: {
+                Label("Clear Search", systemImage: "xmark.circle.fill")
+                    .frame(minHeight: DesktopShellMetrics.minimumHitTarget)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityHint("Shows all apps in the App Library")
+        }
+        .padding(DesktopShellMetrics.sectionSpacing * 2)
+        .frame(maxWidth: 360)
+        .desktopShellElevatedSurface(cornerRadius: DesktopShellMetrics.chromeCornerRadius)
+        .accessibilityElement(children: .contain)
     }
 
     private func appTile(_ app: AppItem) -> some View {
