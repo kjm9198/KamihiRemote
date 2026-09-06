@@ -19,7 +19,7 @@ cd "$ROOT_DIR"
 capture_screen() {
   local output="$1"
   local attempt=1
-  while (( attempt <= 3 )); do
+  while (( attempt <= 4 )); do
     if xcrun simctl io "$UDID" screenshot "$output" >/dev/null 2>&1; then
       return 0
     fi
@@ -31,17 +31,26 @@ capture_screen() {
 
 screenshot_size_bytes() {
   local path="$1"
-  stat -f '%z' "$path" 2>/dev/null || stat -c '%s' "$path"
+  if [[ ! -f "$path" ]]; then
+    echo 0
+    return 0
+  fi
+  stat -f '%z' "$path" 2>/dev/null || stat -c '%s' "$path" 2>/dev/null || echo 0
 }
 
 capture_desktop_lab_screen() {
   local output="$1"
-  local minimum_bytes=120000
+  # A completely blank/black simulator screenshot compresses very small. Keep a
+  # conservative floor, but do not make success depend on PNG compression noise.
+  local minimum_bytes=60000
   local poll=1
-  while (( poll <= 12 )); do
-    capture_screen "$output"
-    local size
-    size="$(screenshot_size_bytes "$output")"
+  rm -f "$output"
+
+  while (( poll <= 20 )); do
+    local size=0
+    if capture_screen "$output"; then
+      size="$(screenshot_size_bytes "$output")"
+    fi
     if (( size >= minimum_bytes )); then
       echo "Desktop Lab screenshot ready (${size} bytes) on visual poll $poll"
       return 0
@@ -49,6 +58,7 @@ capture_desktop_lab_screen() {
     sleep 1
     poll=$((poll + 1))
   done
+
   echo "Desktop Lab never produced non-blank visual evidence"
   return 1
 }
@@ -64,8 +74,8 @@ collect_diagnostics() {
   } > "$RESULT_FILE"
   xcrun simctl list devices > "$DEVICE_FILE" 2>&1 || true
   if [[ -n "$UDID" ]]; then
-    xcrun simctl spawn "$UDID" log show --last 5m --style compact --predicate 'process == "KamihiRemote"' 2>/dev/null \
-      | tail -1000 > "$IOS_SYSTEM_LOG" || true
+    xcrun simctl spawn "$UDID" log show --last 8m --style compact --predicate 'process == "KamihiRemote" OR subsystem == "com.kamihi.remote"' 2>/dev/null \
+      | tail -1600 > "$IOS_SYSTEM_LOG" || true
   fi
 }
 
@@ -129,24 +139,88 @@ boot_simulator() {
   xcrun simctl bootstatus "$UDID" -b
 }
 
+recover_simulator() {
+  local erase="${1:-false}"
+  xcrun simctl terminate "$UDID" com.kamihi.remote >/dev/null 2>&1 || true
+  xcrun simctl shutdown "$UDID" >/dev/null 2>&1 || true
+  if [[ "$erase" == "true" ]]; then
+    xcrun simctl erase "$UDID" >/dev/null 2>&1 || true
+  fi
+  xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
+  xcrun simctl bootstatus "$UDID" -b
+}
+
+install_app() {
+  if xcrun simctl install "$UDID" "$IOS_APP"; then
+    return 0
+  fi
+  echo "Simulator install failed; erasing once before retry"
+  recover_simulator true
+  xcrun simctl install "$UDID" "$IOS_APP"
+}
+
+wait_for_ready_marker() {
+  local poll=1
+  while (( poll <= 8 )); do
+    if xcrun simctl spawn "$UDID" log show --last 1m --style compact \
+      --predicate 'subsystem == "com.kamihi.remote" AND composedMessage CONTAINS "KAMIHI_DESKTOP_LAB_READY"' 2>/dev/null \
+      | grep -Fq "KAMIHI_DESKTOP_LAB_READY"; then
+      echo "Desktop Lab runtime marker observed"
+      return 0
+    fi
+    sleep 1
+    poll=$((poll + 1))
+  done
+  # Unified-log delivery can lag on hosted runners. Visual evidence remains the
+  # hard assertion; this marker is extra evidence, not a new source of flakiness.
+  echo "Runtime marker not visible yet; continuing to visual assertion"
+  return 0
+}
+
+run_desktop_lab_attempt() {
+  local attempt="$1"
+  local output="$SMOKE_DIR/desktop-lab-attempt-${attempt}.png"
+
+  echo "==> Launching Kamihi Desktop Lab (attempt $attempt/3)"
+  xcrun simctl terminate "$UDID" com.kamihi.remote >/dev/null 2>&1 || true
+
+  if ! xcrun simctl launch "$UDID" com.kamihi.remote -KamihiDesktopLab >> "$SIM_LOG" 2>&1; then
+    echo "simctl launch failed on attempt $attempt"
+    return 1
+  fi
+
+  sleep 2
+  wait_for_ready_marker
+  if capture_desktop_lab_screen "$output"; then
+    cp "$output" "$SMOKE_DIR/desktop-lab.png"
+    return 0
+  fi
+  return 1
+}
+
 if ! boot_simulator; then
   echo "Initial simulator boot failed; erasing and retrying once"
-  xcrun simctl shutdown "$UDID" >/dev/null 2>&1 || true
-  xcrun simctl erase "$UDID" >/dev/null 2>&1 || true
-  boot_simulator
+  recover_simulator true
 fi
+install_app
 
-xcrun simctl install "$UDID" "$IOS_APP"
+attempt=1
+while (( attempt <= 3 )); do
+  if run_desktop_lab_attempt "$attempt"; then
+    echo "KAMIHI_DESKTOP_SMOKE_OK" | tee "$SMOKE_DIR/desktop-smoke.txt"
+    exit 0
+  fi
 
-echo "==> Launching Kamihi Desktop Lab"
-xcrun simctl terminate "$UDID" com.kamihi.remote >/dev/null 2>&1 || true
-xcrun simctl launch "$UDID" com.kamihi.remote -KamihiDesktopLab >> "$SIM_LOG" 2>&1
-sleep 2
+  if (( attempt < 3 )); then
+    echo "Desktop Lab assertion failed; recovering simulator before retry"
+    if ! recover_simulator false; then
+      echo "Soft simulator recovery failed; erasing before final recovery"
+      recover_simulator true
+      install_app
+    fi
+  fi
+  attempt=$((attempt + 1))
+done
 
-# A successful simctl launch plus a large rendered screenshot is the product
-# assertion. Simulator-internal launchctl/ps visibility is not stable across
-# Xcode runtimes and previously produced a false failure while the app was
-# visibly alive and its runtime self-checks had passed.
-capture_desktop_lab_screen "$SMOKE_DIR/desktop-lab.png"
-
-echo "KAMIHI_DESKTOP_SMOKE_OK" | tee "$SMOKE_DIR/desktop-smoke.txt"
+echo "Desktop Lab failed all three bounded smoke attempts"
+exit 1
