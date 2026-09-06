@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// Top desktop status bar using the same adaptive glass policy as Dock, App Library
-/// and Settings. It stays information-dense without turning into a second mode UI.
+/// macOS-inspired menu bar using the same adaptive glass policy as Dock,
+/// Applications, windows and Settings. Desktop-specific diagnostics stay in
+/// Settings instead of cluttering the system bar.
 public struct DesktopMenuBarView: View {
     @EnvironmentObject private var desktop: DesktopSession
-    @StateObject private var display = ExternalDisplayCoordinator.shared
     @StateObject private var power = DesktopPowerMonitor.shared
     @Binding var showWallpaperPicker: Bool
     @Binding var showWidgets: Bool
@@ -14,21 +14,21 @@ public struct DesktopMenuBarView: View {
         self._showWidgets = showWidgets
     }
 
-    private var activeAppName: String { desktop.activeWindow?.title ?? "Desktop" }
+    private var activeAppName: String { desktop.activeWindow?.title ?? "Finder" }
 
     public var body: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 14) {
+        HStack(spacing: 0) {
+            HStack(spacing: 16) {
                 Menu {
                     Button("About Kamihi Desktop") {}
                     Divider()
-                    Button("Settings…", systemImage: "gearshape") {
+                    Button("System Settings…", systemImage: "gearshape") {
                         desktop.openProductivityApp("Settings", frame: CGRect(x: 0.16, y: 0.10, width: 0.68, height: 0.72))
                     }
                     Button("Desktop Tutorial & Setup…", systemImage: "sparkles") {
                         UserDefaults.standard.set(false, forKey: "hasCompletedDesktopOnboarding")
                     }
-                    Button("Wallpaper Chooser…", systemImage: "paintpalette") {
+                    Button("Wallpaper…", systemImage: "photo.on.rectangle.angled") {
                         showWallpaperPicker = true
                     }
                     Button(showWidgets ? "Hide Desktop Widgets" : "Show Desktop Widgets") {
@@ -39,18 +39,19 @@ public struct DesktopMenuBarView: View {
                         desktop.closeAllDesktopWindows()
                     }
                 } label: {
-                    Image(systemName: "circle.hexagongrid.fill")
-                        .font(.system(size: 14, weight: .bold))
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.primary)
-                        .frame(width: 22, height: 22)
+                        .frame(width: 18, height: 20)
                 }
                 .menuStyle(.borderlessButton)
+                .accessibilityLabel("Kamihi menu")
 
                 Text(activeAppName)
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.primary)
 
-                HStack(spacing: 12) {
+                HStack(spacing: 16) {
                     menuItem("File")
                     menuItem("Edit")
                     menuItem("View")
@@ -59,55 +60,48 @@ public struct DesktopMenuBarView: View {
                 }
             }
 
-            Spacer()
+            Spacer(minLength: 20)
 
-            HStack(spacing: 10) {
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(display.maximumFramesPerSecond >= 120 ? Color.cyan : Color.orange)
-                        .frame(width: 6, height: 6)
-                    Text("\(display.maximumFramesPerSecond) Hz")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Color.primary.opacity(0.07), in: Capsule())
-
+            HStack(spacing: 13) {
                 Image(systemName: "wifi")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 12.5, weight: .semibold))
 
                 HStack(spacing: 4) {
                     Image(systemName: batterySymbol)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 12.5, weight: .semibold))
                         .foregroundStyle(power.batteryLevel >= 0 && power.batteryLevel < 0.20 ? Color.red : Color.primary)
                     Text(power.batteryPercentageText)
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .font(.system(size: 11.5, weight: .medium))
                 }
 
                 Button { showWallpaperPicker.toggle() } label: {
-                    Image(systemName: "paintpalette.fill")
-                        .font(.system(size: 12, weight: .semibold))
+                    Image(systemName: "rectangle.3.group.bubble.left.fill")
+                        .font(.system(size: 12.5, weight: .semibold))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Desktop controls")
 
-                TimelineView(.periodic(from: .now, by: 1)) { context in
+                TimelineView(.periodic(from: .now, by: 30)) { context in
                     Text(formattedDate(context.date))
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .font(.system(size: 12.5, weight: .medium))
+                        .monospacedDigit()
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .frame(height: 30)
+        .padding(.horizontal, 14)
+        .frame(height: 28)
         .desktopGlassSurface(cornerRadius: 0, elevated: false)
         .overlay(alignment: .bottom) {
-            Rectangle().fill(Color.white.opacity(0.10)).frame(height: 0.5)
+            Rectangle()
+                .fill(Color.primary.opacity(0.09))
+                .frame(height: 0.5)
         }
     }
 
     private func menuItem(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(Color.primary.opacity(0.85))
+            .font(.system(size: 13, weight: .regular))
+            .foregroundStyle(Color.primary.opacity(0.88))
     }
 
     private var batterySymbol: String {
