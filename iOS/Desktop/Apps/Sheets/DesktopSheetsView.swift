@@ -1,91 +1,54 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Lightweight native spreadsheet surface for the external desktop.
-/// Pointer clicks select a cell; editing is routed through the iPhone keyboard.
+/// Lightweight native spreadsheet surface for the external desktop. The grid
+/// remains fully local and pointer-driven while its toolbar and headers now use
+/// the same compact desktop visual language as the rest of Kamihi.
 struct DesktopSheetsView: View {
     @StateObject private var store = DesktopSheetsStore.shared
     @State private var showCSVImporter = false
     @State private var importErrorMessage: String?
 
-    private let rowHeaderWidth: CGFloat = 44
-    private let columnHeaderHeight: CGFloat = 32
+    private let rowHeaderWidth: CGFloat = 42
+    private let columnHeaderHeight: CGFloat = 28
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Label("Sheets", systemImage: "tablecells.fill")
-                    .font(.headline)
-                Text(store.workbook.title)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text("Cell \(store.activeCellName)")
-                    .font(.subheadline.monospaced().weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
-                Text("Type on the iPhone • Return moves down")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Button {
-                    showCSVImporter = true
-                } label: {
-                    Label("Import CSV", systemImage: "square.and.arrow.down")
-                        .font(.caption.weight(.semibold))
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .accessibilityHint("Opens the iOS document picker and replaces this sheet with the selected CSV file.")
-
-                Button {
-                    if !store.exportCSV() {
-                        importErrorMessage = "Kamihi could not open the iOS share sheet for this CSV."
-                    }
-                } label: {
-                    Label("Export", systemImage: "square.and.arrow.up")
-                        .font(.caption.weight(.semibold))
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .accessibilityHint("Exports the current sheet as CSV through the standard iOS share sheet.")
-            }
-            .padding(.horizontal, 12)
-            .frame(height: 42)
-            .background(Color.primary.opacity(0.035))
+            toolbar
 
             GeometryReader { geo in
-                let cellWidth = max(54, (geo.size.width - rowHeaderWidth) / CGFloat(DesktopSheetsStore.columnCount))
-                let cellHeight = max(22, (geo.size.height - columnHeaderHeight) / CGFloat(DesktopSheetsStore.rowCount))
+                let cellWidth = max(58, (geo.size.width - rowHeaderWidth) / CGFloat(DesktopSheetsStore.columnCount))
+                let cellHeight = max(24, (geo.size.height - columnHeaderHeight) / CGFloat(DesktopSheetsStore.rowCount))
 
                 VStack(spacing: 0) {
                     HStack(spacing: 0) {
                         Rectangle()
-                            .fill(Color.primary.opacity(0.06))
+                            .fill(DesktopShellPalette.secondaryCanvas.opacity(0.80))
                             .frame(width: rowHeaderWidth, height: columnHeaderHeight)
                             .overlay {
                                 Image(systemName: "tablecells")
-                                    .font(.caption)
+                                    .font(.system(size: 9, weight: .semibold))
                                     .foregroundStyle(.secondary)
                             }
 
                         ForEach(0..<DesktopSheetsStore.columnCount, id: \.self) { column in
                             Text(DesktopSheetsStore.columnName(column))
-                                .font(.caption.weight(.semibold))
+                                .font(.system(size: 10.5, weight: .semibold))
                                 .foregroundStyle(.secondary)
                                 .frame(width: cellWidth, height: columnHeaderHeight)
-                                .background(Color.primary.opacity(0.045))
-                                .overlay(alignment: .trailing) { Divider() }
+                                .background(DesktopShellPalette.secondaryCanvas.opacity(0.72))
+                                .overlay(alignment: .trailing) { gridDivider }
                         }
                     }
 
                     ForEach(0..<DesktopSheetsStore.rowCount, id: \.self) { row in
                         HStack(spacing: 0) {
                             Text(String(row + 1))
-                                .font(.caption2.monospacedDigit())
+                                .font(.system(size: 9.5, weight: .medium).monospacedDigit())
                                 .foregroundStyle(.secondary)
                                 .frame(width: rowHeaderWidth, height: cellHeight)
-                                .background(Color.primary.opacity(0.04))
-                                .overlay(alignment: .bottom) { Divider() }
+                                .background(DesktopShellPalette.secondaryCanvas.opacity(0.58))
+                                .overlay(alignment: .bottom) { gridDivider }
 
                             ForEach(0..<DesktopSheetsStore.columnCount, id: \.self) { column in
                                 sheetCell(row: row, column: column, width: cellWidth, height: cellHeight)
@@ -96,7 +59,7 @@ struct DesktopSheetsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
-        .background(KamihiTheme.Colors.surfaceBackground)
+        .background(DesktopShellPalette.canvas)
         .fileImporter(
             isPresented: $showCSVImporter,
             allowedContentTypes: [.commaSeparatedText, .plainText],
@@ -119,14 +82,62 @@ struct DesktopSheetsView: View {
             get: { importErrorMessage != nil },
             set: { if !$0 { importErrorMessage = nil } }
         )) {
-            Button("OK", role: .cancel) {
-                importErrorMessage = nil
-            }
+            Button("OK", role: .cancel) { importErrorMessage = nil }
         } message: {
             Text(importErrorMessage ?? "Unknown file error")
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Spreadsheet \(store.workbook.title), active cell \(store.activeCellName)")
+    }
+
+    private var toolbar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "tablecells.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.green)
+                .frame(width: 26, height: 26)
+                .background(Color.green.opacity(0.11), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text(store.workbook.title)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .lineLimit(1)
+                Text("Cell \(store.activeCellName)")
+                    .font(.system(size: 9.5, weight: .medium).monospaced())
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Text("Type on iPhone · Return moves down")
+                .font(.system(size: 10.5))
+                .foregroundStyle(.secondary)
+
+            Button { showCSVImporter = true } label: {
+                DesktopToolbarIconLabel("square.and.arrow.down")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Import CSV")
+
+            Button {
+                if !store.exportCSV() {
+                    importErrorMessage = "Kamihi could not open the iOS share sheet for this CSV."
+                }
+            } label: {
+                DesktopToolbarIconLabel("square.and.arrow.up")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Export CSV")
+        }
+        .padding(.horizontal, 10)
+        .frame(height: DesktopShellMetrics.toolbarHeight)
+        .desktopAppToolbar()
+    }
+
+    private var gridDivider: some View {
+        Rectangle()
+            .fill(DesktopShellPalette.separator.opacity(0.20))
+            .frame(width: 0.5)
     }
 
     private func sheetCell(row: Int, column: Int, width: CGFloat, height: CGFloat) -> some View {
@@ -135,39 +146,29 @@ struct DesktopSheetsView: View {
         let cellValue = store.value(row: row, column: column)
 
         return Text(cellValue)
-            .font(.system(size: 13))
+            .font(.system(size: 12))
             .lineLimit(1)
             .truncationMode(.tail)
             .foregroundStyle(.primary)
             .padding(.horizontal, 5)
             .frame(width: width, height: height, alignment: .leading)
-            .background(isActive ? Color.accentColor.opacity(0.13) : Color.clear)
+            .background(isActive ? Color.accentColor.opacity(0.12) : DesktopShellPalette.canvas)
             .overlay {
                 Rectangle()
                     .strokeBorder(
-                        isActive ? Color.accentColor : Color.primary.opacity(0.08),
-                        lineWidth: isActive ? 2 : 0.5
+                        isActive ? Color.accentColor : DesktopShellPalette.separator.opacity(0.18),
+                        lineWidth: isActive ? 1.5 : 0.5
                     )
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(cellName)
             .accessibilityValue(cellValue.isEmpty ? "Empty" : cellValue)
             .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
-            .accessibilityHint(isActive ? "Selected cell. Type on the iPhone to edit. Use the custom actions to move directly to a neighboring cell." : "Activate to select this cell for editing.")
-            .accessibilityAction {
-                store.select(row: row, column: column)
-            }
-            .accessibilityAction(named: "Move Up") {
-                store.select(row: row - 1, column: column)
-            }
-            .accessibilityAction(named: "Move Down") {
-                store.select(row: row + 1, column: column)
-            }
-            .accessibilityAction(named: "Move Left") {
-                store.select(row: row, column: column - 1)
-            }
-            .accessibilityAction(named: "Move Right") {
-                store.select(row: row, column: column + 1)
-            }
+            .accessibilityHint(isActive ? "Selected cell. Type on the iPhone to edit." : "Activate to select this cell for editing.")
+            .accessibilityAction { store.select(row: row, column: column) }
+            .accessibilityAction(named: "Move Up") { store.select(row: row - 1, column: column) }
+            .accessibilityAction(named: "Move Down") { store.select(row: row + 1, column: column) }
+            .accessibilityAction(named: "Move Left") { store.select(row: row, column: column - 1) }
+            .accessibilityAction(named: "Move Right") { store.select(row: row, column: column + 1) }
     }
 }
