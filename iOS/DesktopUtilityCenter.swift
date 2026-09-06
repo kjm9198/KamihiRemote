@@ -160,93 +160,132 @@ extension DesktopSession {
     }
 }
 
+/// Clipboard counterpart for the desktop. History remains memory-only by design;
+/// the UI now behaves as a regular Kamihi window rather than an iPhone sheet.
 struct DesktopClipboardCenterView: View {
     @EnvironmentObject private var desktop: DesktopSession
     @ObservedObject private var clipboard = DesktopClipboardStore.shared
     @ObservedObject private var notes = DesktopNotesStore.shared
-    @Environment(\.dismiss) private var dismiss
     @State private var confirmClear = false
 
     var body: some View {
-        NavigationStack {
-            List {
-                if clipboard.items.isEmpty {
-                    ContentUnavailableView("Clipboard Empty", systemImage: "doc.on.clipboard", description: Text("Copy text on the iPhone, then tap Refresh. Kamihi keeps this history only in memory."))
-                } else {
-                    ForEach(Array(clipboard.items.enumerated()), id: \.offset) { _, item in
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text(item)
-                                .lineLimit(4)
-                                .textSelection(.enabled)
-                            HStack(spacing: 10) {
-                                Button("Paste", systemImage: "arrow.down.doc") {
-                                    desktop.typeIntoActiveWebView(item)
-                                    dismiss()
-                                }
-                                .buttonStyle(.borderedProminent)
-
-                                Button("Copy", systemImage: "doc.on.doc") {
-                                    clipboard.copy(item)
-                                }
-                                .buttonStyle(.bordered)
-
-                                Button("Notes", systemImage: "note.text.badge.plus") {
-                                    if !notes.text.isEmpty { notes.text += "\n\n" }
-                                    notes.text += item
-                                    desktop.openNotes()
-                                }
-                                .buttonStyle(.bordered)
-
-                                ShareLink(item: item) {
-                                    Image(systemName: "square.and.arrow.up")
-                                }
-                                .buttonStyle(.bordered)
-                                .accessibilityLabel("Share clipboard item")
-                            }
-                            .font(.caption)
-                        }
-                        .padding(.vertical, 4)
-                    }
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "doc.on.clipboard.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.indigo)
+                    .frame(width: 26, height: 26)
+                    .background(Color.indigo.opacity(0.11), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                Text("Clipboard")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button { clipboard.captureIfChanged() } label: {
+                    DesktopToolbarIconLabel("arrow.clockwise")
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Refresh clipboard")
+                Button(role: .destructive) { confirmClear = true } label: {
+                    DesktopToolbarIconLabel("trash")
+                }
+                .buttonStyle(.plain)
+                .disabled(clipboard.items.isEmpty && UIPasteboard.general.items.isEmpty)
+                .accessibilityLabel("Clear clipboard")
+            }
+            .padding(.horizontal, 10)
+            .frame(height: DesktopShellMetrics.toolbarHeight)
+            .desktopAppToolbar()
 
-                Section {
-                    Label("Kamihi does not persist clipboard history. Refresh reads the current iOS pasteboard only when you ask it to or open this screen.", systemImage: "hand.raised.fill")
-                        .font(.footnote)
+            if clipboard.items.isEmpty {
+                VStack(spacing: 10) {
+                    Image(systemName: "doc.on.clipboard")
+                        .font(.system(size: 36, weight: .light))
+                        .foregroundStyle(.tertiary)
+                    Text("Clipboard Empty")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("Copy text on the iPhone, then refresh. Kamihi keeps clipboard history only in memory.")
+                        .font(.system(size: 11.5))
                         .foregroundStyle(.secondary)
-                        .accessibilityLabel("Clipboard privacy. Kamihi does not persist clipboard history. Refresh reads the current iOS pasteboard only when requested or when this screen opens.")
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 380)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(Array(clipboard.items.enumerated()), id: \.offset) { _, item in
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text(item)
+                                    .font(.system(size: 12.5))
+                                    .lineLimit(5)
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                                HStack(spacing: 6) {
+                                    Button("Paste", systemImage: "arrow.down.doc") {
+                                        desktop.typeIntoActiveDesktopField(item)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .controlSize(.small)
+
+                                    Button("Copy", systemImage: "doc.on.doc") { clipboard.copy(item) }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.small)
+
+                                    Button("Notes", systemImage: "note.text.badge.plus") {
+                                        if !notes.text.isEmpty { notes.text += "\n\n" }
+                                        notes.text += item
+                                        desktop.openNotes()
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+
+                                    ShareLink(item: item) {
+                                        Image(systemName: "square.and.arrow.up")
+                                            .frame(width: 26, height: 26)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                    .accessibilityLabel("Share clipboard item")
+                                }
+                            }
+                            .padding(12)
+                            .desktopInsetPanel()
+                        }
+                    }
+                    .padding(14)
                 }
             }
-            .navigationTitle("Clipboard")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Refresh") { clipboard.captureIfChanged() }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Clear", role: .destructive) { confirmClear = true }
-                        .disabled(clipboard.items.isEmpty && UIPasteboard.general.items.isEmpty)
-                }
+
+            HStack(spacing: 7) {
+                Image(systemName: "hand.raised.fill")
+                    .foregroundStyle(.secondary)
+                Text("Clipboard history is not written to disk. Refresh reads the current iOS pasteboard only when requested.")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.secondary)
+                Spacer()
             }
-            .confirmationDialog(
-                "Clear clipboard?",
-                isPresented: $confirmClear,
-                titleVisibility: .visible
-            ) {
-                Button("Clear iOS Clipboard & Kamihi History", role: .destructive) {
-                    UIPasteboard.general.items = []
-                    clipboard.clear()
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This removes Kamihi's in-memory history and clears the current iOS system clipboard. It cannot be undone.")
-            }
+            .padding(.horizontal, 12)
+            .frame(height: 34)
+            .desktopAppToolbar()
         }
+        .background(DesktopShellPalette.canvas)
         .onAppear { clipboard.captureIfChanged() }
+        .confirmationDialog("Clear clipboard?", isPresented: $confirmClear, titleVisibility: .visible) {
+            Button("Clear iOS Clipboard & Kamihi History", role: .destructive) {
+                UIPasteboard.general.items = []
+                clipboard.clear()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes Kamihi's in-memory history and clears the current iOS system clipboard. It cannot be undone.")
+        }
     }
 }
 
+/// Calculator counterpart using the same local parser, wrapped in compact desktop
+/// chrome with large legible controls for the glasses display.
 struct DesktopCalculatorView: View {
     @ObservedObject private var calculator = DesktopCalculatorStore.shared
-    @Environment(\.dismiss) private var dismiss
 
     private let rows = [
         ["7", "8", "9", "÷"],
@@ -257,41 +296,64 @@ struct DesktopCalculatorView: View {
     ]
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "plus.forwardslash.minus")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.orange)
+                    .frame(width: 26, height: 26)
+                    .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                Text("Calculator")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button { calculator.clear() } label: {
+                    DesktopToolbarIconLabel("clear")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear calculator")
+            }
+            .padding(.horizontal, 10)
+            .frame(height: DesktopShellMetrics.toolbarHeight)
+            .desktopAppToolbar()
+
             VStack(spacing: 12) {
-                VStack(alignment: .trailing, spacing: 6) {
+                VStack(alignment: .trailing, spacing: 5) {
                     Text(calculator.expression.isEmpty ? "0" : calculator.expression)
-                        .font(.title3.monospaced())
+                        .font(.system(size: 16, weight: .regular).monospaced())
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                     Text(calculator.result)
-                        .font(.system(size: 42, weight: .semibold, design: .rounded))
+                        .font(.system(size: 38, weight: .medium))
                         .minimumScaleFactor(0.5)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                .padding()
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18))
+                .padding(14)
+                .desktopInsetPanel()
 
                 ForEach(rows, id: \.self) { row in
-                    HStack(spacing: 10) {
+                    HStack(spacing: 8) {
                         ForEach(row, id: \.self) { key in
                             Button { press(key) } label: {
                                 Text(key)
-                                    .font(.title2.weight(.semibold))
-                                    .frame(maxWidth: .infinity, minHeight: 54)
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundStyle(key == "=" ? Color.white : Color.primary)
+                                    .frame(maxWidth: .infinity, minHeight: 46)
+                                    .background(
+                                        key == "=" ? Color.accentColor : Color.primary.opacity(0.065),
+                                        in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                    )
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.plain)
                         }
                     }
                 }
                 Spacer(minLength: 0)
             }
-            .padding()
-            .navigationTitle("Calculator")
-            .toolbar { Button("Done") { dismiss() } }
+            .padding(14)
         }
+        .background(DesktopShellPalette.canvas)
     }
 
     private func press(_ key: String) {
