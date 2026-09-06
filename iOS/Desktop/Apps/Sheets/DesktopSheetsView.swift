@@ -88,42 +88,7 @@ struct DesktopSheetsView: View {
                                 .overlay(alignment: .bottom) { Divider() }
 
                             ForEach(0..<DesktopSheetsStore.columnCount, id: \.self) { column in
-                                let isActive = row == store.activeRow && column == store.activeColumn
-                                Text(store.value(row: row, column: column))
-                                    .font(.system(size: 13))
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                    .foregroundStyle(.primary)
-                                    .padding(.horizontal, 5)
-                                    .frame(width: cellWidth, height: cellHeight, alignment: .leading)
-                                    .background(isActive ? Color.accentColor.opacity(0.13) : Color.clear)
-                                    .overlay {
-                                        Rectangle()
-                                            .strokeBorder(
-                                                isActive ? Color.accentColor : Color.primary.opacity(0.08),
-                                                lineWidth: isActive ? 2 : 0.5
-                                            )
-                                    }
-                                    .accessibilityElement(children: .ignore)
-                                    .accessibilityLabel("\(DesktopSheetsStore.columnName(column))\(row + 1)")
-                                    .accessibilityValue(store.value(row: row, column: column).isEmpty ? "Empty" : store.value(row: row, column: column))
-                                    .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
-                                    .accessibilityHint(isActive ? "Selected cell. Type on the iPhone to edit. Use the custom actions to move directly to a neighboring cell." : "Activate to select this cell for editing.")
-                                    .accessibilityAction {
-                                        store.select(row: row, column: column)
-                                    }
-                                    .accessibilityAction(named: "Move Up") {
-                                        store.select(row: row - 1, column: column)
-                                    }
-                                    .accessibilityAction(named: "Move Down") {
-                                        store.select(row: row + 1, column: column)
-                                    }
-                                    .accessibilityAction(named: "Move Left") {
-                                        store.select(row: row, column: column - 1)
-                                    }
-                                    .accessibilityAction(named: "Move Right") {
-                                        store.select(row: row, column: column + 1)
-                                    }
+                                sheetCell(row: row, column: column, width: cellWidth, height: cellHeight)
                             }
                         }
                     }
@@ -162,5 +127,47 @@ struct DesktopSheetsView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Spreadsheet \(store.workbook.title), active cell \(store.activeCellName)")
+    }
+
+    private func sheetCell(row: Int, column: Int, width: CGFloat, height: CGFloat) -> some View {
+        let isActive = row == store.activeRow && column == store.activeColumn
+        let cellName = "\(DesktopSheetsStore.columnName(column))\(row + 1)"
+        let cellValue = store.value(row: row, column: column)
+
+        return Text(cellValue)
+            .font(.system(size: 13))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 5)
+            .frame(width: width, height: height, alignment: .leading)
+            .background(isActive ? Color.accentColor.opacity(0.13) : Color.clear)
+            .overlay {
+                Rectangle()
+                    .strokeBorder(
+                        isActive ? Color.accentColor : Color.primary.opacity(0.08),
+                        lineWidth: isActive ? 2 : 0.5
+                    )
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(cellName)
+            .accessibilityValue(cellValue.isEmpty ? "Empty" : cellValue)
+            .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
+            .accessibilityHint(isActive ? "Selected cell. Type on the iPhone to edit. Use the custom actions to move directly to a neighboring cell." : "Activate to select this cell for editing.")
+            .accessibilityAction {
+                store.select(row: row, column: column)
+            }
+            .accessibilityAction(named: "Move Up") {
+                store.select(row: row - 1, column: column)
+            }
+            .accessibilityAction(named: "Move Down") {
+                store.select(row: row + 1, column: column)
+            }
+            .accessibilityAction(named: "Move Left") {
+                store.select(row: row, column: column - 1)
+            }
+            .accessibilityAction(named: "Move Right") {
+                store.select(row: row, column: column + 1)
+            }
     }
 }
