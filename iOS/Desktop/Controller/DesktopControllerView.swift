@@ -221,7 +221,8 @@ struct DesktopControllerView: View {
             Label("Trackpad Settings", systemImage: "slider.horizontal.3")
         }
 
-        if let active = desktop.activeWindow {
+        if let active = desktop.activeWindow,
+           ["Browser", "ChatGPT", "YouTube"].contains(active.title) {
             Button {
                 takeoverWindowID = active.id
             } label: {
