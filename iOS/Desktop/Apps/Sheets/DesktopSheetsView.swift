@@ -107,6 +107,11 @@ struct DesktopSheetsView: View {
                                     .accessibilityElement(children: .ignore)
                                     .accessibilityLabel("\(DesktopSheetsStore.columnName(column))\(row + 1)")
                                     .accessibilityValue(store.value(row: row, column: column).isEmpty ? "Empty" : store.value(row: row, column: column))
+                                    .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
+                                    .accessibilityHint(isActive ? "Selected cell. Type on the iPhone to edit." : "Activate to select this cell for editing.")
+                                    .accessibilityAction {
+                                        store.select(row: row, column: column)
+                                    }
                             }
                         }
                     }
