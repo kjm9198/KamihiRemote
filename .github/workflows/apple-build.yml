@@ -9,11 +9,11 @@ on:
 permissions:
   contents: read
 
-# Do not keep compiling superseded commits on the same branch/PR. This reduces
-# stale CI noise while preserving a hard failure for the newest source state.
+# Every commit keeps its own first-attempt evidence. A newer push must never
+# cancel validation for an older SHA; readiness triage compares exact heads.
 concurrency:
-  group: apple-build-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: apple-build-${{ github.workflow }}-${{ github.sha }}
+  cancel-in-progress: false
 
 jobs:
   build:
