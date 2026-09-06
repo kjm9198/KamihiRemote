@@ -2,17 +2,15 @@ import SwiftUI
 
 /// Floating iPadOS-inspired dock on the external display.
 /// Uses the shared semantic shell tokens so the dock follows System/Light/Dark,
-/// Reduce Transparency, and minimum touch-target conventions consistently.
+/// Reduce Transparency, Increase Contrast, and minimum touch-target conventions consistently.
 struct DesktopDockView: View {
     @EnvironmentObject private var desktop: DesktopSession
     @StateObject private var power = DesktopPowerMonitor.shared
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     var onOpenLauncher: () -> Void
 
-    /// Keep the dock centered on the apps that make Kamihi useful as an everyday
-    /// computer. This is intentionally a small launch set rather than permanent
-    /// desktop furniture; every other running app still appears after the divider.
     private let pinnedApps: [(title: String, icon: String, color: Color)] = [
         ("Browser", "globe", Color(red: 0.22, green: 0.58, blue: 0.94)),
         ("Documents", "doc.text.fill", Color(red: 0.38, green: 0.63, blue: 0.95)),
@@ -23,14 +21,10 @@ struct DesktopDockView: View {
         ("YouTube", "play.rectangle.fill", Color(red: 0.94, green: 0.22, blue: 0.28))
     ]
 
-    private var pinnedTitles: Set<String> {
-        Set(pinnedApps.map(\.title))
-    }
+    private var pinnedTitles: Set<String> { Set(pinnedApps.map(\.title)) }
+    private var increasedContrast: Bool { colorSchemeContrast == .increased }
+    private var solidChrome: Bool { reduceTransparency || increasedContrast }
 
-    /// Keep every running desktop app reachable even when it is not one of the
-    /// default pinned apps. This makes the dock act like a real taskbar instead
-    /// of allowing Calculator, Settings, Photos, PDFs, custom web apps, etc. to
-    /// become invisible once another window covers them.
     private var unpinnedRunningTitles: [String] {
         var seen = Set<String>()
         return desktop.windows.compactMap { window in
@@ -46,71 +40,60 @@ struct DesktopDockView: View {
                 Image(systemName: "square.grid.2x2.fill")
                     .font(.system(size: DesktopShellMetrics.compactIcon, weight: .semibold))
                     .foregroundStyle(.primary)
-                    .frame(
-                        width: DesktopShellMetrics.minimumHitTarget,
-                        height: DesktopShellMetrics.minimumHitTarget
-                    )
+                    .frame(width: DesktopShellMetrics.minimumHitTarget, height: DesktopShellMetrics.minimumHitTarget)
                     .background(
-                        DesktopShellPalette.elevatedCanvas.opacity(reduceTransparency ? 1 : 0.72),
+                        DesktopShellPalette.elevatedCanvas.opacity(solidChrome ? 1 : 0.72),
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                     )
+                    .overlay {
+                        if increasedContrast {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(DesktopShellPalette.separator.opacity(0.88), lineWidth: 1)
+                        }
+                    }
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Open App Library")
             .accessibilityHint("Shows all Kamihi Desktop apps")
 
-            Divider()
-                .frame(height: 28)
-                .accessibilityHidden(true)
+            Divider().frame(height: 28).accessibilityHidden(true)
 
             ForEach(pinnedApps, id: \.title) { app in
                 dockAppTile(title: app.title, icon: app.icon, color: app.color)
             }
 
             if !unpinnedRunningTitles.isEmpty {
-                Divider()
-                    .frame(height: 28)
-                    .accessibilityHidden(true)
-
+                Divider().frame(height: 28).accessibilityHidden(true)
                 ForEach(unpinnedRunningTitles, id: \.self) { title in
-                    dockAppTile(
-                        title: title,
-                        icon: symbolForRunningApp(title),
-                        color: DesktopShellPalette.secondaryLabel
-                    )
+                    dockAppTile(title: title, icon: symbolForRunningApp(title), color: DesktopShellPalette.secondaryLabel)
                 }
             }
 
             Spacer(minLength: DesktopShellMetrics.standardSpacing)
-
             statusSurface
         }
         .padding(.horizontal, DesktopShellMetrics.standardSpacing)
         .padding(.vertical, 6)
         .desktopShellChrome(cornerRadius: 28)
         .shadow(
-            color: Color.black.opacity(reduceTransparency ? 0 : (colorScheme == .dark ? 0.26 : 0.12)),
-            radius: reduceTransparency ? 0 : 12,
+            color: Color.black.opacity(solidChrome ? 0 : (colorScheme == .dark ? 0.26 : 0.12)),
+            radius: solidChrome ? 0 : 12,
             x: 0,
-            y: reduceTransparency ? 0 : 6
+            y: solidChrome ? 0 : 6
         )
     }
 
     private var statusSurface: some View {
         HStack(spacing: 10) {
             Label {
-                Text("External")
-                    .font(.caption.weight(.semibold))
+                Text("External").font(.caption.weight(.semibold))
             } icon: {
-                Image(systemName: "display")
-                    .font(.system(size: 13, weight: .semibold))
+                Image(systemName: "display").font(.system(size: 13, weight: .semibold))
             }
             .foregroundStyle(.secondary)
             .labelStyle(.titleAndIcon)
 
-            Divider()
-                .frame(height: 18)
-                .accessibilityHidden(true)
+            Divider().frame(height: 18).accessibilityHidden(true)
 
             HStack(spacing: 5) {
                 Image(systemName: batterySymbol)
@@ -118,7 +101,6 @@ struct DesktopDockView: View {
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(batteryTint)
                     .accessibilityHidden(true)
-
                 Text(power.batteryPercentageText)
                     .font(.caption.monospacedDigit().weight(.semibold))
                     .foregroundStyle(.secondary)
@@ -127,9 +109,7 @@ struct DesktopDockView: View {
             .accessibilityLabel("iPhone battery")
             .accessibilityValue(batteryAccessibilityValue)
 
-            Divider()
-                .frame(height: 18)
-                .accessibilityHidden(true)
+            Divider().frame(height: 18).accessibilityHidden(true)
 
             TimelineView(.periodic(from: .now, by: 60)) { context in
                 Text(context.date, style: .time)
@@ -142,22 +122,22 @@ struct DesktopDockView: View {
         .frame(minHeight: DesktopShellMetrics.minimumHitTarget)
         .padding(.horizontal, 10)
         .background(
-            DesktopShellPalette.elevatedCanvas.opacity(reduceTransparency ? 1 : 0.50),
+            DesktopShellPalette.elevatedCanvas.opacity(solidChrome ? 1 : 0.50),
             in: Capsule()
         )
         .overlay {
-            Capsule()
-                .strokeBorder(DesktopShellPalette.separator.opacity(reduceTransparency ? 0.62 : 0.30), lineWidth: reduceTransparency ? 1 : 0.5)
+            Capsule().strokeBorder(
+                DesktopShellPalette.separator.opacity(increasedContrast ? 0.88 : (reduceTransparency ? 0.62 : 0.30)),
+                lineWidth: solidChrome ? 1 : 0.5
+            )
         }
         .accessibilityElement(children: .contain)
     }
 
     private var batterySymbol: String {
         switch power.batteryState {
-        case .charging:
-            return "battery.100percent.bolt"
-        case .full:
-            return "battery.100percent"
+        case .charging: return "battery.100percent.bolt"
+        case .full: return "battery.100percent"
         case .unknown, .unplugged:
             guard power.batteryLevel >= 0 else { return "battery.0percent" }
             switch power.batteryLevel {
@@ -167,18 +147,13 @@ struct DesktopDockView: View {
             case 0.11..<0.26: return "battery.25percent"
             default: return "battery.0percent"
             }
-        @unknown default:
-            return "battery.0percent"
+        @unknown default: return "battery.0percent"
         }
     }
 
     private var batteryTint: Color {
-        if power.batteryState == .charging || power.batteryState == .full {
-            return .green
-        }
-        if power.batteryLevel >= 0 && power.batteryLevel <= 0.20 {
-            return .orange
-        }
+        if power.batteryState == .charging || power.batteryState == .full { return .green }
+        if power.batteryLevel >= 0 && power.batteryLevel <= 0.20 { return .orange }
         return DesktopShellPalette.secondaryLabel
     }
 
@@ -216,36 +191,33 @@ struct DesktopDockView: View {
             if isRunning, let window = desktop.windows.first(where: { $0.title == title }) {
                 desktop.restoreAndActivate(window.id)
             } else {
-                desktop.openProductivityApp(
-                    title,
-                    frame: CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60)
-                )
+                desktop.openProductivityApp(title, frame: CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60))
             }
         } label: {
             VStack(spacing: 2) {
                 Image(systemName: icon)
                     .font(.system(size: DesktopShellMetrics.compactIcon, weight: .semibold))
                     .foregroundStyle(color)
-                    .frame(
-                        width: DesktopShellMetrics.minimumHitTarget,
-                        height: DesktopShellMetrics.minimumHitTarget
-                    )
+                    .frame(width: DesktopShellMetrics.minimumHitTarget, height: DesktopShellMetrics.minimumHitTarget)
                     .background(
-                        isActive
-                            ? DesktopShellPalette.elevatedCanvas
-                            : DesktopShellPalette.secondaryCanvas.opacity(reduceTransparency ? 1 : 0.62),
+                        isActive ? DesktopShellPalette.elevatedCanvas : DesktopShellPalette.secondaryCanvas.opacity(solidChrome ? 1 : 0.62),
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                     )
                     .overlay {
-                        if isActive {
+                        if isActive || increasedContrast {
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(DesktopShellPalette.accent.opacity(0.36), lineWidth: 1)
+                                .strokeBorder(
+                                    isActive
+                                        ? DesktopShellPalette.accent.opacity(increasedContrast ? 0.72 : 0.36)
+                                        : DesktopShellPalette.separator.opacity(0.82),
+                                    lineWidth: increasedContrast ? 1 : 0.5
+                                )
                         }
                     }
 
                 Capsule()
                     .fill(isRunning ? (isMinimized ? Color.orange : DesktopShellPalette.label) : Color.clear)
-                    .frame(width: isActive ? 10 : 5, height: 4)
+                    .frame(width: isActive ? 10 : 5, height: increasedContrast ? 5 : 4)
                     .accessibilityHidden(true)
             }
             .contentShape(Rectangle())
