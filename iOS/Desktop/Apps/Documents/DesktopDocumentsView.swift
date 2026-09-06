@@ -1,102 +1,144 @@
 import SwiftUI
 
-/// Native long-form writing surface shown on the external desktop.
-/// Editing/navigation is owned by the iPhone controller because external-display
-/// scenes are non-interactive on iOS.
+/// Native long-form writing surface. It keeps the existing local document store
+/// but presents it like a desktop editor: edge-to-edge document sidebar, uniform
+/// toolbar and a centered paper/canvas rather than an oversized iPad card.
 struct DesktopDocumentsView: View {
     @StateObject private var store = DesktopDocumentsStore.shared
 
     var body: some View {
         HStack(spacing: 0) {
             documentSidebar
-                .frame(width: 190)
-
-            Divider()
+                .frame(width: DesktopShellMetrics.sidebarWidth)
 
             documentCanvas
         }
-        .background(KamihiTheme.Colors.surfaceBackground)
+        .background(DesktopShellPalette.canvas)
     }
 
     private var documentSidebar: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label("Documents", systemImage: "doc.text.fill")
-                .font(.headline)
-                .padding(.horizontal, 14)
-                .padding(.top, 14)
-
-            Text("Use the iPhone keyboard to write. New, switch and export controls are under More on the phone.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 14)
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "doc.text.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.blue)
+                Text("Documents")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button {
+                    store.createDocument()
+                } label: {
+                    DesktopToolbarIconLabel("square.and.pencil")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("New document")
+            }
+            .padding(.horizontal, 11)
+            .frame(height: DesktopShellMetrics.toolbarHeight)
+            .desktopAppToolbar()
 
             ScrollView {
-                LazyVStack(spacing: 6) {
+                LazyVStack(spacing: 4) {
                     ForEach(store.documents) { document in
-                        HStack(spacing: 8) {
-                            Image(systemName: document.id == store.activeDocumentID ? "doc.text.fill" : "doc.text")
-                                .foregroundStyle(document.id == store.activeDocumentID ? Color.accentColor : .secondary)
-                                .accessibilityHidden(true)
+                        Button {
+                            store.select(document.id)
+                        } label: {
+                            HStack(spacing: 9) {
+                                Image(systemName: document.id == store.activeDocumentID ? "doc.text.fill" : "doc.text")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(document.id == store.activeDocumentID ? Color.blue : Color.secondary)
+                                    .frame(width: 20)
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(document.title)
-                                    .font(.subheadline.weight(document.id == store.activeDocumentID ? .semibold : .regular))
-                                    .lineLimit(2)
-                                Text(document.updatedAt, style: .relative)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(document.title)
+                                        .font(.system(size: 12.5, weight: document.id == store.activeDocumentID ? .semibold : .medium))
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+                                    Text(document.updatedAt, style: .relative)
+                                        .font(.system(size: 9.5))
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer(minLength: 0)
                             }
-                            Spacer(minLength: 0)
+                            .padding(.horizontal, 9)
+                            .frame(height: 46)
+                            .background(
+                                document.id == store.activeDocumentID ? Color.accentColor.opacity(0.14) : Color.clear,
+                                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            )
+                            .contentShape(Rectangle())
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(
-                            document.id == store.activeDocumentID ? Color.accentColor.opacity(0.10) : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        )
-                        .accessibilityElement(children: .combine)
-                        .accessibilityValue(document.id == store.activeDocumentID ? "Active document" : "")
+                        .buttonStyle(.plain)
+                        .accessibilityValue(document.id == store.activeDocumentID ? "Selected" : "")
                     }
                 }
-                .padding(.horizontal, 6)
+                .padding(7)
             }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Saved on this iPhone", systemImage: "iphone")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Text("Use the phone keyboard to edit the active document.")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(11)
         }
-        .background(Color.primary.opacity(0.035))
+        .desktopSidebarSurface()
     }
 
+    @ViewBuilder
     private var documentCanvas: some View {
-        Group {
-            if let document = store.activeDocument {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(document.title)
-                                .font(.system(size: 28, weight: .bold, design: .rounded))
-                                .textSelection(.enabled)
-                            Text("Updated \(document.updatedAt.formatted(date: .abbreviated, time: .shortened))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+        if let document = store.activeDocument {
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Text(document.title)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .lineLimit(1)
+                    Spacer()
+                    Text("Edited \(document.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.secondary)
+                    Button {
+                        store.createDocument()
+                    } label: {
+                        DesktopToolbarIconLabel("plus")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("New document")
+                }
+                .padding(.horizontal, 12)
+                .frame(height: DesktopShellMetrics.toolbarHeight)
+                .desktopAppToolbar()
 
-                        Divider()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(document.title)
+                            .font(.system(size: 25, weight: .bold))
+                            .tracking(-0.5)
+                            .textSelection(.enabled)
+
+                        Rectangle()
+                            .fill(DesktopShellPalette.separator.opacity(0.20))
+                            .frame(height: 0.5)
 
                         if document.body.isEmpty {
-                            VStack(spacing: 12) {
-                                Image(systemName: "keyboard.badge.ellipsis")
-                                    .font(.system(size: 34, weight: .medium))
-                                    .foregroundStyle(.secondary)
+                            VStack(spacing: 10) {
+                                Image(systemName: "keyboard")
+                                    .font(.system(size: 30, weight: .light))
+                                    .foregroundStyle(.tertiary)
                                 Text("Start writing from the iPhone keyboard")
-                                    .font(.headline)
-                                Text("Your document saves locally as you type. Use More on the iPhone to create, switch, export or delete documents.")
-                                    .font(.subheadline)
+                                    .font(.system(size: 14, weight: .semibold))
+                                Text("Your document saves locally as you type and returns with your desktop session.")
+                                    .font(.system(size: 11.5))
                                     .foregroundStyle(.secondary)
                                     .multilineTextAlignment(.center)
-                                    .frame(maxWidth: 480)
                             }
-                            .frame(maxWidth: .infinity, minHeight: 260)
+                            .frame(maxWidth: .infinity, minHeight: 280)
                         } else {
                             Text(document.body)
-                                .font(.system(size: 17))
+                                .font(.system(size: 16))
                                 .foregroundStyle(.primary)
                                 .textSelection(.enabled)
                                 .lineSpacing(5)
@@ -104,17 +146,33 @@ struct DesktopDocumentsView: View {
                                 .accessibilityLabel("Document body")
                         }
                     }
-                    .padding(28)
-                    .frame(maxWidth: 760, alignment: .topLeading)
+                    .padding(.horizontal, 40)
+                    .padding(.vertical, 34)
+                    .frame(maxWidth: 760, minHeight: 520, alignment: .topLeading)
+                    .background(DesktopShellPalette.canvas, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(DesktopShellPalette.separator.opacity(0.16), lineWidth: 0.5)
+                    }
+                    .shadow(color: Color.black.opacity(0.07), radius: 14, y: 6)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 24)
                     .frame(maxWidth: .infinity, alignment: .top)
                 }
-            } else {
-                ContentUnavailableView(
-                    "No document selected",
-                    systemImage: "doc.text",
-                    description: Text("Create a document from More on the iPhone controller.")
-                )
+                .background(DesktopShellPalette.secondaryCanvas.opacity(0.55))
             }
+        } else {
+            VStack(spacing: 10) {
+                Image(systemName: "doc.text")
+                    .font(.system(size: 34, weight: .light))
+                    .foregroundStyle(.tertiary)
+                Text("No document selected")
+                    .font(.system(size: 15, weight: .semibold))
+                Button("New Document") { store.createDocument() }
+                    .buttonStyle(.borderedProminent)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(DesktopShellPalette.canvas)
         }
     }
 }
