@@ -142,17 +142,28 @@ extension DesktopBrowserState {
             }.first ?? ""
             guard !href.isEmpty else { continue }
 
-            let decodedURL = decodeBasicHTMLEntities(href).trimmingCharacters(in: .whitespacesAndNewlines)
+            let decodedURL = decodeSafariHTMLEntities(href).trimmingCharacters(in: .whitespacesAndNewlines)
             guard seenRawURLs.insert(decodedURL).inserted else { continue }
 
             var title = ""
             if let titleRange = Range(match.range(at: 4), in: html) {
                 title = String(html[titleRange])
                     .replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
-                title = decodeBasicHTMLEntities(title)
+                title = decodeSafariHTMLEntities(title)
             }
             results.append(.init(title: title, url: decodedURL))
         }
+    }
+
+    private static func decodeSafariHTMLEntities(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&apos;", with: "'")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&nbsp;", with: " ")
     }
 
     private static func normalizedBookmarkHTML(_ bookmarks: [(String, URL)]) -> String {
