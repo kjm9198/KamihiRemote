@@ -261,8 +261,77 @@ public final class DesktopBrowserState: ObservableObject {
     /// sanitized through the same persistence filter as native bookmarks, and
     /// duplicates already present in Kamihi are ignored. This intentionally does
     /// not touch cookies, passwords, tokens or another browser's private storage.
+    ///
+    /// Supports two formats:
+    /// 1. Netscape Bookmark HTML (e.g. Chrome/Firefox export)
+    /// 2. Safari plist (binary or XML property list with nested Children arrays)
     @discardableResult
     public func importBookmarksHTML(_ data: Data) throws -> Int {
+        // Try plist first (Safari's native export format on iOS/macOS)
+        if let plistResult = try? importFromPlist(data), plistResult > 0 {
+            return plistResult
+        }
+
+        // Fall back to HTML Netscape bookmarks format
+        return try importFromHTML(data)
+    }
+
+    private func importFromPlist(_ data: Data) throws -> Int {
+        guard let plist = try? PropertyListSerialization.propertyList(
+            from: data,
+            options: [],
+            format: nil
+        ) as? [String: Any] else {
+            throw BookmarkImportError.unreadableFile
+        }
+
+        var existingURLs = Set(bookmarks.map(\.url))
+        var imported: [Bookmark] = []
+        extractBookmarksFromPlistNode(plist, into: &imported, existingURLs: &existingURLs)
+
+        guard !imported.isEmpty else {
+            throw BookmarkImportError.noSupportedBookmarks
+        }
+
+        bookmarks.append(contentsOf: imported)
+        persistLibrary()
+        return imported.count
+    }
+
+    private func extractBookmarksFromPlistNode(
+        _ node: [String: Any],
+        into results: inout [Bookmark],
+        existingURLs: inout Set<URL>
+    ) {
+        let bookmarkType = node["WebBookmarkType"] as? String
+
+        if bookmarkType == "WebBookmarkTypeLeaf",
+           let urlString = node["URLString"] as? String,
+           let rawURL = URL(string: urlString),
+           let safeURL = Self.historySafeURL(rawURL),
+           !existingURLs.contains(safeURL) {
+            let title: String
+            if let uriDict = node["URIDictionary"] as? [String: Any],
+               let t = uriDict["title"] as? String, !t.isEmpty {
+                title = t
+            } else if let t = node["Title"] as? String, !t.isEmpty {
+                title = t
+            } else {
+                title = safeURL.host?.replacingOccurrences(of: "www.", with: "") ?? "Bookmark"
+            }
+            results.append(Bookmark(title: title, url: safeURL))
+            existingURLs.insert(safeURL)
+        }
+
+        // Recurse into Children arrays (Safari's folder structure)
+        if let children = node["Children"] as? [[String: Any]] {
+            for child in children {
+                extractBookmarksFromPlistNode(child, into: &results, existingURLs: &existingURLs)
+            }
+        }
+    }
+
+    private func importFromHTML(_ data: Data) throws -> Int {
         guard let html = String(data: data, encoding: .utf8)
                 ?? String(data: data, encoding: .windowsCP1252) else {
             throw BookmarkImportError.unreadableFile

@@ -223,12 +223,21 @@ final class DesktopSession: ObservableObject {
         let normalizedSpeed = min(max((distance - 2) / 22, 0), 1)
         let acceleration = 0.82 + (0.78 * normalizedSpeed)
         let effectiveSensitivity = sensitivity * acceleration
+        // Keep horizontal and vertical pointer velocity isometric in visual screen space.
+        // On a 16:9 canvas (1920x1080), normalized Y scales by the aspect ratio so that
+        // 1pt of trackpad movement produces the exact same physical pixel delta on both axes.
+        let referenceWidth: CGFloat = 600.0
+        let aspectRatio: CGFloat = 16.0 / 9.0
+        let referenceHeight: CGFloat = referenceWidth / aspectRatio
 
-        let dx = delta.width / 430 * effectiveSensitivity
-        let dy = delta.height / 800 * effectiveSensitivity
+        let dx = (delta.width / referenceWidth) * effectiveSensitivity
+        let dy = (delta.height / referenceHeight) * effectiveSensitivity
         cursor.x = min(max(cursor.x + dx, 0.006), 0.994)
         cursor.y = min(max(cursor.y + dy, 0.006), 0.994)
         updateCursorAffordance()
+        if DesktopDockHitRegistry.shared.isLauncherOpen {
+            DesktopDockHitRegistry.shared.updateHover(at: cursor)
+        }
     }
 
     func primaryClick() {
@@ -424,8 +433,18 @@ final class DesktopSession: ObservableObject {
         return window.normalizedFrame
     }
 
+    func isCursorOverTitleBar() -> Bool {
+        guard let id = topWindow(at: cursor),
+              let window = windows.first(where: { $0.id == id }) else { return false }
+        let frame = effectiveFrame(for: window)
+        let titleHeight = DesktopWindowChrome.titleBarHeight(for: frame)
+        guard cursor.y >= frame.minY, cursor.y <= frame.minY + titleHeight else { return false }
+        return cursor.x >= frame.minX && cursor.x < (frame.maxX - 0.105)
+    }
+
     private func resizeHit(at point: CGPoint) -> (id: UUID, edge: ResizeEdge)? {
-        let threshold: CGFloat = 0.012
+        let threshold: CGFloat = 0.024
+        let cornerThreshold: CGFloat = 0.036
 
         for window in windows.reversed() where !window.isMinimized && !window.isMaximized {
             let frame = window.normalizedFrame
@@ -437,10 +456,15 @@ final class DesktopSession: ObservableObject {
             let nearTop = abs(point.y - frame.minY) <= threshold
             let nearBottom = abs(point.y - frame.maxY) <= threshold
 
-            if nearLeft && nearTop { return (window.id, .topLeft) }
-            if nearRight && nearTop { return (window.id, .topRight) }
-            if nearLeft && nearBottom { return (window.id, .bottomLeft) }
-            if nearRight && nearBottom { return (window.id, .bottomRight) }
+            let cornerLeft = abs(point.x - frame.minX) <= cornerThreshold
+            let cornerRight = abs(point.x - frame.maxX) <= cornerThreshold
+            let cornerTop = abs(point.y - frame.minY) <= cornerThreshold
+            let cornerBottom = abs(point.y - frame.maxY) <= cornerThreshold
+
+            if cornerLeft && cornerTop { return (window.id, .topLeft) }
+            if cornerRight && cornerTop { return (window.id, .topRight) }
+            if cornerLeft && cornerBottom { return (window.id, .bottomLeft) }
+            if cornerRight && cornerBottom { return (window.id, .bottomRight) }
             if nearLeft { return (window.id, .left) }
             if nearRight { return (window.id, .right) }
             if nearTop { return (window.id, .top) }
@@ -454,9 +478,9 @@ final class DesktopSession: ObservableObject {
             cursorInteractionState = .resizing(edge: edge.rawValue)
         } else if dragWindowID != nil {
             cursorInteractionState = .dragging
+        } else if let edge = resizeEdgeAtCursor() {
+            cursorInteractionState = .resizing(edge: edge.rawValue)
         } else {
-            // Merely hovering an edge never implies that a one-finger move will
-            // resize it; resize feedback appears only after the two-finger resize begins.
             cursorInteractionState = .defaultState
         }
     }

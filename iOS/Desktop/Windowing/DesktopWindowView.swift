@@ -160,11 +160,11 @@ struct DesktopWindowView<Content: View>: View {
     }
 
     private var titleBar: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: 10) {
             Image(systemName: appIcon(for: window.title))
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(isActive ? Color.primary : Color.secondary)
-                .frame(width: 24, height: 24)
+                .frame(width: 26, height: 26)
                 .background(Color.primary.opacity(isActive ? 0.08 : 0.04), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
             Text(window.title)
@@ -172,47 +172,65 @@ struct DesktopWindowView<Content: View>: View {
                 .foregroundStyle(isActive ? Color.primary : Color.secondary)
                 .lineLimit(1)
 
-            Spacer(minLength: 12)
+            Spacer(minLength: 16)
 
-            HStack(spacing: 5) {
-                chromeButton(
+            // macOS Traffic Light Chrome Cluster
+            // Partitioned to match DesktopWindowChrome:
+            //   - Close: rightmost (center ~30px / 0.016 from right edge)
+            //   - Maximize: middle (center ~86px / 0.045 from right edge)
+            //   - Minimize: leftmost (center ~142px / 0.074 from right edge)
+            HStack(spacing: 24) {
+                chromeTrafficButton(
                     symbol: "minus",
+                    color: Color(red: 1.00, green: 0.74, blue: 0.18), // macOS Yellow
                     accessibilityLabel: "Minimize \(window.title)"
                 ) {
                     desktop.minimize(window.id)
                 }
 
-                chromeButton(
+                chromeTrafficButton(
                     symbol: window.isMaximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                    color: Color(red: 0.15, green: 0.79, blue: 0.25), // macOS Green
                     accessibilityLabel: window.isMaximized ? "Restore \(window.title)" : "Maximize \(window.title)"
                 ) {
                     desktop.toggleMaximize(window.id)
                 }
 
-                chromeButton(
+                chromeTrafficButton(
                     symbol: "xmark",
+                    color: Color(red: 1.00, green: 0.37, blue: 0.34), // macOS Red
                     accessibilityLabel: "Close \(window.title)"
                 ) {
                     desktop.close(window.id)
                 }
             }
+            .padding(.trailing, 14)
         }
-        .padding(.leading, 9)
-        .padding(.trailing, 8)
+        .padding(.leading, 12)
     }
 
-    private func chromeButton(
+    private func chromeTrafficButton(
         symbol: String,
+        color: Color,
         accessibilityLabel: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(.primary.opacity(isActive ? 0.82 : 0.52))
-                .frame(width: 27, height: 27)
-                .background(Color.primary.opacity(isActive ? 0.075 : 0.035), in: Circle())
-                .contentShape(Circle())
+            ZStack {
+                Circle()
+                    .fill(isActive ? color : Color.primary.opacity(0.14))
+                    .frame(width: 14, height: 14)
+                    .overlay {
+                        Circle()
+                            .strokeBorder(isActive ? color.opacity(0.40) : Color.clear, lineWidth: 1)
+                    }
+
+                Image(systemName: symbol)
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(Color.black.opacity(isActive ? 0.70 : 0.30))
+            }
+            .frame(width: 32, height: 32)
+            .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)

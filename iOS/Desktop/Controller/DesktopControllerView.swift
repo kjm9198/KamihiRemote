@@ -9,6 +9,7 @@ struct DesktopControllerView: View {
     @EnvironmentObject private var desktop: DesktopSession
     @StateObject private var engine = TrackpadEngine()
     @StateObject private var settings = TrackpadSettings.shared
+    @ObservedObject private var coordinator = ExternalDisplayCoordinator.shared
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("desktop.controller.controlsLeading") private var controlsLeading = false
@@ -18,6 +19,11 @@ struct DesktopControllerView: View {
     @State private var showCommandPalette = false
     @State private var showTrackpadSettings = false
     @State private var showKeyboard = false
+    @State private var showSafariImport = false
+    @State private var showDataSafetyInfo = false
+    @AppStorage("hasCompletedDesktopOnboarding") private var hasCompletedDesktopOnboarding = false
+    @State private var showOnboardingSheet = false
+    @State private var safariImportResultMessage: String?
     /// Keyboard input belongs to one explicit desktop window. If focus changes,
     /// close it rather than accidentally sending the next character elsewhere.
     @State private var keyboardWindowID: UUID?
@@ -61,11 +67,63 @@ struct DesktopControllerView: View {
             PhoneTakeoverView(windowID: item.id)
                 .environmentObject(desktop)
         }
+        .sheet(isPresented: $showDataSafetyInfo) {
+            DesktopDataSafetySheet()
+        }
+        .sheet(isPresented: $showOnboardingSheet) {
+            DesktopOnboardingSheet()
+        }
+        .fileImporter(
+            isPresented: $showSafariImport,
+            allowedContentTypes: [.html, .propertyList, .data]
+        ) { result in
+            switch result {
+            case .success(let url):
+                guard url.startAccessingSecurityScopedResource() else {
+                    safariImportResultMessage = "Could not access the selected file."
+                    return
+                }
+                defer { url.stopAccessingSecurityScopedResource() }
+                do {
+                    let data = try Data(contentsOf: url)
+                    let count = try DesktopBrowserState.shared.importBookmarksHTML(data)
+                    safariImportResultMessage = "Successfully imported \(count) bookmarks from Safari!"
+                    if settings.hapticsEnabled { Haptics.touchTap() }
+                } catch {
+                    safariImportResultMessage = "Import failed: \(error.localizedDescription)"
+                }
+            case .failure(let error):
+                safariImportResultMessage = "Selection cancelled: \(error.localizedDescription)"
+            }
+        }
+        .alert(
+            "Safari Bookmarks Import",
+            isPresented: Binding(
+                get: { safariImportResultMessage != nil },
+                set: { if !$0 { safariImportResultMessage = nil } }
+            )
+        ) {
+            Button("OK") { safariImportResultMessage = nil }
+        } message: {
+            Text(safariImportResultMessage ?? "")
+        }
         .onAppear {
             engine.onThreeFingerSwipeUp = { showOverview = true }
             engine.onThreeFingerSwipeLeft = { desktop.cycleWindow(forward: false) }
             engine.onThreeFingerSwipeRight = { desktop.cycleWindow(forward: true) }
+            engine.onLeftEdgeSwipeBack = {
+                desktop.goBackInActiveBrowser()
+                if settings.hapticsEnabled { Haptics.touchTap() }
+            }
             if desktop.wantsPhoneKeyboard { setKeyboardVisible(true) }
+            if !hasCompletedDesktopOnboarding {
+                showOnboardingSheet = true
+            }
+        }
+        .onChange(of: coordinator.isConnected) { _, isConnected in
+            if isConnected && !hasCompletedDesktopOnboarding {
+                showOnboardingSheet = true
+            }
         }
         .onChange(of: desktop.wantsPhoneKeyboard) { _, wantsKeyboard in
             if wantsKeyboard && !showKeyboard {
@@ -235,6 +293,26 @@ struct DesktopControllerView: View {
             if didPresent && settings.hapticsEnabled { Haptics.touchTap() }
         } label: {
             Label("Capture Desktop", systemImage: "camera.viewfinder")
+        }
+
+        Button {
+            showOnboardingSheet = true
+        } label: {
+            Label("Desktop Tutorial & Setup", systemImage: "sparkles")
+        }
+
+        Divider()
+
+        Button {
+            showSafariImport = true
+        } label: {
+            Label("Import Safari Bookmarks", systemImage: "safari")
+        }
+
+        Button {
+            showDataSafetyInfo = true
+        } label: {
+            Label("Data Privacy & Security", systemImage: "lock.shield")
         }
 
         Button(action: {}) {

@@ -10,6 +10,8 @@ struct ExternalDesktopCanvasView: View {
     @StateObject private var power = DesktopPowerMonitor.shared
     @State private var showLauncher = false
     @State private var showDisplayCalibrationGuides = false
+    @State private var showWallpaperPicker = false
+    @State private var showWidgets = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
@@ -19,7 +21,7 @@ struct ExternalDesktopCanvasView: View {
             let insets = display.safeInsets(for: outer.size)
 
             ZStack {
-                Color.black
+                DesktopWallpaperView()
                     .ignoresSafeArea()
 
                 desktopSurface
@@ -41,65 +43,145 @@ struct ExternalDesktopCanvasView: View {
             }
         }
         .preferredColorScheme(appearance.preferredColorScheme)
+        .sheet(isPresented: $showWallpaperPicker) {
+            DesktopWallpaperPickerView()
+        }
         .onAppear { presentDisplayCalibrationGuides() }
         .onChange(of: display.metricsRevision) { _, _ in presentDisplayCalibrationGuides() }
     }
 
     private var desktopSurface: some View {
-        ZStack {
-            if let target = desktop.snapPreviewTarget {
-                snapPreview(for: target)
-                    .transition(.opacity)
+        GeometryReader { surfaceGeo in
+            let surfaceSize = surfaceGeo.size
+
+            ZStack {
+                DesktopWallpaperView()
+
+                if showWidgets {
+                    HStack {
+                        Spacer()
+                        DesktopWidgetsView()
+                    }
                     .zIndex(1)
-            }
-
-            ForEach(desktop.windows) { window in
-                DesktopWindowView(window: window, isActive: desktop.activeWindowID == window.id) {
-                    windowContent(for: window.title)
                 }
-                .zIndex(desktop.activeWindowID == window.id ? 4 : 2)
-            }
 
-            VStack {
-                Spacer()
-                DesktopDockView(onOpenLauncher: { showLauncher.toggle() })
-                    .padding(.bottom, 12)
-            }
-            .zIndex(6)
+                if let target = desktop.snapPreviewTarget {
+                    snapPreview(for: target)
+                        .transition(.opacity)
+                        .zIndex(2)
+                }
 
-            DesktopCursorView(
-                cursorPosition: desktop.cursor,
-                cursorStyle: settings.cursorStyle,
-                interactionState: desktop.cursorInteractionState
-            )
-            .zIndex(20)
-        }
-        .animation(shouldSuppressDecorativeMotion ? nil : KamihiTheme.Animation.fast, value: desktop.snapPreviewTarget)
-        .animation(shouldSuppressDecorativeMotion ? nil : KamihiTheme.Animation.fast, value: showLauncher)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipShape(Rectangle())
-        .overlay {
-            if showLauncher {
-                (colorScheme == .dark ? Color.black.opacity(0.32) : Color.black.opacity(0.18))
-                    .onTapGesture { showLauncher = false }
+                ForEach(desktop.windows) { window in
+                    DesktopWindowView(window: window, isActive: desktop.activeWindowID == window.id) {
+                        windowContent(for: window.title)
+                    }
+                    .zIndex(desktop.activeWindowID == window.id ? 4 : 3)
+                }
 
-                DesktopAppLauncherView()
-                    .environmentObject(desktop)
-                    .frame(maxWidth: 600, maxHeight: 420)
-                    .clipShape(RoundedRectangle(cornerRadius: KamihiTheme.Radius.lg, style: .continuous))
-                    .shadow(
-                        color: .black.opacity(shouldSuppressDecorativeMotion ? 0 : (colorScheme == .dark ? 0.35 : 0.18)),
-                        radius: shouldSuppressDecorativeMotion ? 0 : 24,
-                        y: shouldSuppressDecorativeMotion ? 0 : 12
+                VStack {
+                    DesktopMenuBarView(
+                        showWallpaperPicker: $showWallpaperPicker,
+                        showWidgets: $showWidgets
                     )
+
+                    Spacer()
+
+                    DesktopDockView(
+                        onOpenLauncher: { showLauncher.toggle() },
+                        onOpenWallpaperPicker: { showWallpaperPicker.toggle() }
+                    )
+                    .padding(.bottom, 10)
+                }
+                .zIndex(10)
             }
-        }
-        .overlay {
-            if display.hasCalibration {
-                Rectangle()
-                    .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+            .coordinateSpace(name: "desktopSurface")
+            .onPreferenceChange(DockGeometryPreferenceKey.self) { preferences in
+                guard surfaceSize.width > 0, surfaceSize.height > 0 else { return }
+                let entries = preferences.map { pref in
+                    let frame = pref.frameInSurface
+                    let normalized = CGRect(
+                        x: frame.minX / surfaceSize.width,
+                        y: frame.minY / surfaceSize.height,
+                        width: frame.width / surfaceSize.width,
+                        height: frame.height / surfaceSize.height
+                    )
+                    return DesktopDockHitRegistry.Entry(target: pref.target, normalizedFrame: normalized)
+                }
+                DesktopDockHitRegistry.shared.update(entries: entries)
+            }
+            .onAppear {
+                DesktopDockHitRegistry.shared.onToggleLauncher = {
+                    showLauncher.toggle()
+                    DesktopDockHitRegistry.shared.isLauncherOpen = showLauncher
+                }
+                DesktopDockHitRegistry.shared.onDismissLauncher = {
+                    showLauncher = false
+                    DesktopDockHitRegistry.shared.isLauncherOpen = false
+                }
+            }
+            .onChange(of: showLauncher) { _, isOpen in
+                DesktopDockHitRegistry.shared.isLauncherOpen = isOpen
+            }
+            .animation(shouldSuppressDecorativeMotion ? nil : KamihiTheme.Animation.fast, value: desktop.snapPreviewTarget)
+            .animation(shouldSuppressDecorativeMotion ? nil : KamihiTheme.Animation.fast, value: showLauncher)
+            .animation(shouldSuppressDecorativeMotion ? nil : KamihiTheme.Animation.fast, value: showWallpaperPicker)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipShape(Rectangle())
+            .overlay {
+                if showLauncher {
+                    (colorScheme == .dark ? Color.black.opacity(0.40) : Color.black.opacity(0.20))
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            showLauncher = false
+                            DesktopDockHitRegistry.shared.isLauncherOpen = false
+                        }
+
+                    DesktopAppLauncherView()
+                        .environmentObject(desktop)
+                        .frame(maxWidth: 860, maxHeight: 560)
+                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.22), lineWidth: 1)
+                        }
+                        .shadow(
+                            color: .black.opacity(shouldSuppressDecorativeMotion ? 0 : 0.40),
+                            radius: shouldSuppressDecorativeMotion ? 0 : 36,
+                            y: shouldSuppressDecorativeMotion ? 0 : 18
+                        )
+                }
+
+                if showWallpaperPicker {
+                    (colorScheme == .dark ? Color.black.opacity(0.35) : Color.black.opacity(0.20))
+                        .onTapGesture { showWallpaperPicker = false }
+
+                    DesktopWallpaperPickerView()
+                        .clipShape(RoundedRectangle(cornerRadius: KamihiTheme.Radius.lg, style: .continuous))
+                        .shadow(
+                            color: .black.opacity(shouldSuppressDecorativeMotion ? 0 : (colorScheme == .dark ? 0.35 : 0.18)),
+                            radius: shouldSuppressDecorativeMotion ? 0 : 24,
+                            y: shouldSuppressDecorativeMotion ? 0 : 12
+                        )
+                }
+            }
+            .overlay {
+                if display.hasCalibration {
+                    Rectangle()
+                        .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+            .overlay {
+                // Software cursor elevated to top-level overlay with zIndex(999)
+                // so it always floats visibly and smoothly above windows, Launchpad, and modals.
+                DesktopCursorView(
+                    cursorPosition: desktop.cursor,
+                    cursorStyle: settings.cursorStyle,
+                    interactionState: desktop.cursorInteractionState
+                )
+                .allowsHitTesting(false)
+                .zIndex(999)
             }
         }
     }

@@ -227,6 +227,207 @@ public enum DesktopRefactorTests {
             results.append(TestResult(name: "Close And Reopen App Lifecycle", passed: false, message: error.localizedDescription))
         }
 
+        // Test 10: Dock Hit Testing & Edge Resize Detection
+        do {
+            let registry = DesktopDockHitRegistry.shared
+            registry.update(entries: [
+                DesktopDockHitRegistry.Entry(
+                    target: .app(title: "Browser"),
+                    normalizedFrame: CGRect(x: 0.40, y: 0.90, width: 0.05, height: 0.05)
+                )
+            ])
+
+            guard registry.hitTest(at: CGPoint(x: 0.42, y: 0.92)) == .app(title: "Browser") else {
+                throw NSError(domain: "Test", code: 15, userInfo: [NSLocalizedDescriptionKey: "Dock hit test failed to match registered app tile"])
+            }
+            guard registry.hitTest(at: CGPoint(x: 0.10, y: 0.10)) == nil else {
+                throw NSError(domain: "Test", code: 16, userInfo: [NSLocalizedDescriptionKey: "Dock hit test falsely matched point outside dock"])
+            }
+
+            let desktop = DesktopSession.shared
+            let testWindowID = desktop.openProductivityApp(
+                "Resize Test Window",
+                frame: CGRect(x: 0.20, y: 0.20, width: 0.50, height: 0.50)
+            )
+            desktop.cursor = CGPoint(x: 0.705, y: 0.40)
+            guard let edge = desktop.resizeEdgeAtCursor(), edge == .right else {
+                desktop.close(testWindowID)
+                throw NSError(domain: "Test", code: 17, userInfo: [NSLocalizedDescriptionKey: "Failed to detect .right resize edge near window border"])
+            }
+            desktop.close(testWindowID)
+            results.append(TestResult(name: "Dock Hit Testing & Edge Resize Detection", passed: true, message: "OK"))
+        } catch {
+            results.append(TestResult(name: "Dock Hit Testing & Edge Resize Detection", passed: false, message: error.localizedDescription))
+        }
+
+        // Test 11: Isometric Cursor Velocity and Maximize Window Integrity
+        do {
+            let desktop = DesktopSession.shared
+            desktop.cursor = CGPoint(x: 0.5, y: 0.5)
+
+            let startCursor = desktop.cursor
+            desktop.movePointer(delta: CGSize(width: 10, height: 0), sensitivity: 1.0)
+            let deltaDisplayX = (desktop.cursor.x - startCursor.x) * 1920
+
+            desktop.cursor = CGPoint(x: 0.5, y: 0.5)
+            desktop.movePointer(delta: CGSize(width: 0, height: 10), sensitivity: 1.0)
+            let deltaDisplayY = (desktop.cursor.y - startCursor.y) * 1080
+
+            guard abs(deltaDisplayX - deltaDisplayY) < 0.05 else {
+                throw NSError(domain: "Test", code: 18, userInfo: [NSLocalizedDescriptionKey: "Cursor velocity is not isometric: X=\(deltaDisplayX)px, Y=\(deltaDisplayY)px"])
+            }
+
+            let testWindowID = desktop.openProductivityApp(
+                "Maximize Test Window",
+                frame: CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60)
+            )
+            guard let window = desktop.windows.first(where: { $0.id == testWindowID }) else {
+                throw NSError(domain: "Test", code: 19, userInfo: [NSLocalizedDescriptionKey: "Window not found"])
+            }
+            let frame = desktop.effectiveFrame(for: window)
+            let titleHeight = DesktopWindowChrome.titleBarHeight(for: frame)
+            let extent = min(max(frame.width * 0.066, 0.020), 0.030)
+            let gap = min(max(frame.width * 0.012, 0.004), 0.008)
+            let trailing = min(max(frame.width * 0.018, 0.006), 0.012)
+            let closeX = frame.maxX - trailing - extent / 2
+            let maximizeX = closeX - extent - gap
+
+            desktop.cursor = CGPoint(x: maximizeX, y: frame.minY + titleHeight / 2)
+            desktop.clickAtCursor()
+
+            guard let maximizedWindow = desktop.windows.first(where: { $0.id == testWindowID }),
+                  maximizedWindow.isMaximized == true else {
+                desktop.close(testWindowID)
+                throw NSError(domain: "Test", code: 20, userInfo: [NSLocalizedDescriptionKey: "Clicking maximize closed or failed to maximize window"])
+            }
+
+            desktop.close(testWindowID)
+            results.append(TestResult(name: "Isometric Cursor Velocity and Maximize Window Integrity", passed: true, message: "OK"))
+        } catch {
+            results.append(TestResult(name: "Isometric Cursor Velocity and Maximize Window Integrity", passed: false, message: error.localizedDescription))
+        }
+
+        // Test 12: Modern Glass Desktop, 120Hz Default, App Library Hit-Testing & Wallpapers
+        do {
+            // Check 1: 120Hz default preference
+            let coordinator = ExternalDisplayCoordinator.shared
+            guard coordinator.preferredRefreshRate >= 120 else {
+                throw NSError(domain: "Test", code: 21, userInfo: [NSLocalizedDescriptionKey: "preferredRefreshRate does not default to 120Hz: \(coordinator.preferredRefreshRate)"])
+            }
+
+            // Check 2: Wallpaper manager presets
+            let wpManager = DesktopWallpaperManager.shared
+            guard wpManager.wallpapers.count >= 6 else {
+                throw NSError(domain: "Test", code: 22, userInfo: [NSLocalizedDescriptionKey: "Wallpaper presets insufficient: \(wpManager.wallpapers.count)"])
+            }
+            guard !wpManager.currentWallpaper.name.isEmpty else {
+                throw NSError(domain: "Test", code: 23, userInfo: [NSLocalizedDescriptionKey: "Current wallpaper name is empty"])
+            }
+
+            // Check 3: App Library Hit-Testing when open
+            let registry = DesktopDockHitRegistry.shared
+            let prevEntries = registry.entries
+            let prevOpen = registry.isLauncherOpen
+
+            registry.isLauncherOpen = true
+            registry.update(entries: [
+                DesktopDockHitRegistry.Entry(
+                    target: .launcherApp(title: "YouTube", url: nil),
+                    normalizedFrame: CGRect(x: 0.30, y: 0.30, width: 0.10, height: 0.10)
+                ),
+                DesktopDockHitRegistry.Entry(
+                    target: .launcherContainer,
+                    normalizedFrame: CGRect(x: 0.20, y: 0.20, width: 0.60, height: 0.60)
+                )
+            ])
+
+            guard registry.hitTest(at: CGPoint(x: 0.35, y: 0.35)) == .launcherApp(title: "YouTube", url: nil) else {
+                throw NSError(domain: "Test", code: 24, userInfo: [NSLocalizedDescriptionKey: "Launcher app tile hit test failed"])
+            }
+            guard registry.hitTest(at: CGPoint(x: 0.22, y: 0.22)) == .launcherContainer else {
+                throw NSError(domain: "Test", code: 25, userInfo: [NSLocalizedDescriptionKey: "Launcher container background hit test failed"])
+            }
+            guard registry.hitTest(at: CGPoint(x: 0.05, y: 0.05)) == .launcherDismiss else {
+                throw NSError(domain: "Test", code: 26, userInfo: [NSLocalizedDescriptionKey: "Launcher click-outside dismiss test failed"])
+            }
+
+            // Restore registry state
+            registry.update(entries: prevEntries)
+            registry.isLauncherOpen = prevOpen
+
+            results.append(TestResult(name: "Modern Glass Desktop, 120Hz Default & App Library Hit-Testing", passed: true, message: "OK"))
+        } catch {
+            results.append(TestResult(name: "Modern Glass Desktop, 120Hz Default & App Library Hit-Testing", passed: false, message: error.localizedDescription))
+        }
+
+        // Test 13: Window Chrome Partitioning, Edge Snapping & Title Bar Detection
+        do {
+            let desktop = DesktopSession.shared
+            let testWindowID = desktop.openProductivityApp(
+                "Snapping & Title Bar Test",
+                frame: CGRect(x: 0.20, y: 0.20, width: 0.60, height: 0.60)
+            )
+            guard let window = desktop.windows.first(where: { $0.id == testWindowID }) else {
+                throw NSError(domain: "Test", code: 27, userInfo: [NSLocalizedDescriptionKey: "Test window missing"])
+            }
+            let frame = desktop.effectiveFrame(for: window)
+            let titleHeight = DesktopWindowChrome.titleBarHeight(for: frame)
+            let titleMidY = frame.minY + titleHeight / 2
+
+            // Check 1: Traffic light action partitioning
+            // Close zone: [frame.maxX - 0.036, frame.maxX]
+            let closeAction = DesktopWindowChrome.action(at: CGPoint(x: frame.maxX - 0.018, y: titleMidY), in: frame)
+            // Maximize zone: [frame.maxX - 0.070, frame.maxX - 0.036)
+            let maxAction = DesktopWindowChrome.action(at: CGPoint(x: frame.maxX - 0.052, y: titleMidY), in: frame)
+            // Minimize zone: [frame.maxX - 0.105, frame.maxX - 0.070)
+            let minAction = DesktopWindowChrome.action(at: CGPoint(x: frame.maxX - 0.086, y: titleMidY), in: frame)
+            // Drag zone (fall-through): < frame.maxX - 0.105
+            let dragAction = DesktopWindowChrome.action(at: CGPoint(x: frame.maxX - 0.150, y: titleMidY), in: frame)
+
+            guard closeAction == .close,
+                  maxAction == .maximizeRestore,
+                  minAction == .minimize,
+                  dragAction == nil else {
+                desktop.close(testWindowID)
+                throw NSError(domain: "Test", code: 28, userInfo: [NSLocalizedDescriptionKey: "Traffic light action partitioning failed: close=\(String(describing: closeAction)), max=\(String(describing: maxAction)), min=\(String(describing: minAction)), drag=\(String(describing: dragAction))"])
+            }
+
+            // Check 2: isCursorOverTitleBar detection
+            desktop.cursor = CGPoint(x: frame.minX + 0.05, y: titleMidY)
+            guard desktop.isCursorOverTitleBar() == true else {
+                desktop.close(testWindowID)
+                throw NSError(domain: "Test", code: 29, userInfo: [NSLocalizedDescriptionKey: "isCursorOverTitleBar failed to detect cursor over title bar"])
+            }
+
+            // In traffic light region (>= frame.maxX - 0.105), should NOT trigger title bar drag
+            desktop.cursor = CGPoint(x: frame.maxX - 0.05, y: titleMidY)
+            guard desktop.isCursorOverTitleBar() == false else {
+                desktop.close(testWindowID)
+                throw NSError(domain: "Test", code: 30, userInfo: [NSLocalizedDescriptionKey: "isCursorOverTitleBar falsely matched traffic light button region"])
+            }
+
+            // In window body, should NOT trigger title bar drag
+            desktop.cursor = CGPoint(x: frame.midX, y: frame.midY)
+            guard desktop.isCursorOverTitleBar() == false else {
+                desktop.close(testWindowID)
+                throw NSError(domain: "Test", code: 31, userInfo: [NSLocalizedDescriptionKey: "isCursorOverTitleBar falsely matched window body"])
+            }
+
+            // Check 3: Edge snapping intent evaluation
+            guard WindowSnapEngine.evaluateSnapIntent(cursor: CGPoint(x: 0.02, y: 0.50)) == .leftHalf,
+                  WindowSnapEngine.evaluateSnapIntent(cursor: CGPoint(x: 0.98, y: 0.50)) == .rightHalf,
+                  WindowSnapEngine.evaluateSnapIntent(cursor: CGPoint(x: 0.50, y: 0.02)) == .maximize,
+                  WindowSnapEngine.evaluateSnapIntent(cursor: CGPoint(x: 0.50, y: 0.50)) == nil else {
+                desktop.close(testWindowID)
+                throw NSError(domain: "Test", code: 32, userInfo: [NSLocalizedDescriptionKey: "WindowSnapEngine edge snap intent evaluation failed"])
+            }
+
+            desktop.close(testWindowID)
+            results.append(TestResult(name: "Window Chrome Partitioning, Edge Snapping & Title Bar Detection", passed: true, message: "OK"))
+        } catch {
+            results.append(TestResult(name: "Window Chrome Partitioning, Edge Snapping & Title Bar Detection", passed: false, message: error.localizedDescription))
+        }
+
         return results
     }
 }

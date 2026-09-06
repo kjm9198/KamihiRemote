@@ -16,6 +16,72 @@ extension DesktopSession {
     }
 
     public func clickAtCursor() {
+        if DesktopDockHitRegistry.shared.isLauncherOpen {
+            wantsPhoneKeyboard = false
+            primaryClick()
+            if let hit = DesktopDockHitRegistry.shared.hitTest(at: cursor) {
+                switch hit {
+                case .launcherApp(let title, let url):
+                    let now = CACurrentMediaTime()
+                    if let last = DesktopDockHitRegistry.shared.lastLauncherClickSample,
+                       last.title == title,
+                       (now - last.time) <= 0.60 {
+                        DesktopDockHitRegistry.shared.lastLauncherClickSample = nil
+                        if let url {
+                            DesktopBrowserState.shared.newTab(url: url)
+                            if let existing = windows.first(where: { $0.title == "Browser" }) {
+                                restoreAndActivate(existing.id)
+                            } else {
+                                openProductivityApp("Browser", frame: CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60))
+                            }
+                        } else if let existing = windows.first(where: { $0.title == title }) {
+                            restoreAndActivate(existing.id)
+                        } else {
+                            openProductivityApp(title, frame: CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60))
+                        }
+                        DesktopDockHitRegistry.shared.isLauncherOpen = false
+                        DesktopDockHitRegistry.shared.onDismissLauncher?()
+                    } else {
+                        DesktopDockHitRegistry.shared.lastLauncherClickSample = (title: title, time: now)
+                        DesktopDockHitRegistry.shared.selectedLauncherTitle = title
+                        if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                    }
+                    return
+                case .launcherContainer:
+                    // Swallowing click inside launcher background/search
+                    return
+                case .launcherDismiss:
+                    DesktopDockHitRegistry.shared.isLauncherOpen = false
+                    DesktopDockHitRegistry.shared.onDismissLauncher?()
+                    return
+                default:
+                    break
+                }
+            } else {
+                DesktopDockHitRegistry.shared.isLauncherOpen = false
+                DesktopDockHitRegistry.shared.onDismissLauncher?()
+                return
+            }
+        }
+
+        if let dockTarget = DesktopDockHitRegistry.shared.hitTest(at: cursor) {
+            wantsPhoneKeyboard = false
+            primaryClick()
+            switch dockTarget {
+            case .launcherToggle:
+                DesktopDockHitRegistry.shared.onToggleLauncher?()
+            case .app(let title):
+                if let window = windows.first(where: { $0.title == title }) {
+                    restoreAndActivate(window.id)
+                } else {
+                    openProductivityApp(title, frame: CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60))
+                }
+            default:
+                break
+            }
+            return
+        }
+
         guard let topID = topWindow(at: cursor),
               let window = windows.first(where: { $0.id == topID }) else {
             wantsPhoneKeyboard = false
@@ -58,7 +124,20 @@ extension DesktopSession {
             return
         }
 
-        guard let point = webContentPoint(at: cursor, in: frame) else {
+        if window.title == "Browser" {
+            let titleBarHeight = DesktopWindowChrome.titleBarHeight(for: frame)
+            let chromeTop = frame.minY + titleBarHeight
+            let chromeBottom = chromeTop + 0.078
+            if cursor.y >= chromeTop && cursor.y < chromeBottom {
+                // Clicking in the lower portion of browser chrome activates the URL address bar
+                if cursor.y >= chromeBottom - 0.044 {
+                    wantsPhoneKeyboard = true
+                }
+                return
+            }
+        }
+
+        guard let point = webContentPoint(at: cursor, in: frame, for: window.title) else {
             wantsPhoneKeyboard = false
             return
         }
@@ -79,7 +158,7 @@ extension DesktopSession {
               window.title != "Notes",
               window.title != "Documents",
               window.title != "Sheets",
-              let point = webContentPoint(at: cursor, in: effectiveFrame(for: window)) else { return }
+              let point = webContentPoint(at: cursor, in: effectiveFrame(for: window), for: window.title) else { return }
 
         wantsPhoneKeyboard = false
         activate(window.id)
@@ -92,15 +171,26 @@ extension DesktopSession {
 
     @discardableResult
     public func beginWindowDrag() -> Bool {
-        beginPrimaryDragIfPossible()
+        if resizeEdgeAtCursor() != nil {
+            return beginPointerResize()
+        }
+        return beginPrimaryDragIfPossible()
     }
 
     public func updateWindowDrag(delta: CGSize) {
-        updatePrimaryDrag(delta: delta)
+        if isResizingWindow {
+            updatePointerResize(delta: delta)
+        } else {
+            updatePrimaryDrag(delta: delta)
+        }
     }
 
     public func endWindowDrag() {
-        endPrimaryDrag()
+        if isResizingWindow {
+            endPointerResize()
+        } else {
+            endPrimaryDrag()
+        }
     }
 
     @discardableResult
@@ -123,10 +213,7 @@ extension DesktopSession {
     /// Two-axis scrolling uses the same gain and direction rules on both axes.
     /// Pages without horizontal overflow simply clamp X to their valid range.
     public func scrollActiveWindow(deltaX: CGFloat, deltaY: CGFloat) {
-        guard let key = activeWindow?.title,
-              key != "Notes",
-              key != "Documents",
-              key != "Sheets" else { return }
+        guard let key = activeWindow?.title else { return }
         DesktopWebInputRegistry.shared.scroll(key: key, deltaX: deltaX, deltaY: deltaY)
     }
 
@@ -251,9 +338,18 @@ extension DesktopSession {
         )
     }
 
-    private func webContentPoint(at point: CGPoint, in frame: CGRect) -> CGPoint? {
+    private func webContentPoint(at point: CGPoint, in frame: CGRect, for appTitle: String = "Browser") -> CGPoint? {
         let titleBarHeight = DesktopWindowChrome.titleBarHeight(for: frame)
-        let contentTop = frame.minY + titleBarHeight
+        let appChromeHeight: CGFloat
+        switch appTitle {
+        case "Browser":
+            appChromeHeight = 0.078 // 84pt / 1080p canvas
+        case "YouTube", "ChatGPT":
+            appChromeHeight = 0.030 // ~32pt / 1080p canvas
+        default:
+            appChromeHeight = 0.0
+        }
+        let contentTop = frame.minY + titleBarHeight + appChromeHeight
         let contentHeight = frame.maxY - contentTop
         guard frame.width > 0,
               contentHeight > 0,

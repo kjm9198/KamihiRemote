@@ -19,6 +19,7 @@ final class DesktopWebInputRegistry {
         let time: TimeInterval
         let x: CGFloat
         let y: CGFloat
+        let count: Int
     }
 
     private var webViews: [String: WeakWebView] = [:]
@@ -67,21 +68,23 @@ final class DesktopWebInputRegistry {
         let safeY = min(max(y, 0), 1)
         let now = Date.timeIntervalSinceReferenceDate
         let previous = lastPrimaryClick[key]
-        let isDoubleClick: Bool
+        let clickCount: Int
         if let previous {
             let dt = now - previous.time
             let distance = hypot(safeX - previous.x, safeY - previous.y)
-            isDoubleClick = dt > 0 && dt <= 0.30 && distance <= 0.025
+            if dt > 0 && dt <= 0.45 && distance <= 0.035 {
+                clickCount = min(previous.count + 1, 3)
+            } else {
+                clickCount = 1
+            }
         } else {
-            isDoubleClick = false
+            clickCount = 1
         }
 
-        // Consume a successful pair so a rapid third tap starts a new click
-        // sequence instead of generating overlapping double-click semantics.
-        if isDoubleClick {
+        if clickCount >= 3 {
             lastPrimaryClick.removeValue(forKey: key)
         } else {
-            lastPrimaryClick[key] = PrimaryClickSample(time: now, x: safeX, y: safeY)
+            lastPrimaryClick[key] = PrimaryClickSample(time: now, x: safeX, y: safeY, count: clickCount)
         }
 
         let script = """
@@ -98,8 +101,56 @@ final class DesktopWebInputRegistry {
             hit.focus();
           }
 
-          if (hit.click) hit.click();
-          if (\(isDoubleClick ? "true" : "false")) {
+          const anchor = hit.closest?.('a[href]');
+          const interactive = hit.closest?.('a, button, [role="button"], [role="link"], input, select, textarea, video, audio') || hit;
+
+          const eventInit = {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            detail: \(clickCount),
+            screenX: x,
+            screenY: y,
+            clientX: x,
+            clientY: y,
+            button: 0,
+            buttons: 1,
+            pointerId: 1,
+            pointerType: 'mouse',
+            isPrimary: true
+          };
+
+          // For anchor links, skip synthetic event dispatch to avoid conflicts
+          // with site JS event handlers (e.g. Google search results use event
+          // delegation that can swallow synthetic events). Native .click() on
+          // the <a> element is the most reliable path for link navigation.
+          if (anchor) {
+            anchor.click();
+          } else {
+            hit.dispatchEvent(new PointerEvent('pointerdown', eventInit));
+            hit.dispatchEvent(new MouseEvent('mousedown', eventInit));
+
+            const upInit = Object.assign({}, eventInit, { buttons: 0 });
+            hit.dispatchEvent(new PointerEvent('pointerup', upInit));
+            hit.dispatchEvent(new MouseEvent('mouseup', upInit));
+            hit.dispatchEvent(new MouseEvent('click', upInit));
+
+            // For non-link interactive elements (buttons, inputs, etc.),
+            // also call native .click() as a reliable fallback.
+            if (interactive !== hit && interactive.click && !interactive.closest?.('a[href]')) {
+              interactive.click();
+            } else if (hit.click && !hit.closest?.('a[href]')) {
+              hit.click();
+            }
+          }
+
+          if (hit.tagName === 'VIDEO') {
+            const vid = hit;
+            if (vid.paused) { vid.play(); } else { vid.pause(); }
+          }
+
+          const count = \(clickCount);
+          if (count === 2) {
             hit.dispatchEvent(new MouseEvent('dblclick', {
               bubbles: true,
               cancelable: true,
@@ -110,6 +161,47 @@ final class DesktopWebInputRegistry {
               button: 0,
               buttons: 0
             }));
+
+            try {
+              if (editable && ('selectionStart' in editable)) {
+                const val = editable.value || '';
+                const pos = editable.selectionStart ?? 0;
+                let start = pos;
+                while (start > 0 && !/\\s/.test(val[start - 1])) start--;
+                let end = pos;
+                while (end < val.length && !/\\s/.test(val[end])) end++;
+                if (start < end && editable.setSelectionRange) {
+                  editable.setSelectionRange(start, end);
+                }
+              } else if (document.caretRangeFromPoint) {
+                const range = document.caretRangeFromPoint(x, y);
+                if (range && range.startContainer && range.startContainer.nodeType === Node.TEXT_NODE) {
+                  const node = range.startContainer;
+                  const text = node.nodeValue || '';
+                  const offset = range.startOffset;
+                  let s = offset;
+                  while (s > 0 && /\\w/.test(text[s - 1])) s--;
+                  let e = offset;
+                  while (e < text.length && /\\w/.test(text[e])) e++;
+                  const wordRange = document.createRange();
+                  wordRange.setStart(node, s);
+                  wordRange.setEnd(node, e);
+                  const sel = window.getSelection();
+                  if (sel) {
+                    sel.removeAllRanges();
+                    sel.addRange(wordRange);
+                  }
+                }
+              }
+            } catch (e) {}
+          } else if (count === 3) {
+            try {
+              if (editable && editable.select) {
+                editable.select();
+              } else {
+                document.execCommand('selectAll', false, null);
+              }
+            } catch (e) {}
           }
           return !!(editable && !editable.disabled && !editable.readOnly);
         })();
@@ -228,11 +320,50 @@ final class DesktopWebInputRegistry {
             return true;
           }
 
-          const options = {key:'Enter', code:'Enter', keyCode:13, which:13, bubbles:true};
+          // Dispatch key events first — some sites use keydown listeners
+          const options = {key:'Enter', code:'Enter', keyCode:13, which:13, bubbles:true, cancelable:true};
           el.dispatchEvent(new KeyboardEvent('keydown', options));
           el.dispatchEvent(new KeyboardEvent('keypress', options));
           el.dispatchEvent(new KeyboardEvent('keyup', options));
-          if (el.form && el.form.requestSubmit) el.form.requestSubmit();
+
+          // Strategy 1: Find and click the form's submit button directly.
+          // This is the most reliable approach for Google, YouTube, and
+          // standard web forms since synthetic KeyboardEvents are untrusted
+          // in WebKit and many sites ignore them.
+          const form = el.form || el.closest?.('form');
+          if (form) {
+            const submitBtn = form.querySelector('button[type="submit"], input[type="submit"], button:not([type])');
+            if (submitBtn) {
+              submitBtn.click();
+              return true;
+            }
+            // Fallback: use requestSubmit for HTML5 validation, or submit()
+            try {
+              if (form.requestSubmit) form.requestSubmit();
+              else form.submit();
+            } catch (e) {}
+            return true;
+          }
+
+          // Strategy 2: Find a nearby search/submit button by common patterns
+          // used by YouTube, Google, and SPAs that don't use <form> elements.
+          const container = el.closest?.('[role="search"], [role="combobox"], .search-box, .search-container, #search-form') || el.parentElement;
+          if (container) {
+            const nearbyBtn = container.querySelector('button[aria-label*="earch"], button[type="submit"], [role="button"][aria-label*="earch"], button.search-icon, button svg');
+            if (nearbyBtn) {
+              const btn = nearbyBtn.closest?.('button, [role="button"]') || nearbyBtn;
+              btn.click();
+              return true;
+            }
+          }
+
+          // Strategy 3: For YouTube specifically, the search icon button
+          const ytSearch = document.querySelector('#search-icon-legacy, button#search-icon-legacy, ytd-searchbox button');
+          if (ytSearch) {
+            ytSearch.click();
+            return true;
+          }
+
           return true;
         })();
         """
@@ -277,6 +408,7 @@ struct WKWebViewRepresentable: UIViewRepresentable {
         configuration.defaultWebpagePreferences.preferredContentMode = .desktop
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15"
         webView.isOpaque = false
         webView.backgroundColor = .systemBackground
         webView.scrollView.backgroundColor = .systemBackground

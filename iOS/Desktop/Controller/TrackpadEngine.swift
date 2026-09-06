@@ -25,16 +25,14 @@ final class TrackpadEngine: ObservableObject {
     }
 
     /// Window movement must be a deliberate title-bar hold, never a side effect
-    /// of ordinary pointer travel. Keeping this time-based gate deterministic
-    /// avoids adding a timer/display-link while still requiring a clear pause.
-    private static let windowDragHoldDuration: TimeInterval = 1.50
+    /// of ordinary pointer travel.
+    private static let windowDragHoldDuration: TimeInterval = 0.38
     private static let windowDragPreHoldMovementTolerance: CGFloat = 8.0
 
-    /// Two-finger movement normally means scrolling. Resizing is only armed when
-    /// two fingers are held almost still first, so a normal smooth up/down gesture
-    /// can never be stolen just because the pointer happens to sit near a window edge.
-    private static let resizeHoldDuration: TimeInterval = 0.32
-    private static let resizePreHoldMovementTolerance: CGFloat = 3.5
+    /// Two-finger movement normally means scrolling. Resizing is armed when
+    /// fingers are placed over a window edge or held momentarily.
+    private static let resizeHoldDuration: TimeInterval = 0.24
+    private static let resizePreHoldMovementTolerance: CGFloat = 7.0
 
     /// Momentum should feel like a physical continuation of the user's lift, not
     /// stale velocity replayed after they deliberately paused before releasing.
@@ -44,6 +42,12 @@ final class TrackpadEngine: ObservableObject {
     @Published private(set) var activeFingers: Int = 0
     @Published var isPrecisionMode: Bool = false
     @Published private(set) var ripples: [TouchRipple] = []
+
+    var onThreeFingerSwipeUp: (() -> Void)?
+    var onThreeFingerSwipeLeft: (() -> Void)?
+    var onThreeFingerSwipeRight: (() -> Void)?
+    var onLeftEdgeSwipeBack: (() -> Void)?
+    private var leftEdgeSwipeFired = false
 
     private var gestureStartTime: TimeInterval = 0
     private var lastSampleTime: TimeInterval = 0
@@ -66,10 +70,7 @@ final class TrackpadEngine: ObservableObject {
     private var previousPointerDelta: CGSize = .zero
     private var hasPreviousPointerDelta = false
     private var momentumTask: Task<Void, Never>?
-
-    var onThreeFingerSwipeUp: (() -> Void)?
-    var onThreeFingerSwipeLeft: (() -> Void)?
-    var onThreeFingerSwipeRight: (() -> Void)?
+    private var titleBarHoldTask: Task<Void, Never>?
 
     init() {}
 
@@ -95,6 +96,7 @@ final class TrackpadEngine: ObservableObject {
             gestureFingerCount = 1
             dragHoldEligible = true
             threeFingerActionFired = false
+            leftEdgeSwipeFired = false
             threeFingerStartCentroid = nil
             twoFingerStartTime = nil
             twoFingerMovementDistance = 0
@@ -102,6 +104,7 @@ final class TrackpadEngine: ObservableObject {
             resetPointerSmoothing()
             secondTapCandidate = now - lastTapTime <= 0.30
             addRipple(at: center)
+            updateTitleBarHoldWatch(desktop: desktop, settings: settings)
         } else {
             // Finger-count changes must not create a cursor/scroll jump.
             lastCentroid = center
@@ -205,6 +208,8 @@ final class TrackpadEngine: ObservableObject {
         desktop: DesktopSession,
         settings: TrackpadSettings
     ) {
+        titleBarHoldTask?.cancel()
+        titleBarHoldTask = nil
         let now = CACurrentMediaTime()
         let duration = now - gestureStartTime
         let wasTap = duration < 0.26 && totalMovementDistance < 10
@@ -370,6 +375,17 @@ final class TrackpadEngine: ObservableObject {
         // become pointer input before every finger is lifted and a new gesture starts.
         guard gestureFingerCount <= 1 else { return }
 
+        // Detect left edge swipe for "Go Back"
+        if !leftEdgeSwipeFired, initialCentroid.x <= 44 {
+            let totalDx = lastCentroid.x - initialCentroid.x
+            let totalDy = abs(lastCentroid.y - initialCentroid.y)
+            if totalDx >= 44 && totalDy < totalDx * 0.70 {
+                leftEdgeSwipeFired = true
+                onLeftEdgeSwipeBack?()
+                return
+            }
+        }
+
         let distance = hypot(dx, dy)
         guard distance > 0.16 else { return }
 
@@ -382,15 +398,14 @@ final class TrackpadEngine: ObservableObject {
         let heldDuration = now - gestureStartTime
 
         // Ordinary one-finger pointer travel permanently disqualifies this touch
-        // from becoming a window drag. The user must first park the cursor over
-        // a title bar, hold nearly still, then move after the hold threshold.
-        if heldDuration < Self.windowDragHoldDuration,
+        // from becoming a window drag, unless the user initiated a double-tap drag.
+        if !secondTapCandidate,
+           heldDuration < Self.windowDragHoldDuration,
            totalMovementDistance > Self.windowDragPreHoldMovementTolerance {
             dragHoldEligible = false
         }
 
-        let wantsManipulation = dragHoldEligible &&
-            heldDuration >= Self.windowDragHoldDuration &&
+        let wantsManipulation = (secondTapCandidate || (dragHoldEligible && heldDuration >= Self.windowDragHoldDuration)) &&
             totalMovementDistance > 1.0
 
         if wantsManipulation, desktop.beginWindowDrag() {
@@ -407,6 +422,39 @@ final class TrackpadEngine: ObservableObject {
         state = .moving
         let delta = stabilizedPointerDelta(dx: dx, dy: dy, dt: dt, settings: settings)
         desktop.movePointer(delta: delta, sensitivity: 1.0)
+        updateTitleBarHoldWatch(desktop: desktop, settings: settings)
+    }
+
+    private func updateTitleBarHoldWatch(desktop: DesktopSession, settings: TrackpadSettings) {
+        guard activeFingers == 1, (state == .idle || state == .moving) else {
+            titleBarHoldTask?.cancel()
+            titleBarHoldTask = nil
+            return
+        }
+
+        if desktop.isCursorOverTitleBar() {
+            guard titleBarHoldTask == nil else { return }
+            titleBarHoldTask = Task { @MainActor [weak self, weak desktop] in
+                do {
+                    try await Task.sleep(nanoseconds: 1_600_000_000)
+                } catch {
+                    return
+                }
+                guard let self, let desktop, !Task.isCancelled else { return }
+                guard self.activeFingers == 1,
+                      (self.state == .idle || self.state == .moving),
+                      desktop.isCursorOverTitleBar() else { return }
+                if desktop.beginWindowDrag() {
+                    self.state = .dragging
+                    self.resetPointerSmoothing()
+                    if settings.hapticsEnabled { Haptics.touchTap() }
+                }
+                self.titleBarHoldTask = nil
+            }
+        } else {
+            titleBarHoldTask?.cancel()
+            titleBarHoldTask = nil
+        }
     }
 
     // MARK: - Two Finger Scroll / Resize
@@ -439,11 +487,19 @@ final class TrackpadEngine: ObservableObject {
             return
         }
 
+        // If the cursor is already over a window resize edge/corner, immediately
+        // prioritize resize over scrolling.
+        if desktop.resizeEdgeAtCursor() != nil, desktop.beginPointerResize() {
+            state = .resizing
+            scrollVelocity = .zero
+            if settings.hapticsEnabled { Haptics.touchTap() }
+            desktop.updatePointerResize(delta: CGSize(width: dx, height: dy))
+            return
+        }
+
         let heldDuration = now - (twoFingerStartTime ?? now)
 
-        // Ignore tiny resting jitter while determining intent. A resize requires
-        // a deliberate two-finger pause first; moving past the tolerance before
-        // the hold expires immediately commits the gesture to scrolling.
+        // Ignore tiny resting jitter while determining intent.
         guard twoFingerMovementDistance > Self.resizePreHoldMovementTolerance else { return }
 
         if heldDuration >= Self.resizeHoldDuration,
@@ -522,12 +578,12 @@ final class TrackpadEngine: ObservableObject {
             let refreshRate = min(max(UIScreen.main.maximumFramesPerSecond, 60), 120)
             let frameDuration = 1.0 / Double(refreshRate)
             let sleepMilliseconds = refreshRate >= 100 ? 8 : 16
-            let decayPer60HzFrame = 0.93
-            let decay = CGFloat(pow(decayPer60HzFrame, frameDuration / (1.0 / 60.0)))
+            // Natural iOS/macOS UIScrollView exponential fluid decay (~0.9975 per millisecond)
+            let decay = CGFloat(pow(0.9975, frameDuration * 1000.0))
 
             while !Task.isCancelled &&
                     desktop.activeWindowID == momentumWindowID &&
-                    hypot(velocity.width, velocity.height) > 12 {
+                    hypot(velocity.width, velocity.height) > 6 {
                 desktop.scrollActiveWindow(
                     deltaX: velocity.width * CGFloat(frameDuration),
                     deltaY: velocity.height * CGFloat(frameDuration)

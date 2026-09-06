@@ -19,48 +19,25 @@ public enum DesktopWindowChrome {
         guard point.y >= frame.minY,
               point.y <= frame.minY + titleHeight else { return nil }
 
-        // The rendered buttons are intentionally compact, but the iPhone-driven
-        // software pointer needs a larger desktop-grade target. Keep one continuous
-        // interaction cluster and partition it into three adjacent actions so there
-        // are no dead strips that can accidentally fall through into title-bar drag.
-        //
-        // At a typical 1080p floating-window width this gives each action roughly a
-        // 60–70 px horizontal target while preserving the visual spacing of the
-        // compact controls. The geometry stays normalized and therefore scales with
-        // the negotiated external-display canvas rather than assuming a pixel mode.
-        let visualExtent = min(max(frame.width * 0.066, 0.020), 0.030)
-        let targetExtent = max(visualExtent, 0.034)
-        let visualGap = max(min(frame.width * 0.010, 0.006), 0.003)
-        let trailing = min(max(frame.width * 0.016, 0.006), 0.012)
-
-        // Use nearly the complete title-bar height. The pointer is already required
-        // to be inside the title bar, so extra vertical forgiveness cannot collide
-        // with web/native content below it, and it keeps close/maximize/minimize
-        // reachable when glasses scaling or a large software pointer is enabled.
         let verticalInset = min(titleHeight * 0.08, 0.003)
         let yRange = (frame.minY + verticalInset)...(frame.minY + titleHeight - verticalInset)
         guard yRange.contains(point.y) else { return nil }
 
-        // Preserve approximately the existing visual spacing, but include the
-        // inter-button gaps in the tappable cluster. Region boundaries sit at the
-        // midpoint of each visual gap, so aiming between icons selects the nearest
-        // intended control instead of doing nothing or starting a window drag.
-        let closeCenterX = frame.maxX - trailing - targetExtent / 2
-        let maximizeCenterX = closeCenterX - targetExtent - visualGap
-        let minimizeCenterX = maximizeCenterX - targetExtent - visualGap
+        // The rendered buttons are placed along the trailing edge of the title bar.
+        // Partition the trailing region into three generous, non-overlapping action zones
+        // so that the iPhone software pointer can reliably activate them without misclassification:
+        //   - Close: [frame.maxX - 0.036, frame.maxX]
+        //   - Maximize/Restore: [frame.maxX - 0.070, frame.maxX - 0.036)
+        //   - Minimize: [frame.maxX - 0.105, frame.maxX - 0.070)
+        //   - Left of frame.maxX - 0.105 falls through cleanly into title-bar dragging.
+        let closeMinX = frame.maxX - 0.036
+        let maximizeMinX = frame.maxX - 0.070
+        let minimizeMinX = frame.maxX - 0.105
 
-        let closeMaxX = min(frame.maxX, closeCenterX + targetExtent / 2 + visualGap / 2)
-        let closeMinX = (closeCenterX + maximizeCenterX) / 2
-        let maximizeMaxX = closeMinX
-        let maximizeMinX = (maximizeCenterX + minimizeCenterX) / 2
-        let minimizeMaxX = maximizeMinX
-        let minimizeMinX = max(frame.minX, minimizeCenterX - targetExtent / 2 - visualGap / 2)
-
-        guard point.x >= minimizeMinX, point.x <= closeMaxX else { return nil }
+        guard point.x >= minimizeMinX, point.x <= frame.maxX else { return nil }
         if point.x >= closeMinX { return .close }
-        if point.x >= maximizeMinX && point.x <= maximizeMaxX { return .maximizeRestore }
-        if point.x >= minimizeMinX && point.x <= minimizeMaxX { return .minimize }
-        return nil
+        if point.x >= maximizeMinX { return .maximizeRestore }
+        return .minimize
     }
 
     public static func contentTop(for frame: CGRect) -> CGFloat {

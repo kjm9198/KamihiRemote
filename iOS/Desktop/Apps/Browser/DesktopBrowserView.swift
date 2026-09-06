@@ -410,6 +410,7 @@ final class DesktopBrowserController: ObservableObject {
         configuration.defaultWebpagePreferences.preferredContentMode = .desktop
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15"
         webView.isOpaque = false
         webView.backgroundColor = .systemBackground
         webView.scrollView.backgroundColor = .systemBackground
@@ -629,7 +630,7 @@ private struct BrowserLibrarySheet: View {
         }
         .fileImporter(
             isPresented: $showBookmarkImporter,
-            allowedContentTypes: [.html, .plainText],
+            allowedContentTypes: [.html, .propertyList, .plainText, .data],
             allowsMultipleSelection: false
         ) { result in
             handleBookmarkImport(result)

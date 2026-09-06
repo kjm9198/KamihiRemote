@@ -66,33 +66,23 @@ public enum WindowSnapEngine {
     /// and maximize layouts so every readiness-gate snap geometry is reachable
     /// through the same reversible preview-and-release interaction.
     public static func evaluateSnapIntent(cursor: CGPoint) -> SnapTarget? {
-        if cursor.x < 0.025 {
+        if cursor.x < 0.035 {
             if cursor.y < 0.25 { return .topLeftQuarter }
             if cursor.y > 0.70 { return .bottomLeftQuarter }
             return .leftHalf
         }
-        if cursor.x > 0.975 {
+        if cursor.x > 0.965 {
             if cursor.y < 0.25 { return .topRightQuarter }
             if cursor.y > 0.70 { return .bottomRightQuarter }
             return .rightHalf
         }
 
-        // `DesktopSession.movePointer` clamps Y to 0.006, so the 0.014 band is
-        // still reachable without demanding pixel-perfect contact with y == 0.
-        // Keep maximize in the center where users naturally throw a title bar to
-        // the top. The wider 0.030 band then divides the top edge into five clear
-        // spatial zones: 1/3, 2/3, center 1/3, 2/3, 1/3. The live snap preview
-        // makes the selected geometry visible before release and moving away
-        // cancels it, so this adds capability without another permanent control.
-        if cursor.y < 0.014, cursor.x >= 0.44, cursor.x <= 0.56 {
+        // Top edge: dragging a window to the top triggers full screen / maximize.
+        // Also supports left/right thirds if explicitly targeting top corners.
+        if cursor.y < 0.035 {
+            if cursor.x < 0.18 { return .leftThird }
+            if cursor.x > 0.82 { return .rightThird }
             return .maximize
-        }
-        if cursor.y < 0.030 {
-            if cursor.x < 0.20 { return .leftThird }
-            if cursor.x < 0.44 { return .leftTwoThirds }
-            if cursor.x <= 0.56 { return .centerThird }
-            if cursor.x <= 0.80 { return .rightTwoThirds }
-            return .rightThird
         }
 
         return nil

@@ -54,7 +54,7 @@ struct RayNeoDisplaySettingsSheet: View {
                             .foregroundStyle(.orange)
                         }
 
-                        Text("iOS currently exposes a maximum of \(display.maximumFramesPerSecond) frames per second for this screen. Kamihi uses what iOS negotiates and never claims or forces 120 Hz when the screen reports less.")
+                        Text("iOS currently exposes a maximum of \(display.maximumFramesPerSecond) frames per second for this screen. Kamihi enables ProMotion 120 Hz and adapts to the maximum rate negotiated with your display.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     } else {
@@ -62,6 +62,40 @@ struct RayNeoDisplaySettingsSheet: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
+                }
+
+                Section("Refresh Rate & Display Modes") {
+                    Picker("Target Refresh Rate", selection: $display.preferredRefreshRate) {
+                        Text("120 Hz (ProMotion)").tag(120)
+                        Text("60 Hz (Standard)").tag(60)
+                    }
+                    .pickerStyle(.segmented)
+
+                    if display.isConnected && !display.availableDisplayModes.isEmpty {
+                        ForEach(display.availableDisplayModes) { modeOption in
+                            Button {
+                                display.selectDisplayMode(modeOption)
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(modeOption.title)
+                                            .font(.subheadline.weight(modeOption.isCurrent ? .semibold : .regular))
+                                            .foregroundStyle(modeOption.isCurrent ? .primary : .secondary)
+                                    }
+                                    Spacer()
+                                    if modeOption.isCurrent {
+                                        Image(systemName: "checkmark")
+                                            .foregroundStyle(.blue)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    Text("120 Hz ProMotion is enabled. iOS will render up to 120 Hz whenever supported by the connected DisplayPort Alternate Mode adapter and display.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Reconnect & Recovery") {

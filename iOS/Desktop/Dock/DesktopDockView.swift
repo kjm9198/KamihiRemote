@@ -1,24 +1,25 @@
 import SwiftUI
 
-/// Floating iPadOS-inspired dock on the external display.
-/// Uses the shared semantic shell tokens so the dock follows System/Light/Dark,
-/// Reduce Transparency, Increase Contrast, and minimum touch-target conventions consistently.
+/// Floating macOS-inspired centered glass dock on the external display.
+/// Uses vibrant macOS app tiles, glowing running-app indicator dots, and
+/// software cursor hit-testing integration.
 struct DesktopDockView: View {
     @EnvironmentObject private var desktop: DesktopSession
-    @StateObject private var power = DesktopPowerMonitor.shared
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     var onOpenLauncher: () -> Void
+    var onOpenWallpaperPicker: (() -> Void)? = nil
 
     private let pinnedApps: [(title: String, icon: String, color: Color)] = [
-        ("Browser", "globe", Color(red: 0.22, green: 0.58, blue: 0.94)),
-        ("Documents", "doc.text.fill", Color(red: 0.38, green: 0.63, blue: 0.95)),
-        ("Sheets", "tablecells.fill", Color(red: 0.20, green: 0.66, blue: 0.38)),
-        ("Files", "folder.fill", Color(red: 0.42, green: 0.68, blue: 0.94)),
-        ("Notes", "note.text", Color(red: 0.92, green: 0.74, blue: 0.24)),
-        ("ChatGPT", "sparkles", Color(red: 0.18, green: 0.72, blue: 0.62)),
-        ("YouTube", "play.rectangle.fill", Color(red: 0.94, green: 0.22, blue: 0.28))
+        ("Browser", "safari.fill", Color(red: 0.18, green: 0.55, blue: 0.95)),
+        ("Documents", "doc.text.fill", Color(red: 0.28, green: 0.58, blue: 0.98)),
+        ("Sheets", "tablecells.fill", Color(red: 0.20, green: 0.70, blue: 0.40)),
+        ("Files", "folder.fill", Color(red: 0.40, green: 0.72, blue: 0.96)),
+        ("Notes", "note.text", Color(red: 0.94, green: 0.76, blue: 0.20)),
+        ("ChatGPT", "sparkles", Color(red: 0.16, green: 0.76, blue: 0.65)),
+        ("YouTube", "play.rectangle.fill", Color(red: 0.96, green: 0.20, blue: 0.24)),
+        ("Calculator", "plus.forwardslash.minus", Color.orange)
     ]
 
     private var pinnedTitles: Set<String> { Set(pinnedApps.map(\.title)) }
@@ -35,138 +36,94 @@ struct DesktopDockView: View {
     }
 
     var body: some View {
-        HStack(spacing: DesktopShellMetrics.compactSpacing) {
+        HStack(spacing: 8) {
+            // App Library / Launchpad Button
             Button(action: onOpenLauncher) {
-                Image(systemName: "square.grid.2x2.fill")
-                    .font(.system(size: DesktopShellMetrics.compactIcon, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: DesktopShellMetrics.minimumHitTarget, height: DesktopShellMetrics.minimumHitTarget)
+                Image(systemName: "circle.grid.3x3.fill")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color.pink, Color.purple, Color.blue],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 44, height: 44)
                     .background(
-                        DesktopShellPalette.elevatedCanvas.opacity(solidChrome ? 1 : 0.72),
+                        Color.white.opacity(0.12),
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                     )
                     .overlay {
-                        if increasedContrast {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(DesktopShellPalette.separator.opacity(0.88), lineWidth: 1)
-                        }
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.24), lineWidth: 0.8)
                     }
             }
             .buttonStyle(.plain)
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(
+                        key: DockGeometryPreferenceKey.self,
+                        value: [DockItemGeometryPreference(target: .launcherToggle, frameInSurface: geo.frame(in: .named("desktopSurface")))]
+                    )
+                }
+            )
             .accessibilityLabel("Open App Library")
-            .accessibilityHint("Shows all Kamihi Desktop apps")
 
-            Divider().frame(height: 28).accessibilityHidden(true)
+            Divider().frame(height: 28).opacity(0.3)
 
+            // Pinned Apps
             ForEach(pinnedApps, id: \.title) { app in
                 dockAppTile(title: app.title, icon: app.icon, color: app.color)
             }
 
+            // Running Unpinned Apps
             if !unpinnedRunningTitles.isEmpty {
-                Divider().frame(height: 28).accessibilityHidden(true)
+                Divider().frame(height: 28).opacity(0.3)
                 ForEach(unpinnedRunningTitles, id: \.self) { title in
-                    dockAppTile(title: title, icon: symbolForRunningApp(title), color: DesktopShellPalette.secondaryLabel)
+                    dockAppTile(title: title, icon: symbolForRunningApp(title), color: .secondary)
                 }
             }
 
-            Spacer(minLength: DesktopShellMetrics.standardSpacing)
-            statusSurface
-        }
-        .padding(.horizontal, DesktopShellMetrics.standardSpacing)
-        .padding(.vertical, 6)
-        .desktopShellChrome(cornerRadius: 28)
-        .shadow(
-            color: Color.black.opacity(solidChrome ? 0 : (colorScheme == .dark ? 0.26 : 0.12)),
-            radius: solidChrome ? 0 : 12,
-            x: 0,
-            y: solidChrome ? 0 : 6
-        )
-    }
+            if let onOpenWallpaperPicker {
+                Divider().frame(height: 28).opacity(0.3)
 
-    private var statusSurface: some View {
-        HStack(spacing: 10) {
-            Label {
-                Text("External").font(.caption.weight(.semibold))
-            } icon: {
-                Image(systemName: "display").font(.system(size: 13, weight: .semibold))
-            }
-            .foregroundStyle(.secondary)
-            .labelStyle(.titleAndIcon)
-
-            Divider().frame(height: 18).accessibilityHidden(true)
-
-            HStack(spacing: 5) {
-                Image(systemName: batterySymbol)
-                    .font(.system(size: 14, weight: .semibold))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(batteryTint)
-                    .accessibilityHidden(true)
-                Text(power.batteryPercentageText)
-                    .font(.caption.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("iPhone battery")
-            .accessibilityValue(batteryAccessibilityValue)
-
-            Divider().frame(height: 18).accessibilityHidden(true)
-
-            TimelineView(.periodic(from: .now, by: 60)) { context in
-                Text(context.date, style: .time)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .accessibilityLabel("Current time")
+                Button(action: onOpenWallpaperPicker) {
+                    Image(systemName: "paintpalette.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.cyan, Color.blue],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 44, height: 44)
+                        .background(
+                            Color.white.opacity(0.12),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.24), lineWidth: 0.8)
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Wallpaper Chooser")
             }
         }
-        .frame(minHeight: DesktopShellMetrics.minimumHitTarget)
-        .padding(.horizontal, 10)
-        .background(
-            DesktopShellPalette.elevatedCanvas.opacity(solidChrome ? 1 : 0.50),
-            in: Capsule()
-        )
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay {
-            Capsule().strokeBorder(
-                DesktopShellPalette.separator.opacity(increasedContrast ? 0.88 : (reduceTransparency ? 0.62 : 0.30)),
-                lineWidth: solidChrome ? 1 : 0.5
-            )
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(Color.white.opacity(solidChrome ? 0.40 : 0.20), lineWidth: 0.8)
         }
-        .accessibilityElement(children: .contain)
-    }
-
-    private var batterySymbol: String {
-        switch power.batteryState {
-        case .charging: return "battery.100percent.bolt"
-        case .full: return "battery.100percent"
-        case .unknown, .unplugged:
-            guard power.batteryLevel >= 0 else { return "battery.0percent" }
-            switch power.batteryLevel {
-            case 0.76...: return "battery.100percent"
-            case 0.51..<0.76: return "battery.75percent"
-            case 0.26..<0.51: return "battery.50percent"
-            case 0.11..<0.26: return "battery.25percent"
-            default: return "battery.0percent"
-            }
-        @unknown default: return "battery.0percent"
-        }
-    }
-
-    private var batteryTint: Color {
-        if power.batteryState == .charging || power.batteryState == .full { return .green }
-        if power.batteryLevel >= 0 && power.batteryLevel <= 0.20 { return .orange }
-        return DesktopShellPalette.secondaryLabel
-    }
-
-    private var batteryAccessibilityValue: String {
-        let state: String
-        switch power.batteryState {
-        case .charging: state = "charging"
-        case .full: state = "fully charged"
-        case .unplugged: state = "on battery"
-        case .unknown: state = "state unknown"
-        @unknown default: state = "state unknown"
-        }
-        return "\(power.batteryPercentageText), \(state)"
+        .shadow(
+            color: Color.black.opacity(colorScheme == .dark ? 0.35 : 0.16),
+            radius: 16,
+            x: 0,
+            y: 8
+        )
     }
 
     private func symbolForRunningApp(_ title: String) -> String {
@@ -178,7 +135,7 @@ struct DesktopDockView: View {
         if normalized.contains("sheet") { return "tablecells.fill" }
         if normalized.contains("pdf") { return "doc.richtext.fill" }
         if normalized.contains("clipboard") { return "doc.on.clipboard.fill" }
-        if normalized.contains("browser") || normalized.contains("web") { return "globe" }
+        if normalized.contains("browser") || normalized.contains("web") { return "safari.fill" }
         return "app.fill"
     }
 
@@ -194,35 +151,40 @@ struct DesktopDockView: View {
                 desktop.openProductivityApp(title, frame: CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60))
             }
         } label: {
-            VStack(spacing: 2) {
+            VStack(spacing: 3) {
                 Image(systemName: icon)
-                    .font(.system(size: DesktopShellMetrics.compactIcon, weight: .semibold))
+                    .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(color)
-                    .frame(width: DesktopShellMetrics.minimumHitTarget, height: DesktopShellMetrics.minimumHitTarget)
+                    .frame(width: 44, height: 44)
                     .background(
-                        isActive ? DesktopShellPalette.elevatedCanvas : DesktopShellPalette.secondaryCanvas.opacity(solidChrome ? 1 : 0.62),
+                        isActive ? Color.white.opacity(0.22) : Color.white.opacity(0.10),
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                     )
                     .overlay {
-                        if isActive || increasedContrast {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(
-                                    isActive
-                                        ? DesktopShellPalette.accent.opacity(increasedContrast ? 0.72 : 0.36)
-                                        : DesktopShellPalette.separator.opacity(0.82),
-                                    lineWidth: increasedContrast ? 1 : 0.5
-                                )
-                        }
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(
+                                isActive ? Color.white.opacity(0.48) : Color.white.opacity(0.15),
+                                lineWidth: isActive ? 1.2 : 0.6
+                            )
                     }
 
-                Capsule()
-                    .fill(isRunning ? (isMinimized ? Color.orange : DesktopShellPalette.label) : Color.clear)
-                    .frame(width: isActive ? 10 : 5, height: increasedContrast ? 5 : 4)
-                    .accessibilityHidden(true)
+                // Glowing indicator dot under running / minimized app (macOS parity)
+                Circle()
+                    .fill(isRunning ? (isMinimized ? Color(red: 1.00, green: 0.74, blue: 0.18) : (isActive ? Color.primary : Color.secondary.opacity(0.85))) : Color.clear)
+                    .frame(width: 4, height: 4)
             }
+            .opacity(isMinimized ? 0.78 : 1.0)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: DockGeometryPreferenceKey.self,
+                    value: [DockItemGeometryPreference(target: .app(title: title), frameInSurface: geo.frame(in: .named("desktopSurface")))]
+                )
+            }
+        )
         .accessibilityLabel(title)
         .accessibilityValue(isActive ? "Active" : (isMinimized ? "Minimized" : (isRunning ? "Running" : "Not running")))
         .accessibilityHint("Opens or activates this app")

@@ -17,6 +17,27 @@ public final class ExternalDisplayCoordinator: ObservableObject {
         static let bottomSafeTrim = "kamihi.desktop.display.bottomSafeTrim"
     }
 
+    public struct DisplayModeOption: Identifiable, Hashable {
+        public let id: String
+        public let width: Int
+        public let height: Int
+        public let refreshRate: Int
+        public let isCurrent: Bool
+        public let mode: UIScreenMode?
+
+        public var title: String {
+            "\(width)×\(height) • \(refreshRate) Hz"
+        }
+    }
+
+    private weak var activeScreen: UIScreen?
+    @Published public private(set) var availableDisplayModes: [DisplayModeOption] = []
+    @Published public var preferredRefreshRate: Int = 120 {
+        didSet {
+            UserDefaults.standard.set(preferredRefreshRate, forKey: "kamihi.desktop.display.preferredRefreshRate")
+        }
+    }
+
     @Published public private(set) var isConnected: Bool = false
     /// Logical UIKit coordinate size used by the external UIWindowScene.
     @Published public private(set) var logicalSize: CGSize = CGSize(width: 1920, height: 1080)
@@ -201,6 +222,8 @@ public final class ExternalDisplayCoordinator: ObservableObject {
     }
 
     private init() {
+        let savedRate = UserDefaults.standard.integer(forKey: "kamihi.desktop.display.preferredRefreshRate")
+        preferredRefreshRate = savedRate > 0 ? savedRate : 120
         horizontalSafeMargin = min(max(UserDefaults.standard.double(forKey: DefaultsKey.horizontalSafeMargin), 0), 0.08)
         verticalSafeMargin = min(max(UserDefaults.standard.double(forKey: DefaultsKey.verticalSafeMargin), 0), 0.08)
         leftSafeTrim = min(max(UserDefaults.standard.double(forKey: DefaultsKey.leftSafeTrim), -0.04), 0.04)
@@ -209,9 +232,29 @@ public final class ExternalDisplayCoordinator: ObservableObject {
         bottomSafeTrim = min(max(UserDefaults.standard.double(forKey: DefaultsKey.bottomSafeTrim), -0.04), 0.04)
     }
 
+    public func autoSelectPreferredHighRefreshMode(on screen: UIScreen) {
+        guard !screen.availableModes.isEmpty else { return }
+        let modes = screen.availableModes
+        if let bestMode = modes.max(by: { a, b in
+            let aIs1080p = abs(a.size.width - 1920) < 1 && abs(a.size.height - 1080) < 1
+            let bIs1080p = abs(b.size.width - 1920) < 1 && abs(b.size.height - 1080) < 1
+            if aIs1080p != bIs1080p {
+                return !aIs1080p && bIs1080p
+            }
+            return (a.size.width * a.size.height) < (b.size.width * b.size.height)
+        }) {
+            if screen.currentMode != bestMode {
+                screen.currentMode = bestMode
+            }
+        }
+    }
+
     public func connect(screen: UIScreen, logicalSize: CGSize? = nil) {
         let wasConnected = isConnected
         isConnected = true
+        activeScreen = screen
+        autoSelectPreferredHighRefreshMode(on: screen)
+        refreshAvailableModes(from: screen)
         refreshMetrics(from: screen, logicalSize: logicalSize)
 
         if !wasConnected {
@@ -219,11 +262,42 @@ public final class ExternalDisplayCoordinator: ObservableObject {
         }
     }
 
+    public func refreshAvailableModes(from screen: UIScreen) {
+        var options: [DisplayModeOption] = []
+        let current = screen.currentMode
+        let maxFps = screen.maximumFramesPerSecond
+
+        for mode in screen.availableModes {
+            let width = Int(mode.size.width)
+            let height = Int(mode.size.height)
+            let isCurrent = (mode == current)
+            let id = "\(width)x\(height)-\(mode.pixelAspectRatio)"
+            options.append(DisplayModeOption(
+                id: id,
+                width: width,
+                height: height,
+                refreshRate: maxFps,
+                isCurrent: isCurrent,
+                mode: mode
+            ))
+        }
+        self.availableDisplayModes = options
+    }
+
+    public func selectDisplayMode(_ option: DisplayModeOption) {
+        guard let screen = activeScreen, let mode = option.mode else { return }
+        screen.currentMode = mode
+        refreshAvailableModes(from: screen)
+        refreshMetrics(from: screen)
+    }
+
     /// Refresh measurements using the external UIWindowScene's actual logical coordinate size when
     /// available. UIScreen.bounds is not guaranteed to match the scene coordinate space after iOS
     /// applies display geometry or overscan compensation, so diagnostics must follow the same canvas
     /// that Kamihi actually renders into.
     public func refreshMetrics(from screen: UIScreen, logicalSize sceneLogicalSize: CGSize? = nil) {
+        activeScreen = screen
+        refreshAvailableModes(from: screen)
         let newLogicalSize = sceneLogicalSize ?? screen.bounds.size
         let rawNativePixelSize = screen.nativeBounds.size
         let newNativePixelSize = orientedNativePixelSize(rawNativePixelSize, matching: newLogicalSize)
@@ -250,6 +324,8 @@ public final class ExternalDisplayCoordinator: ObservableObject {
     public func disconnect() {
         guard isConnected else { return }
         isConnected = false
+        activeScreen = nil
+        availableDisplayModes.removeAll()
         DesktopSession.shared.externalDisplayDidDisconnect()
     }
 
