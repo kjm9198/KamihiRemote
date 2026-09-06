@@ -345,9 +345,13 @@ public struct DesktopOnboardingSheet: View {
         .buttonStyle(.plain)
     }
 
-    private func handleImport(_ result: Result<URL, Error>) {
+    private func handleImport(_ result: Result<[URL], Error>) {
         switch result {
-        case .success(let url):
+        case .success(let urls):
+            guard let url = urls.first else {
+                importMessage = "No bookmark file was selected."
+                return
+            }
             do {
                 let count = try DesktopBrowserState.shared.importSafariBookmarks(from: url)
                 importMessage = count == 0 ? "Your Safari bookmarks are already up to date." : "Imported \(count) Safari bookmark\(count == 1 ? "" : "s")."
