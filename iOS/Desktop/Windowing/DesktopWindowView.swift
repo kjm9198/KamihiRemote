@@ -12,10 +12,11 @@ enum DesktopWindowEnergyPolicy {
         isMinimized: Bool,
         isActive: Bool,
         isWebBacked: Bool,
-        shouldConserveEnergy: Bool
+        shouldConserveEnergy: Bool,
+        hasExceededIdleRetention: Bool = false
     ) -> Bool {
         guard !isMinimized else { return false }
-        if shouldConserveEnergy && isWebBacked && !isActive {
+        if isWebBacked && !isActive && (shouldConserveEnergy || hasExceededIdleRetention) {
             return false
         }
         return true
@@ -39,10 +40,14 @@ struct DesktopWindowView<Content: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var features = DesktopFeatureState.shared
     @StateObject private var power = DesktopPowerMonitor.shared
+    @State private var hasExceededIdleRetention = false
+    @State private var idleRetentionTask: Task<Void, Never>?
 
     let window: DesktopSession.DesktopWindow
     let isActive: Bool
     @ViewBuilder let content: () -> Content
+
+    private let inactiveWebRetentionNanoseconds: UInt64 = 15 * 60 * 1_000_000_000
 
     var body: some View {
         GeometryReader { geo in
@@ -95,6 +100,19 @@ struct DesktopWindowView<Content: View>: View {
             .animation(reduceMotion ? nil : KamihiTheme.Animation.spatial, value: window.isMaximized)
             .animation(reduceMotion ? nil : KamihiTheme.Animation.spatial, value: window.normalizedFrame)
         }
+        .onAppear {
+            updateIdleRetentionPolicy()
+        }
+        .onChange(of: isActive) { _, _ in
+            updateIdleRetentionPolicy()
+        }
+        .onChange(of: window.isMinimized) { _, _ in
+            updateIdleRetentionPolicy()
+        }
+        .onDisappear {
+            idleRetentionTask?.cancel()
+            idleRetentionTask = nil
+        }
     }
 
     private var shouldRenderContent: Bool {
@@ -108,8 +126,37 @@ struct DesktopWindowView<Content: View>: View {
             isMinimized: window.isMinimized,
             isActive: isActive,
             isWebBacked: DesktopWindowEnergyPolicy.isWebBackedApp(window.title),
-            shouldConserveEnergy: features.shouldConserveEnergy
+            shouldConserveEnergy: features.shouldConserveEnergy,
+            hasExceededIdleRetention: hasExceededIdleRetention
         )
+    }
+
+    /// Keep normal app switching instant, but do not retain an inactive browser,
+    /// ChatGPT, or YouTube renderer forever during an otherwise unconstrained long
+    /// desktop session. This is a single self-terminating sleep per inactive window,
+    /// not a polling timer/display link. Reactivation cancels it immediately and
+    /// recreates the web surface from the app's persisted URL/session metadata.
+    private func updateIdleRetentionPolicy() {
+        idleRetentionTask?.cancel()
+        idleRetentionTask = nil
+
+        let isWebBacked = DesktopWindowEnergyPolicy.isWebBackedApp(window.title)
+        guard isWebBacked, !isActive, !window.isMinimized else {
+            hasExceededIdleRetention = false
+            return
+        }
+
+        hasExceededIdleRetention = false
+        idleRetentionTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: inactiveWebRetentionNanoseconds)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            hasExceededIdleRetention = true
+            idleRetentionTask = nil
+        }
     }
 
     private var titleBar: some View {
