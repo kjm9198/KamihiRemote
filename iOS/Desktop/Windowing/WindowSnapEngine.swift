@@ -11,7 +11,9 @@ public enum WindowSnapEngine {
         case bottomLeftQuarter = "Bottom Left"
         case bottomRightQuarter = "Bottom Right"
         case leftThird = "Left Third"
+        case leftTwoThirds = "Left Two Thirds"
         case centerThird = "Center Third"
+        case rightTwoThirds = "Right Two Thirds"
         case rightThird = "Right Third"
         case maximize = "Maximize"
         case center = "Center"
@@ -42,8 +44,12 @@ public enum WindowSnapEngine {
 
         case .leftThird:
             return CGRect(x: 0.012, y: topY, width: 0.318, height: totalHeight)
+        case .leftTwoThirds:
+            return CGRect(x: 0.012, y: topY, width: 0.647, height: totalHeight)
         case .centerThird:
             return CGRect(x: 0.341, y: topY, width: 0.318, height: totalHeight)
+        case .rightTwoThirds:
+            return CGRect(x: 0.341, y: topY, width: 0.647, height: totalHeight)
         case .rightThird:
             return CGRect(x: 0.670, y: topY, width: 0.318, height: totalHeight)
 
@@ -56,10 +62,9 @@ public enum WindowSnapEngine {
 
     /// Evaluates cursor position during a deliberate title-bar drag to detect
     /// edge snapping preview intent. The outer left/right edges keep the familiar
-    /// half/quarter zones. The top edge now exposes the three third-width layouts
-    /// that were previously command-only, while the very top center keeps a
-    /// forgiving maximize target. This makes every readiness-gate snap geometry
-    /// discoverable through the same reversible preview-and-release interaction.
+    /// half/quarter zones. The top edge exposes one-third, two-thirds, center-third,
+    /// and maximize layouts so every readiness-gate snap geometry is reachable
+    /// through the same reversible preview-and-release interaction.
     public static func evaluateSnapIntent(cursor: CGPoint) -> SnapTarget? {
         if cursor.x < 0.025 {
             if cursor.y < 0.25 { return .topLeftQuarter }
@@ -75,14 +80,19 @@ public enum WindowSnapEngine {
         // `DesktopSession.movePointer` clamps Y to 0.006, so the 0.014 band is
         // still reachable without demanding pixel-perfect contact with y == 0.
         // Keep maximize in the center where users naturally throw a title bar to
-        // the top, and use the remaining top-edge zones for 1/3 placement.
-        if cursor.y < 0.014, cursor.x >= 0.34, cursor.x <= 0.66 {
+        // the top. The wider 0.030 band then divides the top edge into five clear
+        // spatial zones: 1/3, 2/3, center 1/3, 2/3, 1/3. The live snap preview
+        // makes the selected geometry visible before release and moving away
+        // cancels it, so this adds capability without another permanent control.
+        if cursor.y < 0.014, cursor.x >= 0.44, cursor.x <= 0.56 {
             return .maximize
         }
         if cursor.y < 0.030 {
-            if cursor.x < 1.0 / 3.0 { return .leftThird }
-            if cursor.x > 2.0 / 3.0 { return .rightThird }
-            return .centerThird
+            if cursor.x < 0.20 { return .leftThird }
+            if cursor.x < 0.44 { return .leftTwoThirds }
+            if cursor.x <= 0.56 { return .centerThird }
+            if cursor.x <= 0.80 { return .rightTwoThirds }
+            return .rightThird
         }
 
         return nil
