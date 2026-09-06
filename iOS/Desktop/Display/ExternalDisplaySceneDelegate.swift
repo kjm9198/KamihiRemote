@@ -23,11 +23,12 @@ private var activeExternalDisplaySceneIDs: Set<String> = []
 @MainActor
 private var primaryExternalDisplaySceneID: String?
 
-/// Keep the last public UIKit metrics for each live scene so that, if the newest
-/// scene disappears while another external scene is still alive, diagnostics can
-/// fall back immediately without producing a false disconnected transition.
+/// Keep the last public UIKit metrics and window for each live scene so that, if
+/// the newest scene disappears while another external scene is still alive,
+/// diagnostics and user-triggered desktop capture can fall back immediately
+/// without producing a false disconnected transition.
 @MainActor
-private var externalDisplaySceneMetrics: [String: (screen: UIScreen, logicalSize: CGSize)] = [:]
+private var externalDisplaySceneMetrics: [String: (screen: UIScreen, logicalSize: CGSize, window: UIWindow)] = [:]
 
 /// User-initiated capture bridge for the Kamihi-owned external-display scene.
 ///
@@ -159,7 +160,7 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
         Task { @MainActor in
             let sceneID = session.persistentIdentifier
             activeExternalDisplaySceneIDs.insert(sceneID)
-            externalDisplaySceneMetrics[sceneID] = (screen: screen, logicalSize: sceneLogicalSize)
+            externalDisplaySceneMetrics[sceneID] = (screen: screen, logicalSize: sceneLogicalSize, window: window)
             primaryExternalDisplaySceneID = sceneID
             ExternalDisplayCoordinator.shared.connect(screen: screen, logicalSize: sceneLogicalSize)
 
@@ -212,6 +213,7 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
                       let fallbackSceneID = activeExternalDisplaySceneIDs.first,
                       let fallbackMetrics = externalDisplaySceneMetrics[fallbackSceneID] {
                 primaryExternalDisplaySceneID = fallbackSceneID
+                DesktopCaptureService.shared.attach(externalWindow: fallbackMetrics.window)
                 ExternalDisplayCoordinator.shared.refreshMetrics(
                     from: fallbackMetrics.screen,
                     logicalSize: fallbackMetrics.logicalSize
@@ -228,7 +230,9 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
         window?.frame = sceneBounds
         window?.rootViewController?.view.contentScaleFactor = max(screen.nativeScale, 1)
         Task { @MainActor in
-            externalDisplaySceneMetrics[sceneID] = (screen: screen, logicalSize: sceneBounds.size)
+            if let window {
+                externalDisplaySceneMetrics[sceneID] = (screen: screen, logicalSize: sceneBounds.size, window: window)
+            }
             guard primaryExternalDisplaySceneID == sceneID else { return }
             ExternalDisplayCoordinator.shared.refreshMetrics(from: screen, logicalSize: sceneBounds.size)
         }
