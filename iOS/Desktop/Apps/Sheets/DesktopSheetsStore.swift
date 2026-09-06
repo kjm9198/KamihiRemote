@@ -113,8 +113,65 @@ final class DesktopSheetsStore: ObservableObject {
 
     func appendToActiveCell(_ text: String) {
         guard !text.isEmpty else { return }
+
+        // Pasting a table from Numbers, Excel, Google Sheets, or another
+        // spreadsheet normally arrives through the iPhone text input as TSV.
+        // Treat tabs/newlines as cell boundaries instead of corrupting one cell.
+        if text.contains("\t") || text.contains("\n") || text.contains("\r") {
+            pasteTabularText(text)
+            return
+        }
+
         let key = Self.cellKey(row: activeRow, column: activeColumn)
         workbook.cells[key, default: ""].append(text)
+        workbook.updatedAt = Date()
+    }
+
+    /// Fills the grid from the active cell using tab/newline-delimited clipboard
+    /// text. Existing values inside the pasted rectangle are replaced, including
+    /// intentional empty fields. Data beyond the lightweight 20x12 grid is safely
+    /// clipped and a trailing clipboard newline does not erase an extra row.
+    private func pasteTabularText(_ text: String) {
+        let normalized = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+
+        var rawRows = normalized.components(separatedBy: "\n")
+        if normalized.hasSuffix("\n"), rawRows.last == "" {
+            rawRows.removeLast()
+        }
+        guard !rawRows.isEmpty else { return }
+
+        let startRow = activeRow
+        let startColumn = activeColumn
+        var lastWrittenRow = startRow
+        var lastWrittenColumn = startColumn
+        var didWrite = false
+
+        for (rowOffset, rawRow) in rawRows.enumerated() {
+            let row = startRow + rowOffset
+            guard row < Self.rowCount else { break }
+
+            let values = rawRow.components(separatedBy: "\t")
+            for (columnOffset, value) in values.enumerated() {
+                let column = startColumn + columnOffset
+                guard column < Self.columnCount else { break }
+
+                let key = Self.cellKey(row: row, column: column)
+                if value.isEmpty {
+                    workbook.cells.removeValue(forKey: key)
+                } else {
+                    workbook.cells[key] = value
+                }
+                lastWrittenRow = row
+                lastWrittenColumn = column
+                didWrite = true
+            }
+        }
+
+        guard didWrite else { return }
+        workbook.activeRow = lastWrittenRow
+        workbook.activeColumn = lastWrittenColumn
         workbook.updatedAt = Date()
     }
 
