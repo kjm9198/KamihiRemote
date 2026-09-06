@@ -1,112 +1,146 @@
 import SwiftUI
 
-/// Kamihi Desktop has one normal product flow: enter the desktop and continue
-/// from the last saved session. The legacy launch-profile identifiers remain in
-/// the codebase only for compatibility with existing persisted user data.
+/// First-run entry into the one persistent Kamihi Desktop. After this first entry
+/// the router resumes Desktop automatically on normal launches.
 struct ModeSelectionView: View {
     @EnvironmentObject private var router: AppModeRouter
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         ZStack {
             KamihiTheme.AtmosphericBackground()
+                .ignoresSafeArea()
 
-            ScrollView {
-                VStack(spacing: KamihiTheme.Spacing.lg) {
-                    headerSection
-                    desktopCard
+            VStack(spacing: 20) {
+                Spacer(minLength: 26)
+                hero
+                desktopCard
+                enterButton
 
-                    Button {
-                        // One desktop. Restore what the user left behind when a
-                        // recovery snapshot exists; a first run naturally opens
-                        // to an empty desktop because there is nothing to restore.
-                        DesktopLaunchProfile.selected = .resume
-                        router.selectMode(.externalDesktop)
-                    } label: {
-                        Label("Enter Desktop", systemImage: "rectangle.inset.filled.and.person.filled")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .frame(maxWidth: 560, minHeight: 52)
-                    .keyboardShortcut(.return, modifiers: [])
-                    .accessibilityHint("Opens your single Kamihi Desktop and restores the windows you left open when available.")
-
-                    Text("Kamihi remembers the windows you leave open. On a new or cleared session the desktop starts empty, and nothing opens until you choose an app.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 520)
-
-                    #if DEBUG
-                    Button {
-                        DesktopLaunchProfile.selected = .resume
-                        router.startDesktopLab()
-                    } label: {
-                        Label("Open Desktop Lab", systemImage: "flask.fill")
-                            .font(.subheadline.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                    }
-                    .buttonStyle(.bordered)
-                    .frame(maxWidth: 560, minHeight: 44)
-                    .keyboardShortcut("d", modifiers: [.command, .shift])
-                    .accessibilityHint("Opens the deterministic desktop preview used for visual verification.")
-                    #endif
+                #if DEBUG
+                Button {
+                    DesktopLaunchProfile.selected = .resume
+                    router.startDesktopLab()
+                } label: {
+                    Label("Desktop Lab", systemImage: "flask.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .padding(.horizontal, 16)
+                        .frame(height: 38)
                 }
-                .padding(.horizontal, KamihiTheme.Spacing.lg)
-                .padding(.vertical, KamihiTheme.Spacing.xl)
+                .buttonStyle(.plain)
+                .desktopGlassSurface(cornerRadius: 19, elevated: false)
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+                #endif
+
+                Text("After you enter once, Kamihi returns directly to this desktop and restores your last session whenever possible.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 520)
+                    .padding(.horizontal, 20)
+
+                Spacer(minLength: 26)
             }
+            .padding(.horizontal, 24)
         }
     }
 
-    private var headerSection: some View {
-        VStack(spacing: KamihiTheme.Spacing.xs) {
-            Text("KAMIHI DESKTOP")
-                .font(.caption.weight(.bold))
-                .tracking(dynamicTypeSize.isAccessibilitySize ? 0.8 : 2.2)
-                .foregroundStyle(.tint)
+    private var hero: some View {
+        VStack(spacing: 9) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.accentColor.opacity(0.95), Color.purple.opacity(0.82)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 76, height: 76)
+                    .shadow(color: Color.black.opacity(0.18), radius: 14, y: 8)
+                Image(systemName: "display.2")
+                    .font(.system(size: 32, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
 
-            Text("Your iPhone desktop")
-                .font(.largeTitle.bold())
-                .multilineTextAlignment(.center)
+            Text("Kamihi Desktop")
+                .font(.system(size: dynamicTypeSize.isAccessibilitySize ? 32 : 38, weight: .bold))
+                .tracking(-1.1)
 
-            Text("Connect RayNeo or another external display. Your iPhone becomes the trackpad, keyboard, launcher, and secure touch surface.")
-                .font(.subheadline)
+            Text("A persistent desktop powered entirely by your iPhone")
+                .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 520)
         }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
     }
 
     private var desktopCard: some View {
-        HStack(alignment: .top, spacing: KamihiTheme.Spacing.md) {
-            Image(systemName: "display.2")
-                .font(.title.weight(.semibold))
-                .symbolRenderingMode(.hierarchical)
+        VStack(spacing: 0) {
+            featureRow("display", title: "External desktop", detail: "RayNeo or any supported display becomes the desktop canvas.")
+            Divider().opacity(0.35)
+            featureRow("rectangle.3.group", title: "Persistent windows", detail: "Apps, positions and the active window resume after reconnect or relaunch.")
+            Divider().opacity(0.35)
+            featureRow("iphone.gen3", title: "iPhone control surface", detail: "Trackpad, keyboard, settings and secure system prompts stay on the phone.")
+        }
+        .padding(.vertical, 4)
+        .frame(maxWidth: 580)
+        .desktopGlassSurface(cornerRadius: 22)
+    }
+
+    private func featureRow(_ icon: String, title: String, detail: String) -> some View {
+        HStack(spacing: 13) {
+            Image(systemName: icon)
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.tint)
-                .accessibilityHidden(true)
+                .frame(width: 34, height: 34)
+                .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("One desktop")
-                    .font(.headline)
-                Text("No modes and no presets. Continue from what you left behind, or start from an empty desktop when there is no saved session.")
-                    .font(.subheadline)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                Text(detail)
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-
             Spacer(minLength: 0)
         }
-        .padding(KamihiTheme.Spacing.md)
-        .frame(maxWidth: 560, alignment: .leading)
-        .background(
-            reduceTransparency ? AnyShapeStyle(Color(uiColor: .secondarySystemBackground)) : AnyShapeStyle(.thinMaterial),
-            in: RoundedRectangle(cornerRadius: KamihiTheme.Radius.lg, style: .continuous)
-        )
-        .accessibilityElement(children: .combine)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    private var enterButton: some View {
+        Button {
+            DesktopLaunchProfile.selected = .resume
+            router.selectMode(.externalDesktop)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.right.circle.fill")
+                Text("Enter Desktop")
+            }
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 50)
+            .background(
+                LinearGradient(
+                    colors: [Color.accentColor, Color.accentColor.opacity(0.78)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ),
+                in: RoundedRectangle(cornerRadius: 15, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.24), lineWidth: 0.7)
+            }
+            .shadow(color: Color.accentColor.opacity(0.22), radius: 12, y: 6)
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: 580)
+        .keyboardShortcut(.return, modifiers: [])
+        .accessibilityHint("Enters your persistent Kamihi Desktop and restores the previous session when available.")
     }
 }
