@@ -282,6 +282,7 @@ struct WKWebViewRepresentable: UIViewRepresentable {
         webView.scrollView.backgroundColor = .systemBackground
         webView.allowsBackForwardNavigationGestures = false
         webView.uiDelegate = context.coordinator
+        webView.navigationDelegate = context.coordinator
 
         if let registryKey {
             DesktopWebInputRegistry.shared.register(webView, key: registryKey)
@@ -294,6 +295,7 @@ struct WKWebViewRepresentable: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         webView.uiDelegate = context.coordinator
+        webView.navigationDelegate = context.coordinator
         if let registryKey {
             DesktopWebInputRegistry.shared.register(webView, key: registryKey)
         }
@@ -308,11 +310,12 @@ struct WKWebViewRepresentable: UIViewRepresentable {
         // WKWebsiteDataStore and are not copied or deleted here.
         webView.stopLoading()
         webView.uiDelegate = nil
+        webView.navigationDelegate = nil
         DesktopWebInputRegistry.shared.unregister(webView)
         webView.removeFromSuperview()
     }
 
-    final class Coordinator: NSObject, WKUIDelegate {
+    final class Coordinator: NSObject, WKUIDelegate, WKNavigationDelegate {
         func webView(
             _ webView: WKWebView,
             createWebViewWith configuration: WKWebViewConfiguration,
@@ -328,6 +331,16 @@ struct WKWebViewRepresentable: UIViewRepresentable {
                   let requestURL = navigationAction.request.url else { return nil }
             webView.load(URLRequest(url: requestURL))
             return nil
+        }
+
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            // iOS can reclaim a standalone ChatGPT/YouTube/Takeover renderer during
+            // a long external-display session. Recover only while this WebView is
+            // still presented; dismantled/hidden apps must not restart network or
+            // media work. Authentication cookies/session state remain owned by
+            // WebKit's default data store and are never read by Kamihi.
+            guard webView.superview != nil else { return }
+            webView.reload()
         }
     }
 }
