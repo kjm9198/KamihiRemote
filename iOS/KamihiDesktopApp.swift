@@ -66,23 +66,28 @@ struct KamihiDesktopApp: App {
                     // A real external-display connection owns the normal product
                     // flow. Promote the iPhone immediately into the full-screen
                     // Desktop controller instead of leaving it stranded on the
-                    // Enter Desktop screen while the monitor is already rendering
-                    // Kamihi. This also keeps a fast reconnect seamless: the
-                    // existing desktop/window state is recovered before the user
-                    // starts interacting with the trackpad again.
+                    // entry screen while the monitor is already rendering Kamihi.
                     if router.currentMode != .externalDesktop || router.isDesktopLabActive {
                         router.selectMode(.externalDesktop)
                     }
                     _ = desktopRecovery.prepareForConnection(desktop: desktop)
                 } else {
-                    // Do not bounce the user back through a mode/profile chooser on
-                    // cable removal. Preserve the one-desktop state so reconnecting
-                    // can resume directly into the trackpad controller.
+                    // Cable removal is a save boundary, never a reset. The phone
+                    // stays in Desktop mode and the next connection resumes this OS.
                     desktopRecovery.finishSession(desktop: desktop)
                 }
             }
             .onChange(of: desktop.windows) { _, _ in
                 desktopRecovery.autosave(desktop: desktop)
+            }
+            .onChange(of: desktop.activeWindowID) { _, _ in
+                // Focus is part of the user's desktop state too. Persist it even
+                // when no window geometry changed so relaunch restores the same app.
+                desktopRecovery.autosave(desktop: desktop)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+                desktopRecovery.saveSnapshot(desktop: desktop, force: true)
+                DesktopFeatureState.shared.saveSession(desktop: desktop)
             }
         }
     }
