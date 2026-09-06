@@ -1,9 +1,10 @@
 import SwiftUI
 import UIKit
 
-/// Kamihi Desktop's semantic visual foundation. This intentionally follows
-/// public iOS/iPadOS conventions (semantic colors, materials, SF Symbols)
-/// without copying macOS or Samsung trade dress.
+/// Kamihi Desktop's semantic visual foundation. The shell now follows a
+/// macOS-inspired hierarchy: compact chrome, frosted materials, quiet separators,
+/// centered window titles and restrained system typography while remaining native
+/// SwiftUI and accessible on iPhone-driven external displays.
 @MainActor
 final class DesktopShellAppearance: ObservableObject {
     static let shared = DesktopShellAppearance()
@@ -58,18 +59,18 @@ final class DesktopShellAppearance: ObservableObject {
 }
 
 enum DesktopShellMetrics {
-    static let compactSpacing: CGFloat = 8
-    static let standardSpacing: CGFloat = 12
+    static let compactSpacing: CGFloat = 7
+    static let standardSpacing: CGFloat = 10
     static let sectionSpacing: CGFloat = 16
-    static let chromeCornerRadius: CGFloat = 18
-    static let windowCornerRadius: CGFloat = 20
+    static let chromeCornerRadius: CGFloat = 14
+    static let windowCornerRadius: CGFloat = 14
     static let minimumHitTarget: CGFloat = 44
-    static let compactIcon: CGFloat = 17
-    static let standardIcon: CGFloat = 20
+    static let compactIcon: CGFloat = 16
+    static let standardIcon: CGFloat = 19
 
     static func separatorOpacity(reduceTransparency: Bool, increasedContrast: Bool) -> Double {
-        if increasedContrast { return 0.88 }
-        return reduceTransparency ? 0.72 : 0.45
+        if increasedContrast { return 0.84 }
+        return reduceTransparency ? 0.66 : 0.28
     }
 
     static func separatorWidth(reduceTransparency: Bool, increasedContrast: Bool) -> CGFloat {
@@ -78,7 +79,6 @@ enum DesktopShellMetrics {
 }
 
 enum DesktopShellPalette {
-    /// Semantic base canvas that automatically tracks light/dark appearance.
     static let canvas = Color(uiColor: .systemBackground)
     static let secondaryCanvas = Color(uiColor: .secondarySystemBackground)
     static let elevatedCanvas = Color(uiColor: .tertiarySystemBackground)
@@ -96,30 +96,42 @@ struct DesktopShellChromeModifier: ViewModifier {
     private var increasedContrast: Bool { colorSchemeContrast == .increased }
 
     func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         content
             .background {
                 if reduceTransparency || increasedContrast {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(DesktopShellPalette.secondaryCanvas)
+                    shape.fill(DesktopShellPalette.secondaryCanvas)
                 } else {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(.regularMaterial)
+                    shape.fill(.ultraThinMaterial)
                 }
             }
             .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(
-                        DesktopShellPalette.separator.opacity(
-                            DesktopShellMetrics.separatorOpacity(
-                                reduceTransparency: reduceTransparency,
-                                increasedContrast: increasedContrast
-                            )
-                        ),
-                        lineWidth: DesktopShellMetrics.separatorWidth(
+                shape.stroke(
+                    DesktopShellPalette.separator.opacity(
+                        DesktopShellMetrics.separatorOpacity(
                             reduceTransparency: reduceTransparency,
                             increasedContrast: increasedContrast
                         )
+                    ),
+                    lineWidth: DesktopShellMetrics.separatorWidth(
+                        reduceTransparency: reduceTransparency,
+                        increasedContrast: increasedContrast
                     )
+                )
+            }
+            .overlay(alignment: .top) {
+                if !reduceTransparency && !increasedContrast {
+                    shape
+                        .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.6)
+                        .mask(
+                            LinearGradient(
+                                colors: [.white, .clear],
+                                startPoint: .top,
+                                endPoint: .center
+                            )
+                        )
+                        .allowsHitTesting(false)
+                }
             }
     }
 }
@@ -132,25 +144,27 @@ struct DesktopShellElevatedSurfaceModifier: ViewModifier {
     private var increasedContrast: Bool { colorSchemeContrast == .increased }
 
     func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         content
-            .background(
-                (reduceTransparency || increasedContrast)
-                    ? DesktopShellPalette.canvas
-                    : DesktopShellPalette.secondaryCanvas,
-                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(
-                        DesktopShellPalette.separator.opacity(
-                            increasedContrast ? 0.82 : (reduceTransparency ? 0.62 : 0.35)
-                        ),
-                        lineWidth: DesktopShellMetrics.separatorWidth(
-                            reduceTransparency: reduceTransparency,
-                            increasedContrast: increasedContrast
-                        )
-                    )
+            .background {
+                if reduceTransparency || increasedContrast {
+                    shape.fill(DesktopShellPalette.canvas)
+                } else {
+                    shape.fill(.regularMaterial)
+                }
             }
+            .overlay {
+                shape.stroke(
+                    DesktopShellPalette.separator.opacity(
+                        increasedContrast ? 0.78 : (reduceTransparency ? 0.58 : 0.24)
+                    ),
+                    lineWidth: DesktopShellMetrics.separatorWidth(
+                        reduceTransparency: reduceTransparency,
+                        increasedContrast: increasedContrast
+                    )
+                )
+            }
+            .shadow(color: Color.black.opacity(0.16), radius: 18, y: 9)
     }
 }
 
@@ -163,8 +177,14 @@ extension View {
         modifier(DesktopShellElevatedSurfaceModifier(cornerRadius: cornerRadius))
     }
 
-    func desktopShellTheme(_ appearance: DesktopShellAppearance = .shared) -> some View {
+    @MainActor
+    func desktopShellTheme(_ appearance: DesktopShellAppearance) -> some View {
         preferredColorScheme(appearance.theme.preferredColorScheme)
+    }
+
+    @MainActor
+    func desktopShellTheme() -> some View {
+        preferredColorScheme(DesktopShellAppearance.shared.theme.preferredColorScheme)
     }
 }
 
