@@ -54,7 +54,8 @@ final class DesktopAppearanceSettings: ObservableObject {
 }
 
 /// Centralized semantic design tokens for Kamihi Remote & Kamihi Desktop.
-/// Provides consistent typography, spacing, corner radii, materials, colors, and spatial animations.
+/// Provides consistent typography, spacing, corner radii, materials, colors, and
+/// spring motion tuned for the restrained, spatial feel of a desktop UI.
 public enum KamihiTheme {
     /// Primary app surface. Kept as a root alias so feature views do not hardcode black/white backgrounds.
     public static let surface = Colors.surfaceBackground
@@ -73,23 +74,23 @@ public enum KamihiTheme {
     // MARK: - Corner Radii
     public enum Radius {
         public static let xs: CGFloat = 6
-        public static let sm: CGFloat = 10
+        public static let sm: CGFloat = 9
         public static let md: CGFloat = 14
-        public static let lg: CGFloat = 20
-        public static let xl: CGFloat = 28
+        public static let lg: CGFloat = 18
+        public static let xl: CGFloat = 26
         public static let pill: CGFloat = 999
     }
 
     // MARK: - Animations
     public enum Animation {
-        /// Fast interactive touch/press feedback (150ms)
-        public static let fast = SwiftUI.Animation.spring(response: 0.15, dampingFraction: 0.85)
-        /// Standard UI state changes (280ms)
-        public static let standard = SwiftUI.Animation.spring(response: 0.28, dampingFraction: 0.86)
-        /// Spatial window movement, maximize, and minimize (350ms)
-        public static let spatial = SwiftUI.Animation.spring(response: 0.35, dampingFraction: 0.88)
-        /// Subtle launcher and sheet transitions (300ms)
-        public static let overlay = SwiftUI.Animation.spring(response: 0.30, dampingFraction: 0.84)
+        /// Dock magnification, presses, and tiny chrome reactions.
+        public static let fast = SwiftUI.Animation.spring(response: 0.18, dampingFraction: 0.86, blendDuration: 0.05)
+        /// Normal control/state changes.
+        public static let standard = SwiftUI.Animation.spring(response: 0.30, dampingFraction: 0.88, blendDuration: 0.08)
+        /// Window move, resize, maximize, restore, and dock-directed minimize motion.
+        public static let spatial = SwiftUI.Animation.spring(response: 0.42, dampingFraction: 0.86, blendDuration: 0.12)
+        /// Applications chooser, sheets, and desktop overlays.
+        public static let overlay = SwiftUI.Animation.spring(response: 0.34, dampingFraction: 0.90, blendDuration: 0.08)
     }
 
     // MARK: - Semantic Colors
@@ -118,7 +119,7 @@ public enum KamihiTheme {
 
     // MARK: - Atmospheric Wallpaper
     /// An original Kamihi wallpaper that adapts to System/Light/Dark appearance.
-    /// It gives the desktop an iPadOS-like sense of depth without making every surface glass.
+    /// It gives frosted desktop surfaces enough depth and contrast to read clearly.
     public struct AtmosphericBackground: View {
         @Environment(\.colorScheme) private var colorScheme
 
