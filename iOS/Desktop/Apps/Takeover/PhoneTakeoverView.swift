@@ -21,6 +21,7 @@ struct PhoneTakeoverView: View {
     @State private var canGoForward = false
     @State private var webView: WKWebView?
     @State private var isPrivacyShielded = false
+    @State private var handoffError: String?
 
     var body: some View {
         NavigationStack {
@@ -36,7 +37,8 @@ struct PhoneTakeoverView: View {
                             isLoading: $isLoading,
                             canGoBack: $canGoBack,
                             canGoForward: $canGoForward,
-                            webView: $webView
+                            webView: $webView,
+                            handoffError: $handoffError
                         )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
@@ -77,6 +79,16 @@ struct PhoneTakeoverView: View {
             if isPrivacyShielded {
                 takeoverPrivacyShield
             }
+        }
+        .alert("Can't Open Sign-In App", isPresented: Binding(
+            get: { handoffError != nil },
+            set: { if !$0 { handoffError = nil } }
+        )) {
+            Button("OK", role: .cancel) {
+                handoffError = nil
+            }
+        } message: {
+            Text(handoffError ?? "The requested app could not be opened.")
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase != .active, webView != nil else { return }
@@ -330,6 +342,7 @@ private struct TakeoverWebView: UIViewRepresentable {
     @Binding var canGoBack: Bool
     @Binding var canGoForward: Bool
     @Binding var webView: WKWebView?
+    @Binding var handoffError: String?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -400,7 +413,10 @@ private struct TakeoverWebView: UIViewRepresentable {
 
             decisionHandler(.cancel)
             Task { @MainActor in
-                UIApplication.shared.open(url, options: [:], completionHandler: nil)
+                UIApplication.shared.open(url, options: [:]) { opened in
+                    guard !opened else { return }
+                    parent.handoffError = "The website tried to continue in another app, but iOS could not open it. Stay in Phone Takeover or choose the site's web sign-in option."
+                }
             }
         }
 
