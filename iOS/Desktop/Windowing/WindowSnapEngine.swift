@@ -54,9 +54,13 @@ public enum WindowSnapEngine {
         }
     }
 
-    /// Evaluates cursor position during a drag to detect edge snapping preview intent.
+    /// Evaluates cursor position during a deliberate title-bar drag to detect
+    /// edge snapping preview intent. The outer left/right edges keep the familiar
+    /// half/quarter zones. The top edge now exposes the three third-width layouts
+    /// that were previously command-only, while the very top center keeps a
+    /// forgiving maximize target. This makes every readiness-gate snap geometry
+    /// discoverable through the same reversible preview-and-release interaction.
     public static func evaluateSnapIntent(cursor: CGPoint) -> SnapTarget? {
-        // Edge snapping thresholds
         if cursor.x < 0.025 {
             if cursor.y < 0.25 { return .topLeftQuarter }
             if cursor.y > 0.70 { return .bottomLeftQuarter }
@@ -67,9 +71,20 @@ public enum WindowSnapEngine {
             if cursor.y > 0.70 { return .bottomRightQuarter }
             return .rightHalf
         }
-        if cursor.y < 0.025 {
+
+        // `DesktopSession.movePointer` clamps Y to 0.006, so the 0.014 band is
+        // still reachable without demanding pixel-perfect contact with y == 0.
+        // Keep maximize in the center where users naturally throw a title bar to
+        // the top, and use the remaining top-edge zones for 1/3 placement.
+        if cursor.y < 0.014, cursor.x >= 0.34, cursor.x <= 0.66 {
             return .maximize
         }
+        if cursor.y < 0.030 {
+            if cursor.x < 1.0 / 3.0 { return .leftThird }
+            if cursor.x > 2.0 / 3.0 { return .rightThird }
+            return .centerThird
+        }
+
         return nil
     }
 }
