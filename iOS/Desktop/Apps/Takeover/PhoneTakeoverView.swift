@@ -22,6 +22,7 @@ struct PhoneTakeoverView: View {
     @State private var webView: WKWebView?
     @State private var isPrivacyShielded = false
     @State private var handoffError: String?
+    @State private var pageLoadError: String?
 
     var body: some View {
         NavigationStack {
@@ -38,7 +39,8 @@ struct PhoneTakeoverView: View {
                             canGoBack: $canGoBack,
                             canGoForward: $canGoForward,
                             webView: $webView,
-                            handoffError: $handoffError
+                            handoffError: $handoffError,
+                            pageLoadError: $pageLoadError
                         )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
@@ -89,6 +91,20 @@ struct PhoneTakeoverView: View {
             }
         } message: {
             Text(handoffError ?? "The requested app could not be opened.")
+        }
+        .alert("Sign-In Page Couldn't Load", isPresented: Binding(
+            get: { pageLoadError != nil },
+            set: { if !$0 { pageLoadError = nil } }
+        )) {
+            Button("Try Again") {
+                pageLoadError = nil
+                webView?.reload()
+            }
+            Button("Cancel", role: .cancel) {
+                pageLoadError = nil
+            }
+        } message: {
+            Text(pageLoadError ?? "The page could not finish loading. Check your connection and try again.")
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase != .active, webView != nil else { return }
@@ -343,6 +359,7 @@ private struct TakeoverWebView: UIViewRepresentable {
     @Binding var canGoForward: Bool
     @Binding var webView: WKWebView?
     @Binding var handoffError: String?
+    @Binding var pageLoadError: String?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -433,11 +450,11 @@ private struct TakeoverWebView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            publish(webView, loading: false)
+            publishNavigationFailure(webView, error: error)
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            publish(webView, loading: false)
+            publishNavigationFailure(webView, error: error)
         }
 
         func webView(
@@ -455,6 +472,22 @@ private struct TakeoverWebView: UIViewRepresentable {
                 webView.load(navigationAction.request)
             }
             return nil
+        }
+
+        private func publishNavigationFailure(_ webView: WKWebView, error: Error) {
+            publish(webView, loading: false)
+
+            let nsError = error as NSError
+            guard !(nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled) else {
+                return
+            }
+
+            // Navigation errors can embed request URLs and provider-specific details.
+            // Keep those values out of Kamihi state/UI and offer a generic recovery
+            // action instead. WebKit continues to own credentials/session data.
+            Task { @MainActor in
+                parent.pageLoadError = "The sign-in page could not finish loading. Check your connection and try again."
+            }
         }
 
         private func publish(_ webView: WKWebView, loading: Bool) {
