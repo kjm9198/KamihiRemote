@@ -23,6 +23,24 @@ extension DesktopBrowserNavigationDelegate {
         }
 
         if scheme == "http" || scheme == "https" {
+            // URL user-info (`https://user:password@example.com`) is itself raw
+            // credential material. Never allow it to reach retained tab/history
+            // metadata. Strip it before WebKit navigation so authentication can
+            // fall back to normal browser/iOS mechanisms instead of persisting a
+            // password inside the URL. Query/fragment credential filtering remains
+            // handled by DesktopBrowserState's persistence sanitizer.
+            if let sanitizedURL = Self.strippingHTTPUserInfo(from: url), sanitizedURL != url {
+                decisionHandler(.cancel)
+                if navigationAction.targetFrame == nil {
+                    Task { @MainActor in
+                        DesktopBrowserState.shared.newTab(url: sanitizedURL)
+                    }
+                } else {
+                    webView.load(URLRequest(url: sanitizedURL))
+                }
+                return
+            }
+
             guard navigationAction.targetFrame == nil else {
                 decisionHandler(.allow)
                 return
@@ -89,6 +107,18 @@ extension DesktopBrowserNavigationDelegate {
         // and are recreated lazily when selected, avoiding background churn.
         guard webView.superview != nil else { return }
         webView.reload()
+    }
+
+    private static func strippingHTTPUserInfo(from url: URL) -> URL? {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+        guard components.user != nil || components.password != nil else {
+            return url
+        }
+        components.user = nil
+        components.password = nil
+        return components.url
     }
 }
 
