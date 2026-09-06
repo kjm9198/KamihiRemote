@@ -9,14 +9,15 @@ public enum DesktopGlassStyle: String, CaseIterable, Identifiable {
     public var title: String {
         switch self {
         case .soft: return "Soft"
-        case .balanced: return "Balanced"
-        case .vivid: return "Vivid"
+        case .balanced: return "macOS Glass"
+        case .vivid: return "High Contrast Glass"
         }
     }
 }
 
-/// One persisted glass policy for the external desktop, launcher, dock, menu bar,
-/// window chrome and Settings. Accessibility Reduce Transparency always wins.
+/// One persisted glass policy for the external desktop, Applications chooser,
+/// Dock, menu bar, window chrome and Settings. Accessibility Reduce Transparency
+/// and Increased Contrast always win over decorative translucency.
 @MainActor
 public final class DesktopGlassAppearance: ObservableObject {
     public static let shared = DesktopGlassAppearance()
@@ -36,26 +37,26 @@ public final class DesktopGlassAppearance: ObservableObject {
 
     var borderOpacity: Double {
         switch style {
-        case .soft: return 0.16
-        case .balanced: return 0.24
-        case .vivid: return 0.34
+        case .soft: return 0.12
+        case .balanced: return 0.20
+        case .vivid: return 0.30
         }
     }
 
     var highlightOpacity: Double {
         guard highlightsEnabled else { return 0 }
         switch style {
-        case .soft: return 0.08
-        case .balanced: return 0.14
-        case .vivid: return 0.22
+        case .soft: return 0.06
+        case .balanced: return 0.13
+        case .vivid: return 0.20
         }
     }
 
     var shadowOpacity: Double {
         switch style {
         case .soft: return 0.10
-        case .balanced: return 0.18
-        case .vivid: return 0.26
+        case .balanced: return 0.16
+        case .vivid: return 0.23
         }
     }
 }
@@ -86,11 +87,11 @@ private struct DesktopGlassSurfaceModifier: ViewModifier {
                             LinearGradient(
                                 colors: [
                                     Color.white.opacity(appearance.highlightOpacity),
-                                    Color.white.opacity(0.015),
-                                    KamihiTheme.Colors.brandPurple.opacity(appearance.highlightOpacity * 0.20)
+                                    Color.white.opacity(0.014),
+                                    Color.clear
                                 ],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
+                                startPoint: .top,
+                                endPoint: .bottom
                             )
                         )
                         .allowsHitTesting(false)
@@ -98,16 +99,27 @@ private struct DesktopGlassSurfaceModifier: ViewModifier {
             }
             .overlay {
                 shape.strokeBorder(
-                    Color.white.opacity(contrast == .increased ? 0.54 : appearance.borderOpacity),
-                    lineWidth: contrast == .increased ? 1.2 : 0.8
+                    Color.white.opacity(contrast == .increased ? 0.50 : appearance.borderOpacity),
+                    lineWidth: contrast == .increased ? 1.1 : 0.7
                 )
                 .allowsHitTesting(false)
             }
+            .overlay(alignment: .top) {
+                if !reduceTransparency && appearance.highlightsEnabled {
+                    Rectangle()
+                        .fill(Color.white.opacity(appearance.highlightOpacity * 0.72))
+                        .frame(height: 0.7)
+                        .clipShape(shape)
+                        .allowsHitTesting(false)
+                }
+            }
             .shadow(
-                color: elevated ? Color.black.opacity(colorScheme == .dark ? appearance.shadowOpacity : appearance.shadowOpacity * 0.62) : .clear,
-                radius: elevated ? 18 : 0,
+                color: elevated
+                    ? Color.black.opacity(colorScheme == .dark ? appearance.shadowOpacity : appearance.shadowOpacity * 0.70)
+                    : .clear,
+                radius: elevated ? 20 : 0,
                 x: 0,
-                y: elevated ? 9 : 0
+                y: elevated ? 10 : 0
             )
     }
 
@@ -117,15 +129,15 @@ private struct DesktopGlassSurfaceModifier: ViewModifier {
         case .soft:
             shape.fill(.thinMaterial)
         case .balanced:
-            shape.fill(.regularMaterial)
-        case .vivid:
             shape.fill(.ultraThinMaterial)
+        case .vivid:
+            shape.fill(.regularMaterial)
         }
     }
 }
 
 extension View {
-    func desktopGlassSurface(cornerRadius: CGFloat = 20, elevated: Bool = true) -> some View {
+    func desktopGlassSurface(cornerRadius: CGFloat = 14, elevated: Bool = true) -> some View {
         modifier(DesktopGlassSurfaceModifier(cornerRadius: cornerRadius, elevated: elevated))
     }
 }

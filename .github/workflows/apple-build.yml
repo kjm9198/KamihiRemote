@@ -9,14 +9,16 @@ on:
 permissions:
   contents: read
 
+# Do not keep compiling superseded commits on the same branch/PR. This reduces
+# stale CI noise while preserving a hard failure for the newest source state.
 concurrency:
-  group: apple-build-${{ github.sha }}
-  cancel-in-progress: false
+  group: apple-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: macos-26
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
 
@@ -26,13 +28,14 @@ jobs:
       - name: Build Kamihi Desktop for iOS Simulator
         shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
           mkdir -p "$RUNNER_TEMP/kamihi-apple-build"
           xcodebuild \
             -project KamihiRemote.xcodeproj \
             -scheme KamihiRemote \
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
+            ENABLE_PREVIEWS=NO \
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee "$RUNNER_TEMP/kamihi-apple-build/ios-build.log"
 

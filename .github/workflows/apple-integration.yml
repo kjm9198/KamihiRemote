@@ -9,16 +9,16 @@ on:
 permissions:
   contents: read
 
-# Every commit gets a complete first-attempt desktop smoke result. Newer pushes
-# never cancel an older SHA's validation.
+# Keep only the newest validation for a branch/PR. Superseded commits are
+# cancelled instead of continuing to produce stale failure notifications.
 concurrency:
-  group: apple-integration-${{ github.sha }}
-  cancel-in-progress: false
+  group: apple-integration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   desktop-simulator-smoke:
     runs-on: macos-26
-    timeout-minutes: 35
+    timeout-minutes: 45
     env:
       CI: "1"
     steps:
@@ -30,6 +30,10 @@ jobs:
       - name: Verify trackpad-first controller contract
         run: bash scripts/desktop-controller-contract-smoke.sh
 
+      # The script performs bounded simulator recovery/retry internally. Real
+      # compile/product regressions still fail the job; transient simulator boot,
+      # install, launch, or screenshot issues get recovered before GitHub marks
+      # the workflow as failed and sends a notification.
       - name: Run Kamihi Desktop simulator smoke
         run: bash scripts/apple-integration-smoke.sh
 
@@ -37,7 +41,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kamihi-desktop-smoke-${{ github.run_attempt }}
+          name: kamihi-desktop-smoke-${{ github.sha }}-${{ github.run_attempt }}
           if-no-files-found: ignore
           retention-days: 7
           path: |

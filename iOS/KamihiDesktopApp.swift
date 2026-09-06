@@ -1,4 +1,9 @@
 import SwiftUI
+import OSLog
+
+private enum DesktopSmokeLog {
+    static let logger = Logger(subsystem: "com.kamihi.remote", category: "DesktopSmoke")
+}
 
 @main
 struct KamihiDesktopApp: App {
@@ -42,6 +47,20 @@ struct KamihiDesktopApp: App {
                 }
             }
             .statusBarHidden(false)
+            .onAppear {
+                #if DEBUG
+                if router.isDesktopLabActive {
+                    DesktopSmokeLog.logger.notice("KAMIHI_DESKTOP_LAB_READY")
+                }
+                #endif
+            }
+            .onChange(of: router.isDesktopLabActive) { _, isActive in
+                #if DEBUG
+                if isActive {
+                    DesktopSmokeLog.logger.notice("KAMIHI_DESKTOP_LAB_READY")
+                }
+                #endif
+            }
             .onChange(of: desktop.isExternalDisplayConnected) { _, connected in
                 if connected {
                     // A real external-display connection owns the normal product

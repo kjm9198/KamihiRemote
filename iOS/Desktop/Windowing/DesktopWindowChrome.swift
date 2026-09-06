@@ -1,8 +1,10 @@
 import CoreGraphics
 
 /// Shared geometry for visual window chrome and software-pointer hit testing.
-/// External-display scenes are noninteractive, so close/minimize/maximize must
+/// External-display scenes are noninteractive, so close/minimize/full-screen must
 /// be routed through DesktopSession rather than relying on SwiftUI tap gestures.
+/// The hit zones intentionally mirror the macOS traffic-light order on the left:
+/// red close, yellow minimize, green full-screen/restore.
 public enum DesktopWindowChrome {
     public enum Action: String, Equatable {
         case minimize
@@ -23,21 +25,19 @@ public enum DesktopWindowChrome {
         let yRange = (frame.minY + verticalInset)...(frame.minY + titleHeight - verticalInset)
         guard yRange.contains(point.y) else { return nil }
 
-        // The rendered buttons are placed along the trailing edge of the title bar.
-        // Partition the trailing region into three generous, non-overlapping action zones
-        // so that the iPhone software pointer can reliably activate them without misclassification:
-        //   - Close: [frame.maxX - 0.036, frame.maxX]
-        //   - Maximize/Restore: [frame.maxX - 0.070, frame.maxX - 0.036)
-        //   - Minimize: [frame.maxX - 0.105, frame.maxX - 0.070)
-        //   - Left of frame.maxX - 0.105 falls through cleanly into title-bar dragging.
-        let closeMinX = frame.maxX - 0.036
-        let maximizeMinX = frame.maxX - 0.070
-        let minimizeMinX = frame.maxX - 0.105
+        // Generous, non-overlapping left-side action zones. Anything to the right
+        // of the green control falls through to the normal title-bar drag path.
+        //   - Close:              [minX, minX + 0.036)
+        //   - Minimize:           [minX + 0.036, minX + 0.070)
+        //   - Full-screen/restore:[minX + 0.070, minX + 0.105]
+        let closeMaxX = frame.minX + 0.036
+        let minimizeMaxX = frame.minX + 0.070
+        let maximizeMaxX = frame.minX + 0.105
 
-        guard point.x >= minimizeMinX, point.x <= frame.maxX else { return nil }
-        if point.x >= closeMinX { return .close }
-        if point.x >= maximizeMinX { return .maximizeRestore }
-        return .minimize
+        guard point.x >= frame.minX, point.x <= maximizeMaxX else { return nil }
+        if point.x < closeMaxX { return .close }
+        if point.x < minimizeMaxX { return .minimize }
+        return .maximizeRestore
     }
 
     public static func contentTop(for frame: CGRect) -> CGFloat {

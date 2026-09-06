@@ -32,7 +32,7 @@ enum DesktopWindowEnergyPolicy {
     }
 }
 
-/// Renders an iPadOS-inspired Kamihi desktop window on the external screen.
+/// Renders a macOS-inspired Kamihi desktop window on the external screen.
 /// Window buttons remain directly tappable in Desktop Lab, while physical
 /// external-display use routes the same actions through DesktopWindowChrome.
 struct DesktopWindowView<Content: View>: View {
@@ -56,7 +56,15 @@ struct DesktopWindowView<Content: View>: View {
             VStack(spacing: 0) {
                 titleBar
                     .frame(height: 38)
-                    .background(.ultraThinMaterial)
+                    .background {
+                        Rectangle()
+                            .fill(.ultraThinMaterial)
+                            .overlay(alignment: .bottom) {
+                                Rectangle()
+                                    .fill(Color.primary.opacity(isActive ? 0.10 : 0.055))
+                                    .frame(height: 0.5)
+                            }
+                    }
 
                 Group {
                     if shouldRenderContent {
@@ -69,14 +77,15 @@ struct DesktopWindowView<Content: View>: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(KamihiTheme.Colors.surfaceBackground)
+                .background(KamihiTheme.Colors.surfaceBackground.opacity(0.94))
             }
+            .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: windowCornerRadius, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: windowCornerRadius, style: .continuous)
                     .strokeBorder(
-                        isActive ? Color.primary.opacity(0.26) : Color.primary.opacity(0.10),
-                        lineWidth: isActive ? 1.1 : 0.7
+                        isActive ? Color.white.opacity(0.30) : Color.primary.opacity(0.10),
+                        lineWidth: isActive ? 0.9 : 0.6
                     )
             }
             .overlay {
@@ -87,14 +96,17 @@ struct DesktopWindowView<Content: View>: View {
                 }
             }
             .shadow(
-                color: Color.black.opacity(isActive ? 0.34 : 0.18),
-                radius: isActive ? 18 : 9,
+                color: Color.black.opacity(isActive ? 0.30 : 0.16),
+                radius: isActive ? 22 : 12,
                 x: 0,
-                y: isActive ? 9 : 4
+                y: isActive ? 12 : 6
             )
             .frame(width: frame.width, height: frame.height)
             .position(x: frame.midX, y: frame.midY)
-            .scaleEffect(window.isMinimized ? 0.70 : 1.0)
+            // A dock-directed shrink gives minimize/restore a much closer macOS
+            // spatial feel than simply fading the window in place.
+            .scaleEffect(window.isMinimized ? 0.78 : 1.0)
+            .offset(y: window.isMinimized ? max(42, geo.size.height * 0.22) : 0)
             .opacity(window.isMinimized ? 0.0 : 1.0)
             .animation(reduceMotion ? nil : KamihiTheme.Animation.spatial, value: window.isMinimized)
             .animation(reduceMotion ? nil : KamihiTheme.Animation.spatial, value: window.isMaximized)
@@ -160,53 +172,56 @@ struct DesktopWindowView<Content: View>: View {
     }
 
     private var titleBar: some View {
-        HStack(spacing: 10) {
-            Image(systemName: appIcon(for: window.title))
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isActive ? Color.primary : Color.secondary)
-                .frame(width: 26, height: 26)
-                .background(Color.primary.opacity(isActive ? 0.08 : 0.04), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-
-            Text(window.title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isActive ? Color.primary : Color.secondary)
-                .lineLimit(1)
-
-            Spacer(minLength: 16)
-
-            // macOS Traffic Light Chrome Cluster
-            // Partitioned to match DesktopWindowChrome:
-            //   - Close: rightmost (center ~30px / 0.016 from right edge)
-            //   - Maximize: middle (center ~86px / 0.045 from right edge)
-            //   - Minimize: leftmost (center ~142px / 0.074 from right edge)
-            HStack(spacing: 24) {
-                chromeTrafficButton(
-                    symbol: "minus",
-                    color: Color(red: 1.00, green: 0.74, blue: 0.18), // macOS Yellow
-                    accessibilityLabel: "Minimize \(window.title)"
-                ) {
-                    desktop.minimize(window.id)
-                }
-
-                chromeTrafficButton(
-                    symbol: window.isMaximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
-                    color: Color(red: 0.15, green: 0.79, blue: 0.25), // macOS Green
-                    accessibilityLabel: window.isMaximized ? "Restore \(window.title)" : "Maximize \(window.title)"
-                ) {
-                    desktop.toggleMaximize(window.id)
-                }
-
-                chromeTrafficButton(
-                    symbol: "xmark",
-                    color: Color(red: 1.00, green: 0.37, blue: 0.34), // macOS Red
-                    accessibilityLabel: "Close \(window.title)"
-                ) {
-                    desktop.close(window.id)
-                }
+        ZStack {
+            HStack(spacing: 0) {
+                trafficLights
+                Spacer(minLength: 12)
+                // Balance the left chrome so the app title remains optically centered.
+                Color.clear.frame(width: 64, height: 1)
             }
-            .padding(.trailing, 14)
+
+            HStack(spacing: 6) {
+                Image(systemName: appIcon(for: window.title))
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(isActive ? Color.primary.opacity(0.82) : Color.secondary)
+
+                Text(window.title)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(isActive ? Color.primary.opacity(0.88) : Color.secondary)
+                    .lineLimit(1)
+            }
+            .allowsHitTesting(false)
         }
-        .padding(.leading, 12)
+        .padding(.horizontal, 12)
+    }
+
+    private var trafficLights: some View {
+        HStack(spacing: 8) {
+            chromeTrafficButton(
+                symbol: "xmark",
+                color: Color(red: 1.00, green: 0.37, blue: 0.34),
+                accessibilityLabel: "Close \(window.title)"
+            ) {
+                desktop.close(window.id)
+            }
+
+            chromeTrafficButton(
+                symbol: "minus",
+                color: Color(red: 1.00, green: 0.74, blue: 0.18),
+                accessibilityLabel: "Minimize \(window.title)"
+            ) {
+                desktop.minimize(window.id)
+            }
+
+            chromeTrafficButton(
+                symbol: window.isMaximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                color: Color(red: 0.15, green: 0.79, blue: 0.25),
+                accessibilityLabel: window.isMaximized ? "Restore \(window.title)" : "Full Screen \(window.title)"
+            ) {
+                desktop.toggleMaximize(window.id)
+            }
+        }
+        .frame(width: 64, alignment: .leading)
     }
 
     private func chromeTrafficButton(
@@ -218,26 +233,26 @@ struct DesktopWindowView<Content: View>: View {
         Button(action: action) {
             ZStack {
                 Circle()
-                    .fill(isActive ? color : Color.primary.opacity(0.14))
-                    .frame(width: 14, height: 14)
+                    .fill(isActive ? color : Color.primary.opacity(0.16))
+                    .frame(width: 13, height: 13)
                     .overlay {
                         Circle()
-                            .strokeBorder(isActive ? color.opacity(0.40) : Color.clear, lineWidth: 1)
+                            .strokeBorder(Color.black.opacity(isActive ? 0.16 : 0.08), lineWidth: 0.6)
                     }
 
                 Image(systemName: symbol)
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(Color.black.opacity(isActive ? 0.70 : 0.30))
+                    .font(.system(size: 6.6, weight: .black))
+                    .foregroundStyle(Color.black.opacity(isActive ? 0.50 : 0.0))
             }
-            .frame(width: 32, height: 32)
-            .contentShape(Circle())
+            .frame(width: 20, height: 28)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
     }
 
     private var windowCornerRadius: CGFloat {
-        window.isMaximized ? KamihiTheme.Radius.sm : KamihiTheme.Radius.md
+        window.isMaximized ? 0 : 14
     }
 
     private func effectiveFrame(in containerSize: CGSize) -> CGRect {
@@ -252,12 +267,16 @@ struct DesktopWindowView<Content: View>: View {
 
     private func appIcon(for title: String) -> String {
         switch title {
-        case "Browser": return "globe"
+        case "Browser": return "safari.fill"
         case "ChatGPT": return "sparkles"
         case "YouTube": return "play.rectangle.fill"
+        case "Documents": return "doc.text.fill"
+        case "Sheets": return "tablecells.fill"
         case "Notes": return "note.text"
         case "Files": return "folder.fill"
-        case "Calculator": return "plus.slash.minus"
+        case "Photos": return "photo.on.rectangle.angled"
+        case "Settings": return "gearshape.fill"
+        case "Calculator": return "plus.forwardslash.minus"
         case "Clipboard": return "doc.on.clipboard.fill"
         default: return "app.fill"
         }
