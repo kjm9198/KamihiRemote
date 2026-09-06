@@ -415,7 +415,7 @@ private struct TakeoverWebView: UIViewRepresentable {
             Task { @MainActor in
                 UIApplication.shared.open(url, options: [:]) { opened in
                     guard !opened else { return }
-                    parent.handoffError = "The website tried to continue in another app, but iOS could not open it. Stay in Phone Takeover or choose the site's web sign-in option."
+                    self.parent.handoffError = "The website tried to continue in another app, but iOS could not open it. Stay in Phone Takeover or choose the site's web sign-in option."
                 }
             }
         }
