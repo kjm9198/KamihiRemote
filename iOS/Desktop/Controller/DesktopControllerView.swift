@@ -382,8 +382,8 @@ private struct DesktopKeyboardInputBar: View {
                 .lineLimit(1...3)
                 .focused($focused)
                 .submitLabel(.return)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled(true)
+                .textInputAutocapitalization(keyboardAutocapitalization)
+                .autocorrectionDisabled(disablesAutocorrection)
                 .onSubmit(submit)
                 .onChange(of: text) { oldValue, newValue in
                     routeEdit(from: oldValue, to: newValue)
@@ -414,9 +414,37 @@ private struct DesktopKeyboardInputBar: View {
         }
     }
 
+    private var activeWindowTitle: String {
+        desktop.activeWindow?.title ?? ""
+    }
+
+    private var keyboardAutocapitalization: TextInputAutocapitalization? {
+        switch activeWindowTitle {
+        case "Browser", "Sheets":
+            return .never
+        default:
+            return .sentences
+        }
+    }
+
+    private var disablesAutocorrection: Bool {
+        switch activeWindowTitle {
+        case "Browser", "Sheets":
+            return true
+        default:
+            return false
+        }
+    }
+
     private var placeholder: String {
-        if desktop.activeWindow?.title == "Notes" { return "Type into note…" }
-        return "Type on desktop…"
+        switch activeWindowTitle {
+        case "Notes": return "Type into note…"
+        case "Documents": return "Type into document…"
+        case "Sheets": return "Edit selected cell…"
+        case "Browser": return "Type in browser…"
+        case "ChatGPT": return "Message ChatGPT…"
+        default: return "Type on desktop…"
+        }
     }
 
     private var targetsCapturedWindow: Bool {
