@@ -2,8 +2,8 @@ import SwiftUI
 import UIKit
 
 /// iPhone control surface for Kamihi Desktop.
-/// The phone is intentionally a full-screen trackpad. Keyboard and More are the
-/// only persistent controls; every secondary action stays behind More.
+/// The phone remains a full-screen trackpad; keyboard and More are the only
+/// persistent controls. Settings and secure pickers open on the phone when needed.
 struct DesktopControllerView: View {
     @EnvironmentObject private var router: AppModeRouter
     @EnvironmentObject private var desktop: DesktopSession
@@ -13,19 +13,15 @@ struct DesktopControllerView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("desktop.controller.controlsLeading") private var controlsLeading = false
+    @AppStorage("hasCompletedDesktopOnboarding") private var hasCompletedDesktopOnboarding = false
 
     @State private var showLauncher = false
     @State private var showOverview = false
     @State private var showCommandPalette = false
     @State private var showTrackpadSettings = false
     @State private var showKeyboard = false
-    @State private var showSafariImport = false
     @State private var showDataSafetyInfo = false
-    @AppStorage("hasCompletedDesktopOnboarding") private var hasCompletedDesktopOnboarding = false
     @State private var showOnboardingSheet = false
-    @State private var safariImportResultMessage: String?
-    /// Keyboard input belongs to one explicit desktop window. If focus changes,
-    /// close it rather than accidentally sending the next character elsewhere.
     @State private var keyboardWindowID: UUID?
     @State private var takeoverWindowID: UUID?
 
@@ -46,16 +42,13 @@ struct DesktopControllerView: View {
         }
         .animation(reduceMotion ? nil : KamihiTheme.Animation.fast, value: showKeyboard)
         .sheet(isPresented: $showLauncher) {
-            DesktopAppLauncherView()
-                .environmentObject(desktop)
+            DesktopAppLauncherView().environmentObject(desktop)
         }
         .sheet(isPresented: $showOverview) {
-            DesktopWindowOverviewView()
-                .environmentObject(desktop)
+            DesktopWindowOverviewView().environmentObject(desktop)
         }
         .sheet(isPresented: $showCommandPalette) {
-            DesktopCommandPaletteView()
-                .environmentObject(desktop)
+            DesktopCommandPaletteView().environmentObject(desktop)
         }
         .sheet(isPresented: $showTrackpadSettings) {
             TrackpadSettingsSheet()
@@ -64,48 +57,13 @@ struct DesktopControllerView: View {
             get: { takeoverWindowID.map { IdentifiableUUID(id: $0) } },
             set: { takeoverWindowID = $0?.id }
         )) { item in
-            PhoneTakeoverView(windowID: item.id)
-                .environmentObject(desktop)
+            PhoneTakeoverView(windowID: item.id).environmentObject(desktop)
         }
         .sheet(isPresented: $showDataSafetyInfo) {
             DesktopDataSafetySheet()
         }
         .sheet(isPresented: $showOnboardingSheet) {
             DesktopOnboardingSheet()
-        }
-        .fileImporter(
-            isPresented: $showSafariImport,
-            allowedContentTypes: [.html, .propertyList, .data]
-        ) { result in
-            switch result {
-            case .success(let url):
-                guard url.startAccessingSecurityScopedResource() else {
-                    safariImportResultMessage = "Could not access the selected file."
-                    return
-                }
-                defer { url.stopAccessingSecurityScopedResource() }
-                do {
-                    let data = try Data(contentsOf: url)
-                    let count = try DesktopBrowserState.shared.importBookmarksHTML(data)
-                    safariImportResultMessage = "Successfully imported \(count) bookmarks from Safari!"
-                    if settings.hapticsEnabled { Haptics.touchTap() }
-                } catch {
-                    safariImportResultMessage = "Import failed: \(error.localizedDescription)"
-                }
-            case .failure(let error):
-                safariImportResultMessage = "Selection cancelled: \(error.localizedDescription)"
-            }
-        }
-        .alert(
-            "Safari Bookmarks Import",
-            isPresented: Binding(
-                get: { safariImportResultMessage != nil },
-                set: { if !$0 { safariImportResultMessage = nil } }
-            )
-        ) {
-            Button("OK") { safariImportResultMessage = nil }
-        } message: {
-            Text(safariImportResultMessage ?? "")
         }
         .onAppear {
             engine.onThreeFingerSwipeUp = { showOverview = true }
@@ -116,14 +74,10 @@ struct DesktopControllerView: View {
                 if settings.hapticsEnabled { Haptics.touchTap() }
             }
             if desktop.wantsPhoneKeyboard { setKeyboardVisible(true) }
-            if !hasCompletedDesktopOnboarding {
-                showOnboardingSheet = true
-            }
+            if !hasCompletedDesktopOnboarding { showOnboardingSheet = true }
         }
         .onChange(of: coordinator.isConnected) { _, isConnected in
-            if isConnected && !hasCompletedDesktopOnboarding {
-                showOnboardingSheet = true
-            }
+            if isConnected && !hasCompletedDesktopOnboarding { showOnboardingSheet = true }
         }
         .onChange(of: desktop.wantsPhoneKeyboard) { _, wantsKeyboard in
             if wantsKeyboard && !showKeyboard {
@@ -134,8 +88,6 @@ struct DesktopControllerView: View {
         }
         .onChange(of: desktop.activeWindowID) { oldValue, newValue in
             guard oldValue != newValue, showKeyboard else { return }
-            // A visible software keyboard should never silently redirect text
-            // after a window switch.
             setKeyboardVisible(false)
         }
         .onDisappear {
@@ -144,23 +96,16 @@ struct DesktopControllerView: View {
         }
     }
 
-    /// Only two thumb targets float above the trackpad. They stay at the
-    /// thumb-reachable bottom edge (and can swap sides) while status, app
-    /// switching, settings, capture and takeover remain discoverable in More.
     private var fullTrackpadLayout: some View {
         ZStack {
-            trackpadSurface(cornerRadius: 0)
-                .ignoresSafeArea()
+            trackpadSurface(cornerRadius: 0).ignoresSafeArea()
 
             VStack {
                 Spacer(minLength: 0)
-
                 HStack(spacing: 8) {
                     if !controlsLeading { Spacer(minLength: 0) }
 
-                    Button {
-                        setKeyboardVisible(!showKeyboard)
-                    } label: {
+                    Button { setKeyboardVisible(!showKeyboard) } label: {
                         Image(systemName: "keyboard")
                             .frame(width: 44, height: 44)
                             .contentShape(Circle())
@@ -171,9 +116,7 @@ struct DesktopControllerView: View {
                     .accessibilityHint("Types into the active desktop window.")
                     .disabled(desktop.activeWindow == nil)
 
-                    Menu {
-                        moreControllerActions
-                    } label: {
+                    Menu { moreControllerActions } label: {
                         Image(systemName: "ellipsis")
                             .frame(width: 44, height: 44)
                             .contentShape(Circle())
@@ -182,7 +125,6 @@ struct DesktopControllerView: View {
                     .glassEffect(.regular.interactive(), in: .circle)
                     .accessibilityLabel("More Desktop Controls")
                     .accessibilityValue(desktop.activeWindow?.title ?? "No active window")
-                    .accessibilityHint("Opens active window controls, apps, windows, settings, and other desktop actions.")
 
                     if controlsLeading { Spacer(minLength: 0) }
                 }
@@ -206,7 +148,7 @@ struct DesktopControllerView: View {
             Button {
                 setKeyboardVisible(false)
                 desktop.minimize(active.id)
-                if settings.hapticsEnabled { Haptics.touchTap() }
+                haptic()
             } label: {
                 Label("Minimize \(active.title)", systemImage: "minus.rectangle")
             }
@@ -214,7 +156,7 @@ struct DesktopControllerView: View {
             Button {
                 setKeyboardVisible(false)
                 desktop.toggleMaximize(active.id)
-                if settings.hapticsEnabled { Haptics.touchTap() }
+                haptic()
             } label: {
                 Label(
                     active.isMaximized ? "Restore \(active.title)" : "Maximize \(active.title)",
@@ -225,7 +167,7 @@ struct DesktopControllerView: View {
             Button(role: .destructive) {
                 setKeyboardVisible(false)
                 desktop.close(active.id)
-                if settings.hapticsEnabled { Haptics.touchTap() }
+                haptic()
             } label: {
                 Label("Close \(active.title)", systemImage: "xmark.rectangle")
             }
@@ -233,85 +175,67 @@ struct DesktopControllerView: View {
 
         Divider()
 
-        Button {
-            showLauncher = true
-        } label: {
+        Button { showLauncher = true } label: {
             Label("Apps", systemImage: "square.grid.2x2.fill")
         }
-
-        Button {
-            showOverview = true
-        } label: {
+        Button { showOverview = true } label: {
             Label("Windows", systemImage: "rectangle.stack.fill")
         }
-
-        Button {
-            showCommandPalette = true
-        } label: {
+        Button { showCommandPalette = true } label: {
             Label("Commands", systemImage: "command")
+        }
+        Button {
+            desktop.openProductivityApp("Settings", frame: CGRect(x: 0.16, y: 0.10, width: 0.68, height: 0.72))
+        } label: {
+            Label("Desktop Settings", systemImage: "gearshape.fill")
         }
 
         Divider()
 
         Button {
-            controlsLeading.toggle()
-            if settings.hapticsEnabled { Haptics.touchTap() }
+            controlsLeading.toggle(); haptic()
         } label: {
-            Label(
-                controlsLeading ? "Move Controls to Right" : "Move Controls to Left",
-                systemImage: controlsLeading ? "hand.point.right.fill" : "hand.point.left.fill"
-            )
+            Label(controlsLeading ? "Move Controls to Right" : "Move Controls to Left", systemImage: controlsLeading ? "hand.point.right.fill" : "hand.point.left.fill")
         }
 
         Button {
-            engine.isPrecisionMode.toggle()
-            if settings.hapticsEnabled { Haptics.touchTap() }
+            engine.isPrecisionMode.toggle(); haptic()
         } label: {
-            Label(
-                engine.isPrecisionMode ? "Turn Off Precision Mode" : "Turn On Precision Mode",
-                systemImage: engine.isPrecisionMode ? "scope" : "circle.dotted"
-            )
+            Label(engine.isPrecisionMode ? "Turn Off Precision Mode" : "Turn On Precision Mode", systemImage: engine.isPrecisionMode ? "scope" : "circle.dotted")
         }
 
-        Button {
-            showTrackpadSettings = true
-        } label: {
+        Button { showTrackpadSettings = true } label: {
             Label("Trackpad Settings", systemImage: "slider.horizontal.3")
         }
 
-        if let active = desktop.activeWindow,
-           ["Browser", "ChatGPT", "YouTube"].contains(active.title) {
-            Button {
-                takeoverWindowID = active.id
-            } label: {
+        if let active = desktop.activeWindow, ["Browser", "ChatGPT", "YouTube"].contains(active.title) {
+            Button { takeoverWindowID = active.id } label: {
                 Label("Continue on iPhone", systemImage: "iphone.and.arrow.forward")
             }
         }
 
         Button {
             let didPresent = DesktopCaptureService.shared.captureAndShare()
-            if didPresent && settings.hapticsEnabled { Haptics.touchTap() }
+            if didPresent { haptic() }
         } label: {
             Label("Capture Desktop", systemImage: "camera.viewfinder")
         }
 
-        Button {
-            showOnboardingSheet = true
-        } label: {
+        Button { showOnboardingSheet = true } label: {
             Label("Desktop Tutorial & Setup", systemImage: "sparkles")
         }
 
         Divider()
 
         Button {
-            showSafariImport = true
+            // Use the shared presenter instead of a SwiftUI fileImporter tied to
+            // this view. It handles both security-scoped and copied Files URLs.
+            DesktopSafariImportPresenter.shared.present()
         } label: {
             Label("Import Safari Bookmarks", systemImage: "safari")
         }
 
-        Button {
-            showDataSafetyInfo = true
-        } label: {
+        Button { showDataSafetyInfo = true } label: {
             Label("Data Privacy & Security", systemImage: "lock.shield")
         }
 
@@ -325,14 +249,10 @@ struct DesktopControllerView: View {
 
         Divider()
 
-        Button(role: .destructive) {
-            router.returnToChooser()
-        } label: {
+        Button(role: .destructive) { router.returnToChooser() } label: {
             Label("Exit Desktop", systemImage: "rectangle.portrait.and.arrow.right")
         }
     }
-
-    // MARK: - Trackpad
 
     private func trackpadSurface(cornerRadius: CGFloat) -> some View {
         ZStack {
@@ -370,9 +290,7 @@ struct DesktopControllerView: View {
                 }
                 .allowsHitTesting(engine.state == .dragLocked)
                 .onTapGesture {
-                    if engine.state == .dragLocked {
-                        engine.unlockDrag(desktop: desktop)
-                    }
+                    if engine.state == .dragLocked { engine.unlockDrag(desktop: desktop) }
                 }
                 .transition(.opacity)
             }
@@ -380,27 +298,17 @@ struct DesktopControllerView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Desktop trackpad")
         .accessibilityValue(desktop.activeWindow?.title ?? "No active window")
-        .accessibilityHint("Use custom actions for click, context click, window switching, Window Overview, or keyboard. Standard touch gestures remain available when VoiceOver is off.")
-        .accessibilityAction(named: Text("Click at Pointer")) {
-            desktop.clickAtCursor()
-        }
-        .accessibilityAction(named: Text("Right Click at Pointer")) {
-            desktop.contextClickAtCursorUsingRegistry()
-        }
+        .accessibilityHint("Use custom actions for click, context click, window switching, Window Overview, or keyboard.")
+        .accessibilityAction(named: Text("Click at Pointer")) { desktop.clickAtCursor() }
+        .accessibilityAction(named: Text("Right Click at Pointer")) { desktop.contextClickAtCursorUsingRegistry() }
         .accessibilityAction(named: Text("Next Window")) {
-            desktop.dismissPhoneKeyboardRequest()
-            desktop.cycleWindow(forward: true)
+            desktop.dismissPhoneKeyboardRequest(); desktop.cycleWindow(forward: true)
         }
         .accessibilityAction(named: Text("Previous Window")) {
-            desktop.dismissPhoneKeyboardRequest()
-            desktop.cycleWindow(forward: false)
+            desktop.dismissPhoneKeyboardRequest(); desktop.cycleWindow(forward: false)
         }
-        .accessibilityAction(named: Text("Window Overview")) {
-            showOverview = true
-        }
-        .accessibilityAction(named: Text(showKeyboard ? "Hide Keyboard" : "Keyboard")) {
-            setKeyboardVisible(!showKeyboard)
-        }
+        .accessibilityAction(named: Text("Window Overview")) { showOverview = true }
+        .accessibilityAction(named: Text(showKeyboard ? "Hide Keyboard" : "Keyboard")) { setKeyboardVisible(!showKeyboard) }
     }
 
     private var stateSymbol: String {
@@ -431,10 +339,13 @@ struct DesktopControllerView: View {
             desktop.dismissPhoneKeyboardRequest()
             return
         }
-
         guard let activeWindowID = desktop.activeWindowID else { return }
         keyboardWindowID = activeWindowID
         showKeyboard = true
+    }
+
+    private func haptic() {
+        if settings.hapticsEnabled { Haptics.touchTap() }
     }
 }
 
@@ -444,16 +355,12 @@ private struct DesktopKeyboardInputBar: View {
     @State private var text = ""
     @State private var isClearingAfterSubmit = false
 
-    /// Captured at the moment the keyboard opens. Text is never redirected to a
-    /// newly active window if the user switches windows while the keyboard is up.
     let windowID: UUID?
     let onDismiss: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "keyboard")
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
+            Image(systemName: "keyboard").foregroundStyle(.secondary).accessibilityHidden(true)
 
             TextField(placeholder, text: $text, axis: .vertical)
                 .textFieldStyle(.plain)
@@ -463,21 +370,17 @@ private struct DesktopKeyboardInputBar: View {
                 .textInputAutocapitalization(keyboardAutocapitalization)
                 .autocorrectionDisabled(disablesAutocorrection)
                 .onSubmit(submit)
-                .onChange(of: text) { oldValue, newValue in
-                    routeEdit(from: oldValue, to: newValue)
-                }
+                .onChange(of: text) { oldValue, newValue in routeEdit(from: oldValue, to: newValue) }
                 .accessibilityLabel("Type into \(desktop.activeWindow?.title ?? "desktop")")
 
             Button(action: submit) {
-                Image(systemName: "arrow.turn.down.left")
-                    .frame(width: 44, height: 44)
+                Image(systemName: "arrow.turn.down.left").frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Return")
 
             Button("Done") {
-                focused = false
-                onDismiss()
+                focused = false; onDismiss()
             }
             .font(.subheadline.weight(.semibold))
             .frame(minHeight: 44)
@@ -486,31 +389,22 @@ private struct DesktopKeyboardInputBar: View {
         .padding(.vertical, 9)
         .background(.ultraThinMaterial)
         .overlay(alignment: .top) { Divider() }
-        .onAppear {
-            text = ""
-            focusKeyboard()
-        }
+        .onAppear { text = ""; focusKeyboard() }
     }
 
-    private var activeWindowTitle: String {
-        desktop.activeWindow?.title ?? ""
-    }
+    private var activeWindowTitle: String { desktop.activeWindow?.title ?? "" }
 
     private var keyboardAutocapitalization: TextInputAutocapitalization? {
         switch activeWindowTitle {
-        case "Browser", "Sheets":
-            return .never
-        default:
-            return .sentences
+        case "Browser", "Sheets": return .never
+        default: return .sentences
         }
     }
 
     private var disablesAutocorrection: Bool {
         switch activeWindowTitle {
-        case "Browser", "Sheets":
-            return true
-        default:
-            return false
+        case "Browser", "Sheets": return true
+        default: return false
         }
     }
 
@@ -531,9 +425,6 @@ private struct DesktopKeyboardInputBar: View {
     }
 
     private func focusKeyboard() {
-        // A second asynchronous focus pass survives the safe-area insertion
-        // animation, which otherwise occasionally leaves the hardware keyboard
-        // visible without a focused text field.
         Task { @MainActor in
             focused = true
             try? await Task.sleep(for: .milliseconds(120))
@@ -542,50 +433,31 @@ private struct DesktopKeyboardInputBar: View {
     }
 
     private func submit() {
-        guard targetsCapturedWindow else {
-            onDismiss()
-            return
-        }
+        guard targetsCapturedWindow else { onDismiss(); return }
         desktop.pressEnterInActiveDesktopField()
-        // The local TextField is only an input proxy. Clearing it after Return
-        // keeps subsequent typing and backspace diffs short and deterministic;
-        // suppress the local clearing change so it never deletes remote text.
         isClearingAfterSubmit = true
         text = ""
     }
 
     private func routeEdit(from oldValue: String, to newValue: String) {
-        if isClearingAfterSubmit {
-            isClearingAfterSubmit = false
-            return
-        }
+        if isClearingAfterSubmit { isClearingAfterSubmit = false; return }
         guard targetsCapturedWindow, oldValue != newValue else { return }
 
         let oldChars = Array(oldValue)
         let newChars = Array(newValue)
         var common = 0
-        while common < min(oldChars.count, newChars.count), oldChars[common] == newChars[common] {
-            common += 1
-        }
+        while common < min(oldChars.count, newChars.count), oldChars[common] == newChars[common] { common += 1 }
 
         if oldChars.count > common {
-            for _ in common..<oldChars.count {
-                desktop.deleteBackwardInActiveDesktopField()
-            }
+            for _ in common..<oldChars.count { desktop.deleteBackwardInActiveDesktopField() }
         }
-
         if newChars.count > common {
-            let inserted = String(newChars.dropFirst(common))
-            desktop.typeIntoActiveDesktopField(inserted)
+            desktop.typeIntoActiveDesktopField(String(newChars.dropFirst(common)))
         }
     }
 }
 
-private struct IdentifiableUUID: Identifiable {
-    let id: UUID
-}
-
-// MARK: - Trackpad Gesture Receiver
+private struct IdentifiableUUID: Identifiable { let id: UUID }
 
 private struct TrackpadGestureReceiver: UIViewRepresentable {
     let engine: TrackpadEngine
@@ -594,40 +466,29 @@ private struct TrackpadGestureReceiver: UIViewRepresentable {
 
     func makeUIView(context: Context) -> TrackpadTouchInterceptorView {
         let view = TrackpadTouchInterceptorView()
-        view.engine = engine
-        view.desktop = desktop
-        view.settings = settings
+        view.engine = engine; view.desktop = desktop; view.settings = settings
         return view
     }
 
     func updateUIView(_ uiView: TrackpadTouchInterceptorView, context: Context) {
-        uiView.engine = engine
-        uiView.desktop = desktop
-        uiView.settings = settings
+        uiView.engine = engine; uiView.desktop = desktop; uiView.settings = settings
     }
 }
 
-/// Tracks the complete active touch set instead of trusting UIKit callback
-/// `touches.count`, which only represents touches that changed in that callback.
 private final class TrackpadTouchInterceptorView: UIView {
     var engine: TrackpadEngine?
     var desktop: DesktopSession?
     var settings: TrackpadSettings?
-
     private var trackedTouches: Set<UITouch> = []
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        isMultipleTouchEnabled = true
-        isExclusiveTouch = true
-        backgroundColor = .clear
+        isMultipleTouchEnabled = true; isExclusiveTouch = true; backgroundColor = .clear
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
-        isMultipleTouchEnabled = true
-        isExclusiveTouch = true
-        backgroundColor = .clear
+        isMultipleTouchEnabled = true; isExclusiveTouch = true; backgroundColor = .clear
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -663,8 +524,6 @@ private final class TrackpadTouchInterceptorView: UIView {
     }
 }
 
-// MARK: - Trackpad Settings Sheet
-
 struct TrackpadSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var settings = TrackpadSettings.shared
@@ -673,77 +532,44 @@ struct TrackpadSettingsSheet: View {
         NavigationStack {
             Form {
                 Section("Pointer") {
-                    valueSlider(
-                        title: "Speed",
-                        value: $settings.pointerSensitivity,
-                        range: 0.55...2.25,
-                        step: 0.05,
-                        format: "%.2fx"
-                    )
-
-                    valueSlider(
-                        title: "Acceleration",
-                        value: $settings.pointerAcceleration,
-                        range: 0...2.0,
-                        step: 0.1,
-                        format: "%.1f"
-                    )
+                    valueSlider(title: "Speed", value: $settings.pointerSensitivity, range: 0.55...2.25, step: 0.05, format: "%.2fx")
+                    valueSlider(title: "Acceleration", value: $settings.pointerAcceleration, range: 0...2.0, step: 0.1, format: "%.1f")
                     Toggle("Tap to Click", isOn: $settings.tapToClick)
                     Toggle("Double-Tap Drag Lock", isOn: $settings.dragLock)
                     Toggle("Haptic Clicks", isOn: $settings.hapticsEnabled)
                 }
 
                 Section("Scrolling") {
-                    valueSlider(
-                        title: "Scroll Speed",
-                        value: $settings.scrollSpeed,
-                        range: 0.5...2.5,
-                        step: 0.1,
-                        format: "%.1fx"
-                    )
+                    valueSlider(title: "Scroll Speed", value: $settings.scrollSpeed, range: 0.5...2.5, step: 0.1, format: "%.1fx")
                     Toggle("Natural Scrolling", isOn: $settings.naturalScrolling)
                     Toggle("Momentum", isOn: $settings.scrollMomentum)
                 }
 
                 Section("Pointer Style") {
                     Picker("Style", selection: $settings.cursorStyle) {
-                        ForEach(CursorStyle.allCases) { style in
-                            Text(style.rawValue).tag(style)
-                        }
+                        ForEach(CursorStyle.allCases) { style in Text(style.rawValue).tag(style) }
                     }
                     .pickerStyle(.inline)
                 }
 
                 Section {
-                    Text("One finger moves the pointer and can drag a title bar. Resizing requires two fingers while the pointer is on an edge or corner. Two fingers scroll in both axes. Three-finger swipe up opens Window Overview.")
+                    Text("One finger moves the pointer and can drag a title bar. Resizing uses two fingers on an edge or corner. Two fingers scroll in both axes. Three-finger swipe up opens Window Overview.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("Trackpad")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
     }
 
-    private func valueSlider(
-        title: String,
-        value: Binding<Double>,
-        range: ClosedRange<Double>,
-        step: Double,
-        format: String
-    ) -> some View {
+    private func valueSlider(title: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double, format: String) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
                 Text(title)
                 Spacer()
-                Text(String(format: format, value.wrappedValue))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
+                Text(String(format: format, value.wrappedValue)).foregroundStyle(.secondary).monospacedDigit()
             }
             Slider(value: value, in: range, step: step)
         }
