@@ -80,6 +80,16 @@ extension DesktopBrowserNavigationDelegate {
     ) {
         download.delegate = self
     }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        // iOS can reclaim a WebKit content process during a long desktop session.
+        // Without an explicit recovery path the active Browser tab can remain a
+        // blank surface even though its URL/session metadata still exists. Reload
+        // only a currently presented WebView; inactive retained tabs stay asleep
+        // and are recreated lazily when selected, avoiding background churn.
+        guard webView.superview != nil else { return }
+        webView.reload()
+    }
 }
 
 extension DesktopBrowserNavigationDelegate: WKDownloadDelegate {
