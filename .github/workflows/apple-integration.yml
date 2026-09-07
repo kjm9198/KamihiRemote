@@ -42,6 +42,9 @@ jobs:
       - name: Verify Files and PDF contract
         run: bash scripts/files-pdf-contract-smoke.sh
 
+      - name: Verify Calculator reliability contract
+        run: bash scripts/calculator-contract-smoke.sh
+
       # The script may recover transient simulator infrastructure internally,
       # but product/build/protocol failures remain hard failures. Do not rerun a
       # failed same-SHA workflow to manufacture a passing first-attempt result.
