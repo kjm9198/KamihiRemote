@@ -104,6 +104,7 @@ struct DesktopNotesView: View {
                         ForEach(store.visibleNotes) { note in noteRow(note) }
                     }
                     .padding(DesktopNotesLayoutMetrics.listPadding)
+                    .background(DesktopNativeScrollBridge(key: "Notes.sidebar"))
                 }
             }
         }
@@ -180,7 +181,7 @@ struct DesktopNotesView: View {
                             .onTapGesture { store.focus(.body) }
                             .accessibilityLabel("Note body")
                     }
-                    .background(DesktopNativeScrollBridge(key: "Notes"))
+                    .background(DesktopNativeScrollBridge(key: "Notes.editor"))
                     .frame(maxWidth: 720, alignment: .leading)
                     .padding(.horizontal, 38)
                     .padding(.vertical, 30)
