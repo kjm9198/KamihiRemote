@@ -25,22 +25,42 @@ final class DesktopDocumentsStore: ObservableObject {
     }
 
     @Published private(set) var documents: [Document] = [] {
-        didSet { save() }
+        didSet {
+            guard !isRestoring else { return }
+            saveDocuments()
+        }
     }
     @Published private(set) var activeDocumentID: UUID? {
-        didSet { save() }
+        didSet {
+            guard !isRestoring else { return }
+            saveActiveSelection()
+        }
     }
 
     private let storageKey = "kamihi.desktop.documents.v1"
+    private let activeDocumentStorageKey = "kamihi.desktop.documents.v1.active"
+    private var isRestoring = false
 
     private init() {
-        load()
-        if documents.isEmpty {
-            let document = Document(title: "Untitled Document")
-            documents = [document]
-            activeDocumentID = document.id
-        } else if activeDocumentID == nil {
+        isRestoring = true
+        let hadPersistedCollection = loadDocuments()
+
+        if hadPersistedCollection {
+            restoreActiveSelection()
+        } else {
+            seedInitialDocument()
+        }
+
+        if activeDocumentID == nil, !documents.isEmpty {
             activeDocumentID = documents.first?.id
+        }
+        isRestoring = false
+
+        // Persist first-launch seeding once, but never reinterpret a deliberately
+        // empty saved collection as first launch on a later process start.
+        if !hadPersistedCollection {
+            saveDocuments()
+            saveActiveSelection()
         }
     }
 
@@ -79,15 +99,19 @@ final class DesktopDocumentsStore: ObservableObject {
     }
 
     func deleteActiveDocument() {
-        guard let activeDocumentID else { return }
-        documents.removeAll { $0.id == activeDocumentID }
-        if documents.isEmpty {
-            let replacement = Document(title: "Untitled Document")
-            documents = [replacement]
-            self.activeDocumentID = replacement.id
-        } else {
-            self.activeDocumentID = documents.first?.id
+        guard let activeDocumentID,
+              let removedIndex = documents.firstIndex(where: { $0.id == activeDocumentID }) else { return }
+
+        documents.remove(at: removedIndex)
+        guard !documents.isEmpty else {
+            self.activeDocumentID = nil
+            return
         }
+
+        // Stay near the deleted document instead of jumping to the first item,
+        // which is especially disruptive in a long sidebar.
+        let fallbackIndex = min(removedIndex, documents.count - 1)
+        self.activeDocumentID = documents[fallbackIndex].id
     }
 
     func appendToActiveBody(_ value: String) {
@@ -158,27 +182,43 @@ final class DesktopDocumentsStore: ObservableObject {
         document.title = String(firstLine.prefix(48))
     }
 
-    private func save() {
-        if let data = try? JSONEncoder().encode(documents) {
-            UserDefaults.standard.set(data, forKey: storageKey)
-        }
+    private func seedInitialDocument() {
+        let document = Document(title: "Untitled Document")
+        documents = [document]
+        activeDocumentID = document.id
+    }
+
+    private func saveDocuments() {
+        guard let data = try? JSONEncoder().encode(documents) else { return }
+        UserDefaults.standard.set(data, forKey: storageKey)
+    }
+
+    private func saveActiveSelection() {
         if let activeDocumentID {
-            UserDefaults.standard.set(activeDocumentID.uuidString, forKey: storageKey + ".active")
+            UserDefaults.standard.set(activeDocumentID.uuidString, forKey: activeDocumentStorageKey)
         } else {
-            UserDefaults.standard.removeObject(forKey: storageKey + ".active")
+            UserDefaults.standard.removeObject(forKey: activeDocumentStorageKey)
         }
     }
 
-    private func load() {
-        if let data = UserDefaults.standard.data(forKey: storageKey),
-           let saved = try? JSONDecoder().decode([Document].self, from: data) {
-            documents = saved
+    @discardableResult
+    private func loadDocuments() -> Bool {
+        guard let data = UserDefaults.standard.data(forKey: storageKey),
+              let saved = try? JSONDecoder().decode([Document].self, from: data) else {
+            return false
         }
-        if let raw = UserDefaults.standard.string(forKey: storageKey + ".active"),
-           let id = UUID(uuidString: raw),
-           documents.contains(where: { $0.id == id }) {
-            activeDocumentID = id
+        documents = saved
+        return true
+    }
+
+    private func restoreActiveSelection() {
+        guard let raw = UserDefaults.standard.string(forKey: activeDocumentStorageKey),
+              let id = UUID(uuidString: raw),
+              documents.contains(where: { $0.id == id }) else {
+            activeDocumentID = documents.first?.id
+            return
         }
+        activeDocumentID = id
     }
 
     private static func topViewController() -> UIViewController? {
