@@ -241,7 +241,8 @@ final class DesktopHardwareInputManager: ObservableObject {
         }
 
         let direction: CGFloat = naturalScrolling ? -1 : 1
-        let gain = Self.wheelGain * CGFloat(TrackpadSettings.normalizedScrollSpeed(speed)) * direction
+        let boundedSpeed = CGFloat(min(max(speed, 0.35), 2.5))
+        let gain = Self.wheelGain * boundedSpeed * direction
         return CGSize(
             width: x * gain,
             // GameController wheel Y is positive upward while content-space Y
