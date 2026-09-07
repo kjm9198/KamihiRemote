@@ -32,6 +32,7 @@ struct DesktopHardwareKeyboardReceiver: UIViewRepresentable {
         weak var desktop: DesktopSession?
         private let suppressedSoftwareKeyboard = UIView(frame: .zero)
         private var captureEnabled = false
+        private var editingObserver: NSObjectProtocol?
 
         override var canBecomeFirstResponder: Bool { captureEnabled }
         override var inputView: UIView? { suppressedSoftwareKeyboard }
@@ -48,6 +49,12 @@ struct DesktopHardwareKeyboardReceiver: UIViewRepresentable {
             fatalError("init(coder:) has not been implemented")
         }
 
+        deinit {
+            if let editingObserver {
+                NotificationCenter.default.removeObserver(editingObserver)
+            }
+        }
+
         func setCaptureEnabled(_ enabled: Bool) {
             guard captureEnabled != enabled else {
                 if enabled, !isFirstResponder {
@@ -58,9 +65,11 @@ struct DesktopHardwareKeyboardReceiver: UIViewRepresentable {
 
             captureEnabled = enabled
             if enabled {
+                installEditingObserverIfNeeded()
                 becomeFirstResponderOnNextRunLoop()
-            } else if isFirstResponder {
-                resignFirstResponder()
+            } else {
+                removeEditingObserver()
+                if isFirstResponder { resignFirstResponder() }
             }
         }
 
@@ -76,6 +85,30 @@ struct DesktopHardwareKeyboardReceiver: UIViewRepresentable {
         func deleteBackward() {
             guard captureEnabled else { return }
             desktop?.deleteBackwardInActiveDesktopField()
+        }
+
+        private func installEditingObserverIfNeeded() {
+            guard editingObserver == nil else { return }
+            editingObserver = NotificationCenter.default.addObserver(
+                forName: UITextField.textDidBeginEditingNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                // The phone controller may present its software-keyboard proxy
+                // immediately after a desktop field click. When a physical keyboard
+                // is connected, reclaim first responder on the next run loop so the
+                // proxy cannot steal hardware keystrokes or summon an unnecessary
+                // software keyboard. Manually opening the phone keyboard still works
+                // when no desktop field currently requests hardware focus.
+                Task { @MainActor in self?.becomeFirstResponderOnNextRunLoop() }
+            }
+        }
+
+        private func removeEditingObserver() {
+            if let editingObserver {
+                NotificationCenter.default.removeObserver(editingObserver)
+                self.editingObserver = nil
+            }
         }
 
         private func becomeFirstResponderOnNextRunLoop() {
