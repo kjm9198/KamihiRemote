@@ -114,22 +114,20 @@ final class DesktopHardwareInputManager: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 let desktop = DesktopSession.shared
-                desktop.movePointer(
-                    delta: CGSize(
-                        width: CGFloat(deltaX) * self.hardwarePointerGain,
-                        // GameController reports positive Y upward; Kamihi's
-                        // normalized desktop coordinate grows downward.
-                        height: -CGFloat(deltaY) * self.hardwarePointerGain
-                    ),
-                    sensitivity: 1.0,
-                    immediateDockReveal: true
+                let delta = CGSize(
+                    width: CGFloat(deltaX) * self.hardwarePointerGain,
+                    // GameController reports positive Y upward; Kamihi's
+                    // normalized desktop coordinate grows downward.
+                    height: -CGFloat(deltaY) * self.hardwarePointerGain
                 )
 
+                // Window drag/resize owns pointer advancement internally. Routing
+                // the same physical delta through movePointer first would apply it
+                // twice and make MX Master drags feel unnaturally fast.
                 if desktop.isDraggingWindow || desktop.isResizingWindow {
-                    desktop.updateWindowDrag(delta: CGSize(
-                        width: CGFloat(deltaX) * self.hardwarePointerGain,
-                        height: -CGFloat(deltaY) * self.hardwarePointerGain
-                    ))
+                    desktop.updateWindowDrag(delta: delta)
+                } else {
+                    desktop.movePointer(delta: delta, sensitivity: 1.0, immediateDockReveal: true)
                 }
             }
         }
