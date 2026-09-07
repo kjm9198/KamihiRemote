@@ -37,8 +37,8 @@ public final class DesktopDockHitRegistry: ObservableObject {
     @Published public var isLauncherOpen: Bool = false {
         didSet {
             if !isLauncherOpen {
-                hoveredAppTitle = nil
-                selectedLauncherTitle = nil
+                if hoveredAppTitle != nil { hoveredAppTitle = nil }
+                if selectedLauncherTitle != nil { selectedLauncherTitle = nil }
                 lastLauncherClickSample = nil
             }
         }
@@ -59,18 +59,32 @@ public final class DesktopDockHitRegistry: ObservableObject {
 
     private init() {}
 
+    /// SwiftUI geometry preferences can be re-emitted while the pointer moves even
+    /// when the Dock/App Library layout did not actually change. Publishing a new
+    /// array on every identical preference pass invalidates all observers and can
+    /// make high-rate hardware mouse movement feel less direct. Entry UUIDs are
+    /// intentionally ignored here; target + normalized geometry are the semantic
+    /// identity used by hit testing.
     public func update(entries: [Entry]) {
+        guard !Self.hasSameGeometry(self.entries, entries) else { return }
         self.entries = entries
     }
 
+    private static func hasSameGeometry(_ lhs: [Entry], _ rhs: [Entry]) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        return zip(lhs, rhs).allSatisfy { left, right in
+            left.target == right.target && left.normalizedFrame == right.normalizedFrame
+        }
+    }
+
     public func clear() {
-        self.entries.removeAll()
-        hoveredAppTitle = nil
-        selectedLauncherTitle = nil
-        hoveredDockTitle = nil
-        isLauncherToggleHovered = false
-        hoveredMenuBarActionId = nil
-        hoveredMenuBarMenu = nil
+        if !entries.isEmpty { self.entries.removeAll() }
+        if hoveredAppTitle != nil { hoveredAppTitle = nil }
+        if selectedLauncherTitle != nil { selectedLauncherTitle = nil }
+        if hoveredDockTitle != nil { hoveredDockTitle = nil }
+        if isLauncherToggleHovered { isLauncherToggleHovered = false }
+        if hoveredMenuBarActionId != nil { hoveredMenuBarActionId = nil }
+        if hoveredMenuBarMenu != nil { hoveredMenuBarMenu = nil }
     }
 
     public func updateHover(at point: CGPoint) {
@@ -81,7 +95,7 @@ public final class DesktopDockHitRegistry: ObservableObject {
                         if DesktopSession.shared.activeMenuBarMenu != menu {
                             DesktopSession.shared.activeMenuBarMenu = menu
                         }
-                        hoveredMenuBarMenu = menu
+                        if hoveredMenuBarMenu != menu { hoveredMenuBarMenu = menu }
                         return
                     }
                 }
@@ -105,8 +119,8 @@ public final class DesktopDockHitRegistry: ObservableObject {
         if hoveredMenuBarMenu != nil { hoveredMenuBarMenu = nil }
 
         if isLauncherOpen {
-            hoveredDockTitle = nil
-            isLauncherToggleHovered = false
+            if hoveredDockTitle != nil { hoveredDockTitle = nil }
+            if isLauncherToggleHovered { isLauncherToggleHovered = false }
 
             for entry in entries.reversed() {
                 if case .launcherApp(let title, _) = entry.target {
@@ -138,7 +152,7 @@ public final class DesktopDockHitRegistry: ObservableObject {
             case .wallpaperToggle:
                 nextDockTitle = "Wallpaper"
             case .menuBarButton(let menu):
-                hoveredMenuBarMenu = menu
+                if hoveredMenuBarMenu != menu { hoveredMenuBarMenu = menu }
             default:
                 break
             }
