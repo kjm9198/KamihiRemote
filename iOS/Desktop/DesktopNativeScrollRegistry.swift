@@ -15,6 +15,11 @@ final class DesktopNativeScrollRegistry {
 
     private var scrollViews: [String: WeakScrollView] = [:]
 
+    private let autoDiscoverableApps: Set<String> = [
+        "Documents", "Notes", "Files", "Photos", "Sheets", "Clipboard",
+        "PDF Viewer", "Settings", "Display Diagnostics"
+    ]
+
     private init() {}
 
     func register(_ scrollView: UIScrollView, key: String) {
@@ -28,10 +33,18 @@ final class DesktopNativeScrollRegistry {
 
     @discardableResult
     func scroll(key: String, deltaX: CGFloat, deltaY: CGFloat) -> Bool {
-        guard let scrollView = scrollViews[key]?.value else {
+        let scrollView: UIScrollView?
+        if let registered = scrollViews[key]?.value {
+            scrollView = registered
+        } else {
             scrollViews.removeValue(forKey: key)
-            return false
+            scrollView = discoverVisibleScrollView(for: key)
+            if let scrollView {
+                register(scrollView, key: key)
+            }
         }
+
+        guard let scrollView else { return false }
 
         var target = scrollView.contentOffset
         target.x += deltaX
@@ -47,6 +60,84 @@ final class DesktopNativeScrollRegistry {
         target.y = min(max(target.y, minY), maxY)
         scrollView.setContentOffset(target, animated: false)
         return true
+    }
+
+    /// SwiftUI can rebuild its private UIScrollView hierarchy as native app state
+    /// changes (for example Photos grid -> detail -> grid, or Clipboard empty -> list).
+    /// Explicit bridges remain the most deterministic path, but this public-UIKit
+    /// fallback discovers the largest scrollable surface inside the active desktop
+    /// window so newly-created native app scroll views do not silently stop working.
+    private func discoverVisibleScrollView(for key: String) -> UIScrollView? {
+        guard autoDiscoverableApps.contains(key),
+              let activeWindow = DesktopSession.shared.activeWindow,
+              activeWindow.title == key else { return nil }
+
+        let normalizedFrame = DesktopSession.shared.effectiveFrame(for: activeWindow)
+        var bestCandidate: UIScrollView?
+        var bestScore: CGFloat = 0
+
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .filter { !$0.isHidden && $0.alpha > 0.01 && $0.bounds.width > 0 && $0.bounds.height > 0 }
+            .sorted { lhs, rhs in
+                let lhsExternal = lhs.windowScene?.screen !== UIScreen.main
+                let rhsExternal = rhs.windowScene?.screen !== UIScreen.main
+                if lhsExternal != rhsExternal { return lhsExternal && !rhsExternal }
+                return lhs.windowLevel.rawValue > rhs.windowLevel.rawValue
+            }
+
+        for window in windows {
+            let appFrame = CGRect(
+                x: normalizedFrame.minX * window.bounds.width,
+                y: normalizedFrame.minY * window.bounds.height,
+                width: normalizedFrame.width * window.bounds.width,
+                height: normalizedFrame.height * window.bounds.height
+            )
+
+            for candidate in scrollViews(in: window) {
+                guard !candidate.isHidden,
+                      candidate.alpha > 0.01,
+                      candidate.bounds.width > 1,
+                      candidate.bounds.height > 1 else { continue }
+
+                let inset = candidate.adjustedContentInset
+                let scrollableWidth = candidate.contentSize.width + inset.left + inset.right > candidate.bounds.width + 1
+                let scrollableHeight = candidate.contentSize.height + inset.top + inset.bottom > candidate.bounds.height + 1
+                guard scrollableWidth || scrollableHeight else { continue }
+
+                let candidateFrame = candidate.convert(candidate.bounds, to: window)
+                let intersection = candidateFrame.intersection(appFrame)
+                guard !intersection.isNull, !intersection.isEmpty else { continue }
+
+                let intersectionArea = intersection.width * intersection.height
+                let candidateArea = max(candidateFrame.width * candidateFrame.height, 1)
+                let overlapRatio = intersectionArea / candidateArea
+                guard overlapRatio > 0.40 else { continue }
+
+                // Prefer the scroll surface that occupies most of the active app.
+                // The small overlap bonus keeps nested text/preview scroll views from
+                // beating the visible app-level surface merely because they are huge.
+                let score = intersectionArea + overlapRatio * 10_000
+                if score > bestScore {
+                    bestScore = score
+                    bestCandidate = candidate
+                }
+            }
+        }
+
+        return bestCandidate
+    }
+
+    private func scrollViews(in root: UIView) -> [UIScrollView] {
+        var result: [UIScrollView] = []
+        if let scrollView = root as? UIScrollView {
+            result.append(scrollView)
+        }
+        for child in root.subviews {
+            result.append(contentsOf: scrollViews(in: child))
+        }
+        return result
     }
 }
 
