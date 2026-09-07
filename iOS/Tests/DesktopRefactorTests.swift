@@ -469,7 +469,7 @@ public enum DesktopRefactorTests {
 
             // Move cursor to bottom edge
             desktop.cursor = CGPoint(x: 0.50, y: 0.97)
-            desktop.movePointer(delta: CGSize(width: 0, height: 1)) // y >= 0.965 -> reveal
+            desktop.movePointer(delta: CGSize(width: 0, height: 1), immediateDockReveal: true) // y >= 0.965 -> reveal
             guard desktop.isDockVisible == true else {
                 throw NSError(domain: "Test", code: 37, userInfo: [NSLocalizedDescriptionKey: "Dock should reveal when cursor reaches bottom edge"])
             }

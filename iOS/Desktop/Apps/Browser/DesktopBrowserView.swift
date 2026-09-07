@@ -448,6 +448,9 @@ final class DesktopBrowserController: ObservableObject {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
         configuration.defaultWebpagePreferences.preferredContentMode = .desktop
+        configuration.allowsInlineMediaPlayback = true
+        configuration.mediaTypesRequiringUserActionForPlayback = []
+        configuration.preferences.isElementFullscreenEnabled = false
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         // Request desktop page layout through WebKit's public API while keeping

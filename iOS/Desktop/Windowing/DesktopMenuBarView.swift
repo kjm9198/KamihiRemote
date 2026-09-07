@@ -386,6 +386,9 @@ public struct DesktopMenuBarView: View {
                     showWallpaperPicker.toggle()
                     desktop.showWallpaperPicker.toggle()
                 },
+                MenuItem(id: "view.dockAutohide", title: desktop.autohideDock ? "Keep Dock Visible" : "Automatically Hide Dock", icon: "dock.rectangle") {
+                    desktop.autohideDock.toggle()
+                },
                 .divider("view.div1"),
                 MenuItem(id: "view.resetLayout", title: "Reset Windows Layout", icon: "arrow.counterclockwise.circle") {
                     desktop.openVibeWorkspace()

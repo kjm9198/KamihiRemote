@@ -104,6 +104,7 @@ final class DesktopSession: ObservableObject {
     /// drag away from the edge restores the user's previous size and position.
     private var restoreFrames: [UUID: CGRect] = [:]
     private var snapTargets: [UUID: WindowSnapEngine.SnapTarget] = [:]
+    private var dockHoverTask: Task<Void, Never>? = nil
 
     private init() {
         self.autohideDock = UserDefaults.standard.bool(forKey: "kamihi.desktop.autohideDock")
@@ -314,7 +315,7 @@ final class DesktopSession: ObservableObject {
         splitAssistState = nil
     }
 
-    func movePointer(delta: CGSize, sensitivity: CGFloat = 1.0) {
+    func movePointer(delta: CGSize, sensitivity: CGFloat = 1.0, immediateDockReveal: Bool = false) {
         // Preserve sub-pixel precision for small motions while giving deliberate
         // fast swipes enough gain to traverse a 1080p-class desktop without
         // repeated thumb lifts. The bounded curve is stateless, so it adds no
@@ -337,11 +338,32 @@ final class DesktopSession: ObservableObject {
 
         if autohideDock {
             if cursor.y >= 0.965 {
-                if !isDockVisible { isDockVisible = true }
+                if !isDockVisible {
+                    if immediateDockReveal {
+                        dockHoverTask?.cancel()
+                        dockHoverTask = nil
+                        isDockVisible = true
+                    } else if dockHoverTask == nil {
+                        // Dwell at bottom edge like macOS before pulling out the dock.
+                        dockHoverTask = Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 350_000_000)
+                            if !Task.isCancelled {
+                                self.isDockVisible = true
+                            }
+                        }
+                    }
+                }
             } else if cursor.y < 0.88 {
+                dockHoverTask?.cancel()
+                dockHoverTask = nil
                 if isDockVisible { isDockVisible = false }
+            } else {
+                dockHoverTask?.cancel()
+                dockHoverTask = nil
             }
         } else {
+            dockHoverTask?.cancel()
+            dockHoverTask = nil
             if !isDockVisible { isDockVisible = true }
         }
 
@@ -539,9 +561,9 @@ final class DesktopSession: ObservableObject {
 
     func effectiveFrame(for window: DesktopWindow) -> CGRect {
         if window.isMaximized {
-            let topY: CGFloat = 0.038
-            let bottomHeight: CGFloat = autohideDock ? 0.954 : 0.842
-            return CGRect(x: 0.008, y: topY, width: 0.984, height: bottomHeight)
+            let topY: CGFloat = 0.035
+            let bottomHeight: CGFloat = autohideDock ? (1.0 - topY) : 0.850
+            return CGRect(x: 0.0, y: topY, width: 1.0, height: bottomHeight)
         }
         return window.normalizedFrame
     }

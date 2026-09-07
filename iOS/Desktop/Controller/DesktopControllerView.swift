@@ -209,6 +209,12 @@ struct DesktopControllerView: View {
             Label(engine.isPrecisionMode ? "Turn Off Precision Mode" : "Turn On Precision Mode", systemImage: engine.isPrecisionMode ? "scope" : "circle.dotted")
         }
 
+        Button {
+            desktop.autohideDock.toggle(); haptic()
+        } label: {
+            Label(desktop.autohideDock ? "Keep Dock Visible" : "Automatically Hide Dock", systemImage: "dock.rectangle")
+        }
+
         Button { showTrackpadSettings = true } label: {
             Label("Trackpad Settings", systemImage: "slider.horizontal.3")
         }

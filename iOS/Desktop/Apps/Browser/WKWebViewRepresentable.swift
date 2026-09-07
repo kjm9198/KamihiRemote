@@ -144,11 +144,6 @@ final class DesktopWebInputRegistry {
             }
           }
 
-          if (hit.tagName === 'VIDEO') {
-            const vid = hit;
-            if (vid.paused) { vid.play(); } else { vid.pause(); }
-          }
-
           const count = \(clickCount);
           if (count === 2) {
             hit.dispatchEvent(new MouseEvent('dblclick', {
@@ -406,6 +401,9 @@ struct WKWebViewRepresentable: UIViewRepresentable {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
         configuration.defaultWebpagePreferences.preferredContentMode = .desktop
+        configuration.allowsInlineMediaPlayback = true
+        configuration.mediaTypesRequiringUserActionForPlayback = []
+        configuration.preferences.isElementFullscreenEnabled = false
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15"
