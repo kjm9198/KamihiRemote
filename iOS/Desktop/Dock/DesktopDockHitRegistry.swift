@@ -9,10 +9,17 @@ public final class DesktopDockHitRegistry: ObservableObject {
 
     public enum Target: Equatable {
         case launcherToggle
+        case wallpaperToggle
+        case wallpaperOption(id: String)
+        case wallpaperDismiss
         case app(title: String)
         case launcherApp(title: String, url: URL?)
         case launcherContainer
         case launcherDismiss
+        case menuBarButton(MenuBarDropdown)
+        case menuBarDropdownItem(actionId: String)
+        case menuBarDropdownContainer
+        case menuBarDismiss
     }
 
     public struct Entry: Identifiable {
@@ -41,10 +48,13 @@ public final class DesktopDockHitRegistry: ObservableObject {
     @Published public var selectedLauncherTitle: String? = nil
     @Published public var hoveredDockTitle: String? = nil
     @Published public var isLauncherToggleHovered: Bool = false
+    @Published public var hoveredMenuBarActionId: String? = nil
+    @Published public var hoveredMenuBarMenu: MenuBarDropdown? = nil
     public var lastLauncherClickSample: (title: String, time: TimeInterval)? = nil
 
     public var onToggleLauncher: (() -> Void)?
     public var onDismissLauncher: (() -> Void)?
+    public var onToggleWallpaper: (() -> Void)?
     public var onLaunchApp: ((String, URL?) -> Void)?
 
     private init() {}
@@ -59,9 +69,41 @@ public final class DesktopDockHitRegistry: ObservableObject {
         selectedLauncherTitle = nil
         hoveredDockTitle = nil
         isLauncherToggleHovered = false
+        hoveredMenuBarActionId = nil
+        hoveredMenuBarMenu = nil
     }
 
     public func updateHover(at point: CGPoint) {
+        if DesktopSession.shared.activeMenuBarMenu != nil {
+            for entry in entries.reversed() {
+                if case .menuBarButton(let menu) = entry.target {
+                    if entry.normalizedFrame.insetBy(dx: -0.004, dy: -0.004).contains(point) {
+                        if DesktopSession.shared.activeMenuBarMenu != menu {
+                            DesktopSession.shared.activeMenuBarMenu = menu
+                        }
+                        hoveredMenuBarMenu = menu
+                        return
+                    }
+                }
+            }
+
+            for entry in entries.reversed() {
+                if case .menuBarDropdownItem(let actionId) = entry.target {
+                    if entry.normalizedFrame.insetBy(dx: -0.002, dy: -0.002).contains(point) {
+                        if hoveredMenuBarActionId != actionId {
+                            hoveredMenuBarActionId = actionId
+                        }
+                        return
+                    }
+                }
+            }
+            if hoveredMenuBarActionId != nil { hoveredMenuBarActionId = nil }
+            return
+        }
+
+        if hoveredMenuBarActionId != nil { hoveredMenuBarActionId = nil }
+        if hoveredMenuBarMenu != nil { hoveredMenuBarMenu = nil }
+
         if isLauncherOpen {
             hoveredDockTitle = nil
             isLauncherToggleHovered = false
@@ -93,6 +135,10 @@ public final class DesktopDockHitRegistry: ObservableObject {
                 nextDockTitle = title
             case .launcherToggle:
                 nextLauncherHover = true
+            case .wallpaperToggle:
+                nextDockTitle = "Wallpaper"
+            case .menuBarButton(let menu):
+                hoveredMenuBarMenu = menu
             default:
                 break
             }
@@ -104,6 +150,35 @@ public final class DesktopDockHitRegistry: ObservableObject {
     }
 
     public func hitTest(at point: CGPoint) -> Target? {
+        if DesktopSession.shared.activeMenuBarMenu != nil {
+            for entry in entries.reversed() {
+                if case .menuBarDropdownItem = entry.target {
+                    let expanded = entry.normalizedFrame.insetBy(dx: -0.004, dy: -0.004)
+                    if expanded.contains(point) {
+                        return entry.target
+                    }
+                }
+            }
+
+            for entry in entries.reversed() {
+                if case .menuBarButton = entry.target {
+                    let expanded = entry.normalizedFrame.insetBy(dx: -0.004, dy: -0.004)
+                    if expanded.contains(point) {
+                        return entry.target
+                    }
+                }
+            }
+
+            for entry in entries {
+                if case .menuBarDropdownContainer = entry.target,
+                   entry.normalizedFrame.contains(point) {
+                    return .menuBarDropdownContainer
+                }
+            }
+
+            return .menuBarDismiss
+        }
+
         if isLauncherOpen {
             // First hit-test launcher app tiles.
             for entry in entries.reversed() {
@@ -127,10 +202,22 @@ public final class DesktopDockHitRegistry: ObservableObject {
             return .launcherDismiss
         }
 
-        // Normal dock hit test.
+        if DesktopSession.shared.showWallpaperPicker {
+            for entry in entries.reversed() {
+                if case .wallpaperOption = entry.target {
+                    let expanded = entry.normalizedFrame.insetBy(dx: -0.006, dy: -0.006)
+                    if expanded.contains(point) {
+                        return entry.target
+                    }
+                }
+            }
+            return .wallpaperDismiss
+        }
+
+        // Normal dock & menu bar hit test.
         for entry in entries.reversed() {
             switch entry.target {
-            case .app, .launcherToggle:
+            case .app, .launcherToggle, .wallpaperToggle, .menuBarButton:
                 let expanded = entry.normalizedFrame.insetBy(dx: -0.006, dy: -0.006)
                 if expanded.contains(point) {
                     return entry.target

@@ -77,6 +77,12 @@ struct ExternalDesktopCanvasView: View {
                     .zIndex(desktop.activeWindowID == window.id ? 4 : 3)
                 }
 
+                if let assist = desktop.splitAssistState {
+                    DesktopSplitAssistOverlay(state: assist, surfaceSize: surfaceSize)
+                        .zIndex(6)
+                        .transition(.opacity)
+                }
+
                 VStack {
                     DesktopMenuBarView(
                         showWallpaperPicker: $showWallpaperPicker,
@@ -87,39 +93,17 @@ struct ExternalDesktopCanvasView: View {
 
                     DesktopDockView(
                         onOpenLauncher: { showLauncher.toggle() },
-                        onOpenWallpaperPicker: { showWallpaperPicker.toggle() }
+                        onOpenWallpaperPicker: {
+                            showWallpaperPicker.toggle()
+                            desktop.showWallpaperPicker = showWallpaperPicker
+                        }
                     )
                     .padding(.bottom, 10)
+                    .offset(y: (desktop.autohideDock && !desktop.isDockVisible) ? 85 : 0)
+                    .animation(shouldSuppressDecorativeMotion ? nil : .spring(response: 0.35, dampingFraction: 0.82), value: desktop.isDockVisible)
+                    .animation(shouldSuppressDecorativeMotion ? nil : .spring(response: 0.35, dampingFraction: 0.82), value: desktop.autohideDock)
                 }
                 .zIndex(10)
-            }
-            .coordinateSpace(name: "desktopSurface")
-            .onPreferenceChange(DockGeometryPreferenceKey.self) { preferences in
-                guard surfaceSize.width > 0, surfaceSize.height > 0 else { return }
-                let entries = preferences.map { pref in
-                    let frame = pref.frameInSurface
-                    let normalized = CGRect(
-                        x: frame.minX / surfaceSize.width,
-                        y: frame.minY / surfaceSize.height,
-                        width: frame.width / surfaceSize.width,
-                        height: frame.height / surfaceSize.height
-                    )
-                    return DesktopDockHitRegistry.Entry(target: pref.target, normalizedFrame: normalized)
-                }
-                DesktopDockHitRegistry.shared.update(entries: entries)
-            }
-            .onAppear {
-                DesktopDockHitRegistry.shared.onToggleLauncher = {
-                    showLauncher.toggle()
-                    DesktopDockHitRegistry.shared.isLauncherOpen = showLauncher
-                }
-                DesktopDockHitRegistry.shared.onDismissLauncher = {
-                    showLauncher = false
-                    DesktopDockHitRegistry.shared.isLauncherOpen = false
-                }
-            }
-            .onChange(of: showLauncher) { _, isOpen in
-                DesktopDockHitRegistry.shared.isLauncherOpen = isOpen
             }
             .animation(shouldSuppressDecorativeMotion ? nil : KamihiTheme.Animation.fast, value: desktop.snapPreviewTarget)
             .animation(shouldSuppressDecorativeMotion ? nil : KamihiTheme.Animation.fast, value: showLauncher)
@@ -143,7 +127,10 @@ struct ExternalDesktopCanvasView: View {
 
                 if showWallpaperPicker {
                     (colorScheme == .dark ? Color.black.opacity(0.34) : Color.black.opacity(0.18))
-                        .onTapGesture { showWallpaperPicker = false }
+                        .onTapGesture {
+                            showWallpaperPicker = false
+                            desktop.showWallpaperPicker = false
+                        }
 
                     DesktopWallpaperPickerView()
                         .desktopGlassSurface(cornerRadius: KamihiTheme.Radius.lg)
@@ -176,6 +163,41 @@ struct ExternalDesktopCanvasView: View {
                     .transition(.opacity)
                     .zIndex(20)
                 }
+            }
+            .coordinateSpace(name: "desktopSurface")
+            .onPreferenceChange(DockGeometryPreferenceKey.self) { preferences in
+                guard surfaceSize.width > 0, surfaceSize.height > 0 else { return }
+                let entries = preferences.map { pref in
+                    let frame = pref.frameInSurface
+                    let normalized = CGRect(
+                        x: frame.minX / surfaceSize.width,
+                        y: frame.minY / surfaceSize.height,
+                        width: frame.width / surfaceSize.width,
+                        height: frame.height / surfaceSize.height
+                    )
+                    return DesktopDockHitRegistry.Entry(target: pref.target, normalizedFrame: normalized)
+                }
+                DesktopDockHitRegistry.shared.update(entries: entries)
+            }
+            .onAppear {
+                DesktopDockHitRegistry.shared.onToggleLauncher = {
+                    showLauncher.toggle()
+                    DesktopDockHitRegistry.shared.isLauncherOpen = showLauncher
+                }
+                DesktopDockHitRegistry.shared.onDismissLauncher = {
+                    showLauncher = false
+                    DesktopDockHitRegistry.shared.isLauncherOpen = false
+                }
+                DesktopDockHitRegistry.shared.onToggleWallpaper = {
+                    showWallpaperPicker.toggle()
+                    desktop.showWallpaperPicker = showWallpaperPicker
+                }
+            }
+            .onChange(of: showLauncher) { _, isOpen in
+                DesktopDockHitRegistry.shared.isLauncherOpen = isOpen
+            }
+            .onChange(of: desktop.showWallpaperPicker) { _, isOpen in
+                showWallpaperPicker = isOpen
             }
             .overlay {
                 if display.hasCalibration {
@@ -272,12 +294,12 @@ struct ExternalDesktopCanvasView: View {
     }
 }
 
-/// Photos counterpart with a proper toolbar and library sidebar rather than a bare
-/// thumbnail grid. The actual assets still come from the user's iOS Photos access.
+/// Photos counterpart with a proper toolbar, library sidebar, asset inspector,
+/// and complete photo deletion via PHPhotoLibrary.
 private struct DesktopPhotosView: View {
-    @StateObject private var model = DesktopPhotosModel()
+    @ObservedObject private var store = DesktopPhotosStore.shared
 
-    private let columns = [GridItem(.adaptive(minimum: 104, maximum: 170), spacing: 7)]
+    private let columns = [GridItem(.adaptive(minimum: 110, maximum: 170), spacing: 8)]
 
     var body: some View {
         HStack(spacing: 0) {
@@ -293,15 +315,24 @@ private struct DesktopPhotosView: View {
                 .frame(height: DesktopShellMetrics.toolbarHeight)
                 .desktopAppToolbar()
 
-                VStack(spacing: 3) {
-                    photosSidebarRow("Library", icon: "photo.stack.fill", selected: true)
-                    photosSidebarRow("Favorites", icon: "heart.fill", selected: false)
-                    photosSidebarRow("Recent", icon: "clock.fill", selected: false)
+                VStack(spacing: 4) {
+                    photosSidebarRow("Library", icon: "photo.stack.fill", selected: store.selectedFilter == .library) {
+                        store.selectedFilter = .library
+                        store.select(assetID: nil)
+                    }
+                    photosSidebarRow("Favorites", icon: "heart.fill", selected: store.selectedFilter == .favorites) {
+                        store.selectedFilter = .favorites
+                        store.select(assetID: nil)
+                    }
+                    photosSidebarRow("Recent", icon: "clock.fill", selected: store.selectedFilter == .recent) {
+                        store.selectedFilter = .recent
+                        store.select(assetID: nil)
+                    }
                 }
                 .padding(7)
                 Spacer()
 
-                Text(model.authorizationStatus == .limited ? "Limited Library" : "On My iPhone")
+                Text(store.authorizationStatus == .limited ? "Limited Library" : "On My iPhone")
                     .font(.system(size: 9.5))
                     .foregroundStyle(.secondary)
                     .padding(10)
@@ -310,63 +341,122 @@ private struct DesktopPhotosView: View {
             .desktopSidebarSurface()
 
             VStack(spacing: 0) {
-                HStack(spacing: 8) {
-                    Text("Library")
-                        .font(.system(size: 12.5, weight: .semibold))
-                    Spacer()
-                    if model.authorizationStatus == .limited {
-                        Label("Limited", systemImage: "checkmark.shield.fill")
-                            .font(.system(size: 10, weight: .semibold))
+                if let selected = store.selectedAsset {
+                    // Detail Inspector Toolbar
+                    HStack(spacing: 12) {
+                        Button {
+                            store.select(assetID: nil)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "chevron.left")
+                                Text("Photos")
+                            }
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.accentColor)
+                        }
+                        .buttonStyle(.plain)
+
+                        Spacer()
+
+                        Button {
+                            store.toggleFavoriteSelectedAsset()
+                        } label: {
+                            Image(systemName: selected.isFavorite ? "heart.fill" : "heart")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(selected.isFavorite ? Color.pink : Color.secondary)
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            store.deleteSelectedAsset()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "trash")
+                                Text("Delete")
+                            }
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .foregroundStyle(Color.red)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.red.opacity(0.12), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(height: DesktopShellMetrics.toolbarHeight)
+                    .desktopAppToolbar()
+
+                    DesktopPhotoDetailView(asset: selected)
+                } else {
+                    // Grid Toolbar
+                    HStack(spacing: 8) {
+                        Text(store.selectedFilter.rawValue)
+                            .font(.system(size: 12.5, weight: .semibold))
+                        Spacer()
+                        if store.authorizationStatus == .limited {
+                            Label("Limited", systemImage: "checkmark.shield.fill")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        Text("\(store.assets.count) photos")
+                            .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                     }
-                    Text("\(model.assets.count) photos")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 12)
-                .frame(height: DesktopShellMetrics.toolbarHeight)
-                .desktopAppToolbar()
+                    .padding(.horizontal, 12)
+                    .frame(height: DesktopShellMetrics.toolbarHeight)
+                    .desktopAppToolbar()
 
-                photosContent
+                    photosContent
+                }
             }
         }
         .background(DesktopShellPalette.canvas)
-        .task { await model.start() }
+        .task { await store.start() }
     }
 
-    private func photosSidebarRow(_ title: String, icon: String, selected: Bool) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 11.5, weight: .semibold))
-                .foregroundStyle(selected ? Color.purple : Color.secondary)
-                .frame(width: 19)
-            Text(title)
-                .font(.system(size: 11.5, weight: selected ? .semibold : .medium))
-            Spacer()
+    private func photosSidebarRow(_ title: String, icon: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(selected ? Color.purple : Color.secondary)
+                    .frame(width: 19)
+                Text(title)
+                    .font(.system(size: 11.5, weight: selected ? .semibold : .medium))
+                    .foregroundStyle(selected ? Color.primary : Color.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 30)
+            .background(selected ? Color.accentColor.opacity(0.13) : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-        .padding(.horizontal, 8)
-        .frame(height: 30)
-        .background(selected ? Color.accentColor.opacity(0.13) : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
     private var photosContent: some View {
-        switch model.authorizationStatus {
+        switch store.authorizationStatus {
         case .authorized, .limited:
-            if model.assets.isEmpty {
+            if store.assets.isEmpty {
                 photosState(
                     symbol: "photo.on.rectangle.angled",
                     title: "No photos available",
-                    detail: model.authorizationStatus == .limited
+                    detail: store.authorizationStatus == .limited
                         ? "iOS is sharing a limited selection with Kamihi."
                         : "Your photo library does not currently contain images."
                 )
             } else {
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 7) {
-                        ForEach(model.assets, id: \.localIdentifier) { asset in
-                            DesktopPhotoThumbnail(asset: asset)
-                                .aspectRatio(1, contentMode: .fit)
+                    LazyVGrid(columns: columns, spacing: 8) {
+                        ForEach(store.assets, id: \.localIdentifier) { asset in
+                            DesktopPhotoThumbnail(
+                                asset: asset,
+                                isSelected: store.selectedAssetID == asset.localIdentifier
+                            )
+                            .aspectRatio(1, contentMode: .fit)
+                            .onTapGesture {
+                                store.select(assetID: asset.localIdentifier)
+                            }
                         }
                     }
                     .padding(10)
@@ -504,37 +594,47 @@ private struct DesktopUnknownAppView: View {
     }
 }
 
-@MainActor
-private final class DesktopPhotosModel: ObservableObject {
-    @Published private(set) var authorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-    @Published private(set) var assets: [PHAsset] = []
+private struct DesktopPhotoDetailView: View {
+    let asset: PHAsset
+    @State private var image: UIImage?
 
-    func start() async {
-        let current = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        authorizationStatus = current
-        if current == .notDetermined {
-            authorizationStatus = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.92)
+
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(14)
+            } else {
+                ProgressView()
+                    .tint(.white)
+            }
         }
-        reloadGrantedAssets()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear(perform: loadFullImage)
     }
 
-    private func reloadGrantedAssets() {
-        guard authorizationStatus == .authorized || authorizationStatus == .limited else {
-            assets = []
-            return
+    private func loadFullImage() {
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.isNetworkAccessAllowed = true
+        PHImageManager.default().requestImage(
+            for: asset,
+            targetSize: CGSize(width: 1920, height: 1080),
+            contentMode: .aspectFit,
+            options: options
+        ) { result, _ in
+            guard let result else { return }
+            DispatchQueue.main.async { image = result }
         }
-        let options = PHFetchOptions()
-        options.fetchLimit = 80
-        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-        let result = PHAsset.fetchAssets(with: .image, options: options)
-        var nextAssets: [PHAsset] = []
-        result.enumerateObjects { asset, _, _ in nextAssets.append(asset) }
-        assets = nextAssets
     }
 }
 
 private struct DesktopPhotoThumbnail: View {
     let asset: PHAsset
+    var isSelected: Bool = false
     @State private var image: UIImage?
 
     var body: some View {
@@ -550,8 +650,9 @@ private struct DesktopPhotoThumbnail: View {
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                .strokeBorder(isSelected ? Color.accentColor : Color.primary.opacity(0.08), lineWidth: isSelected ? 2.5 : 0.5)
         }
+        .shadow(color: isSelected ? Color.accentColor.opacity(0.35) : Color.clear, radius: 5)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Photo")
         .onAppear(perform: loadThumbnail)
@@ -571,6 +672,115 @@ private struct DesktopPhotoThumbnail: View {
         ) { result, _ in
             guard let result else { return }
             DispatchQueue.main.async { image = result }
+        }
+    }
+}
+
+private struct DesktopSplitAssistOverlay: View {
+    @EnvironmentObject private var desktop: DesktopSession
+    let state: DesktopSession.SplitAssistState
+    let surfaceSize: CGSize
+
+    var body: some View {
+        let normalizedFrame = WindowSnapEngine.frame(for: state.target)
+        let rect = CGRect(
+            x: normalizedFrame.origin.x * surfaceSize.width,
+            y: normalizedFrame.origin.y * surfaceSize.height,
+            width: normalizedFrame.width * surfaceSize.width,
+            height: normalizedFrame.height * surfaceSize.height
+        )
+
+        ZStack {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(0.40), lineWidth: 1.5)
+                }
+
+            VStack(spacing: 14) {
+                HStack {
+                    Label("Split Screen Assist", systemImage: "rectangle.split.2x1.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.primary)
+
+                    Spacer()
+
+                    Button {
+                        desktop.dismissSplitAssist()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 18))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+
+                Text("Select an open window to tile on the other half:")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+
+                ScrollView {
+                    let candidates = desktop.windows.filter { state.eligibleWindowIDs.contains($0.id) }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 140, maximum: 200), spacing: 14)], spacing: 14) {
+                        ForEach(candidates) { candidate in
+                            Button {
+                                desktop.snapWindow(candidate.id, to: state.target)
+                                desktop.dismissSplitAssist()
+                            } label: {
+                                VStack(spacing: 10) {
+                                    ZStack {
+                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                            .fill(Color.primary.opacity(0.06))
+                                            .frame(height: 80)
+
+                                        Image(systemName: appIcon(for: candidate.title))
+                                            .font(.system(size: 30))
+                                            .foregroundStyle(Color.accentColor)
+                                    }
+
+                                    Text(candidate.title)
+                                        .font(.system(size: 12.5, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+                                }
+                                .padding(10)
+                                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(20)
+                }
+            }
+        }
+        .frame(width: rect.width, height: rect.height)
+        .position(x: rect.midX, y: rect.midY)
+        .shadow(color: Color.black.opacity(0.28), radius: 18, x: 0, y: 8)
+    }
+
+    private func appIcon(for title: String) -> String {
+        switch title {
+        case "Browser": return "safari.fill"
+        case "ChatGPT": return "sparkles"
+        case "YouTube": return "play.rectangle.fill"
+        case "Documents": return "doc.text.fill"
+        case "Sheets": return "tablecells.fill"
+        case "Notes": return "note.text"
+        case "Files": return "folder.fill"
+        case "Photos": return "photo.on.rectangle.angled"
+        case "Settings": return "gearshape.fill"
+        case "Calculator": return "plus.forwardslash.minus"
+        case "Clipboard": return "doc.on.clipboard.fill"
+        default: return "app.fill"
         }
     }
 }

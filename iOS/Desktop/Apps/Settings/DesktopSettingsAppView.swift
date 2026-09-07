@@ -55,7 +55,9 @@ struct DesktopSettingsAppView: View {
             bookmarkCount: browser.bookmarks.count,
             historyCount: browser.history.count,
             importMessage: importer.lastMessage,
-            importRevision: importer.revision
+            importRevision: importer.revision,
+            autohideDock: desktop.autohideDock,
+            hasCustomPhoto: wallpaper.customWallpaperImage != nil
         )
     }
 }
@@ -103,6 +105,8 @@ private struct DesktopSettingsSnapshot: Equatable {
     let historyCount: Int
     let importMessage: String
     let importRevision: Int
+    let autohideDock: Bool
+    let hasCustomPhoto: Bool
 }
 
 private struct DesktopSettingsWebView: UIViewRepresentable {
@@ -215,6 +219,12 @@ private struct DesktopSettingsWebView: UIViewRepresentable {
             case "batterySaver":
                 features.batterySaverOverride.toggle()
                 features.persistPreferences()
+            case "autohideDock":
+                desktop.autohideDock.toggle()
+            case "openWallpaper":
+                desktop.showWallpaperPicker = true
+            case "customWallpaper":
+                DesktopWallpaperManager.shared.selectWallpaper(id: "custom")
             case "workspace":
                 if let workspace = DesktopFeatureState.Workspace(rawValue: value) { features.setWorkspace(workspace, desktop: desktop) }
             case "saveWorkspace":
@@ -229,6 +239,10 @@ private struct DesktopSettingsWebView: UIViewRepresentable {
             case "clearHistory": DesktopBrowserState.shared.clearHistory()
             case "importSafari": DesktopSafariImportPresenter.shared.present()
             case "onboarding": DesktopOnboardingPhonePresenter.present()
+            case "passkeyTakeover":
+                if let browserWindow = desktop.windows.first(where: { $0.title == "Browser" }) {
+                    desktop.requestPhoneTakeover(for: browserWindow.id)
+                }
             default: break
             }
 
@@ -329,7 +343,7 @@ private struct DesktopSettingsWebView: UIViewRepresentable {
                       <div class='row'><div><div class='label'>Liquid Glass</div><div class='detail'>Choose the diffusion profile used by windows, toolbars, Dock and sidebars.</div></div><div class='choices'>\(glassButtons)</div></div>
                       <div class='row'><div><div class='label'>Glass clarity</div><div class='detail'>Move from more tinted and readable to clearer glass.</div></div><div class='range'><input type='range' min='0' max='1' value='\(s.glassClarity)' step='.05' onchange="send('glassClarity',this.value)"><span>\(Int((s.glassClarity*100).rounded()))%</span></div></div>
                       <div class='row'><div><div class='label'>Specular highlights</div><div class='detail'>Adds the bright edge that separates glass from content beneath it.</div></div><div class='choices'>\(button(s.glassHighlights ? "On" : "Off", action:"glassHighlights", value:"", isActive:s.glassHighlights))</div></div>
-                      <div class='row stack'><div class='label'>Wallpaper</div><div class='detail'>Wallpaper is visible through clear areas and influences the desktop atmosphere.</div><div class='choices'>\(wallpaperButtons)\(button(s.showWidgets ? "Widgets On" : "Widgets Off", action:"widgets", value:"", isActive:s.showWidgets))</div></div>
+                      <div class='row stack'><div class='label'>Wallpaper</div><div class='detail'>Wallpaper is visible through clear areas and influences the desktop atmosphere.</div><div class='choices'>\(wallpaperButtons)\(s.hasCustomPhoto ? button("Custom Photo", action:"customWallpaper", value:"", isActive:s.wallpaperID == "custom") : "")\(button("Choose / Upload…", action:"openWallpaper", value:""))\(button(s.showWidgets ? "Widgets On" : "Widgets Off", action:"widgets", value:"", isActive:s.showWidgets))</div></div>
                     </div>
                   </section>
 
@@ -359,9 +373,10 @@ private struct DesktopSettingsWebView: UIViewRepresentable {
                   </section>
 
                   <section class='section' id='desktop'>
-                    <h1>Desktop & Dock</h1><div class='lead'>Window layout, motion and persistent workspaces.</div>
-                    <h2>Desktop</h2>
+                    <h1>Desktop & Dock</h1><div class='lead'>Window layout, dock behavior and persistent workspaces.</div>
+                    <h2>Dock & Windows</h2>
                     <div class='group'>
+                      <div class='row'><div><div class='label'>Automatically hide and show the Dock</div><div class='detail'>Keep the dock hidden until the pointer touches the bottom of the screen.</div></div><div class='choices'>\(button(s.autohideDock ? "On":"Off",action:"autohideDock",value:"",isActive:s.autohideDock))</div></div>
                       <div class='row stack'><div class='label'>Workspace</div><div class='choices'>\(workspaceButtons)</div></div>
                       <div class='row'><div><div class='label'>UI scale</div></div><div class='choices'>\([0.90,1.00,1.10,1.20].map{ button(String(format:"%.0f%%",$0*100),action:"uiScale",value:String($0),isActive:abs(s.uiScale-$0)<0.01)}.joined())</div></div>
                       <div class='row'><div><div class='label'>Window motion</div><div class='detail'>Controls the intensity of spatial window animations.</div></div><div class='choices'>\(button("Reduced",action:"animation",value:"0.35",isActive:s.animationIntensity<0.6))\(button("Full",action:"animation",value:"1.0",isActive:s.animationIntensity>=0.6))</div></div>
@@ -372,9 +387,10 @@ private struct DesktopSettingsWebView: UIViewRepresentable {
 
                   <section class='section' id='browser'>
                     <h1>Browser & Safari</h1><div class='lead'>\(s.bookmarkCount) bookmarks · \(s.historyCount) history items</div>
-                    <h2>Browser Data</h2>
+                    <h2>Safari & Security</h2>
                     <div class='group'>
-                      <div class='row'><div><div class='label'>Safari bookmarks</div><div class='detail'>\(esc(s.importMessage))</div></div><div class='choices'>\(button("Import…",action:"importSafari",value:""))</div></div>
+                      <div class='row'><div><div class='label'>Safari Bookmarks & Favorites Bar</div><div class='detail'>\(esc(s.importMessage))</div></div><div class='choices'>\(button("Import…",action:"importSafari",value:""))</div></div>
+                      <div class='row'><div><div class='label'>Passkeys & Face ID Sign-In</div><div class='detail'>WebAuthn and passkeys trigger authentication takeover on iPhone.</div></div><div class='choices'>\(button("Test on iPhone…",action:"passkeyTakeover",value:""))</div></div>
                       <div class='row'><div><div class='label'>History</div><div class='detail'>Clears Kamihi Browser history without changing Safari.</div></div><div class='choices'>\(button("Clear history",action:"clearHistory",value:""))</div></div>
                     </div>
                   </section>

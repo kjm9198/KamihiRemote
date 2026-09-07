@@ -553,7 +553,7 @@ final class TrackpadEngine: ObservableObject {
         naturalScrolling: Bool
     ) -> CGSize {
         let gain = CGFloat(speed) * 1.30
-        let direction: CGFloat = naturalScrolling ? 1 : -1
+        let direction: CGFloat = naturalScrolling ? -1 : 1
         return CGSize(width: dx * gain * direction, height: dy * gain * direction)
     }
 

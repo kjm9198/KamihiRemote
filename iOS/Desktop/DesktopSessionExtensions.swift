@@ -16,69 +16,94 @@ extension DesktopSession {
     }
 
     public func clickAtCursor() {
-        if DesktopDockHitRegistry.shared.isLauncherOpen {
+        if let target = DesktopDockHitRegistry.shared.hitTest(at: cursor) {
             wantsPhoneKeyboard = false
             primaryClick()
-            if let hit = DesktopDockHitRegistry.shared.hitTest(at: cursor) {
-                switch hit {
-                case .launcherApp(let title, let url):
-                    let now = CACurrentMediaTime()
-                    if let last = DesktopDockHitRegistry.shared.lastLauncherClickSample,
-                       last.title == title,
-                       (now - last.time) <= 0.60 {
-                        DesktopDockHitRegistry.shared.lastLauncherClickSample = nil
-                        if let url {
-                            DesktopBrowserState.shared.newTab(url: url)
-                            if let existing = windows.first(where: { $0.title == "Browser" }) {
-                                restoreAndActivate(existing.id)
-                            } else {
-                                openProductivityApp("Browser", frame: CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60))
-                            }
-                        } else if let existing = windows.first(where: { $0.title == title }) {
-                            restoreAndActivate(existing.id)
-                        } else {
-                            openProductivityApp(title, frame: CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60))
-                        }
-                        DesktopDockHitRegistry.shared.isLauncherOpen = false
-                        DesktopDockHitRegistry.shared.onDismissLauncher?()
-                    } else {
-                        DesktopDockHitRegistry.shared.lastLauncherClickSample = (title: title, time: now)
-                        DesktopDockHitRegistry.shared.selectedLauncherTitle = title
-                        if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
-                    }
-                    return
-                case .launcherContainer:
-                    // Swallowing click inside launcher background/search
-                    return
-                case .launcherDismiss:
-                    DesktopDockHitRegistry.shared.isLauncherOpen = false
-                    DesktopDockHitRegistry.shared.onDismissLauncher?()
-                    return
-                default:
-                    break
+            switch target {
+            case .menuBarButton(let menu):
+                if activeMenuBarMenu == menu {
+                    activeMenuBarMenu = nil
+                } else {
+                    activeMenuBarMenu = menu
+                    showControlCenter = false
+                    showNotifications = false
                 }
-            } else {
+                if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                return
+
+            case .menuBarDropdownItem(let actionId):
+                executeMenuBarAction(actionId)
+                activeMenuBarMenu = nil
+                if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                return
+
+            case .menuBarDropdownContainer:
+                return
+
+            case .menuBarDismiss:
+                activeMenuBarMenu = nil
+                return
+
+            case .launcherToggle:
+                activeMenuBarMenu = nil
+                DesktopDockHitRegistry.shared.onToggleLauncher?()
+                return
+
+            case .wallpaperToggle:
+                activeMenuBarMenu = nil
+                DesktopDockHitRegistry.shared.onToggleWallpaper?()
+                return
+
+            case .wallpaperOption(let id):
+                DesktopWallpaperManager.shared.selectWallpaper(id: id)
+                if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                return
+
+            case .wallpaperDismiss:
+                showWallpaperPicker = false
+                return
+
+            case .launcherApp(let title, let url):
+                DesktopDockHitRegistry.shared.lastLauncherClickSample = nil
+                DesktopDockHitRegistry.shared.selectedLauncherTitle = title
+                if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                if let url {
+                    DesktopBrowserState.shared.newTab(url: url)
+                    if let existing = windows.first(where: { $0.title == "Browser" }) {
+                        restoreAndActivate(existing.id)
+                    } else {
+                        openProductivityApp("Browser", frame: CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60))
+                    }
+                } else if let existing = windows.first(where: { $0.title == title }) {
+                    restoreAndActivate(existing.id)
+                } else {
+                    openProductivityApp(title, frame: CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60))
+                }
                 DesktopDockHitRegistry.shared.isLauncherOpen = false
                 DesktopDockHitRegistry.shared.onDismissLauncher?()
                 return
-            }
-        }
 
-        if let dockTarget = DesktopDockHitRegistry.shared.hitTest(at: cursor) {
-            wantsPhoneKeyboard = false
-            primaryClick()
-            switch dockTarget {
-            case .launcherToggle:
-                DesktopDockHitRegistry.shared.onToggleLauncher?()
+            case .launcherContainer:
+                return
+
+            case .launcherDismiss:
+                DesktopDockHitRegistry.shared.isLauncherOpen = false
+                DesktopDockHitRegistry.shared.onDismissLauncher?()
+                return
+
             case .app(let title):
+                activeMenuBarMenu = nil
                 if let window = windows.first(where: { $0.title == title }) {
                     restoreAndActivate(window.id)
                 } else {
                     openProductivityApp(title, frame: CGRect(x: 0.20, y: 0.165, width: 0.60, height: 0.60))
                 }
-            default:
-                break
+                return
             }
+        }
+
+        if activeMenuBarMenu != nil {
+            activeMenuBarMenu = nil
             return
         }
 
@@ -97,6 +122,24 @@ extension DesktopSession {
             } else if cursor.x >= 0.70 && cursor.x < 0.76 {
                 openProductivityApp("Display Diagnostics", frame: CGRect(x: 0.16, y: 0.10, width: 0.68, height: 0.72))
                 return
+            } else if cursor.x <= 0.05 {
+                activeMenuBarMenu = (activeMenuBarMenu == .apple ? nil : .apple)
+                return
+            } else if cursor.x > 0.05 && cursor.x <= 0.12 {
+                activeMenuBarMenu = (activeMenuBarMenu == .file ? nil : .file)
+                return
+            } else if cursor.x > 0.12 && cursor.x <= 0.16 {
+                activeMenuBarMenu = (activeMenuBarMenu == .edit ? nil : .edit)
+                return
+            } else if cursor.x > 0.16 && cursor.x <= 0.20 {
+                activeMenuBarMenu = (activeMenuBarMenu == .view ? nil : .view)
+                return
+            } else if cursor.x > 0.20 && cursor.x <= 0.26 {
+                activeMenuBarMenu = (activeMenuBarMenu == .window ? nil : .window)
+                return
+            } else if cursor.x > 0.26 && cursor.x <= 0.34 {
+                activeMenuBarMenu = (activeMenuBarMenu == .help ? nil : .help)
+                return
             }
         }
 
@@ -104,6 +147,41 @@ extension DesktopSession {
             if cursor.y > 0.035 && cursor.x < 0.68 {
                 showNotifications = false
                 showControlCenter = false
+            }
+        }
+
+        if let assist = splitAssistState {
+            let assistFrame = WindowSnapEngine.frame(for: assist.target)
+            if assistFrame.contains(cursor) {
+                primaryClick()
+                let clickPtX = (cursor.x - assistFrame.minX) / assistFrame.width
+                let clickPtY = (cursor.y - assistFrame.minY) / assistFrame.height
+
+                // Top right "✕" close button
+                if clickPtX > 0.88 && clickPtY < 0.14 {
+                    dismissSplitAssist()
+                    return
+                }
+
+                // Eligible candidate cards
+                let eligible = windows.filter { assist.eligibleWindowIDs.contains($0.id) }
+                if !eligible.isEmpty {
+                    let relativeY = clickPtY - 0.18
+                    if relativeY >= 0 {
+                        let row = Int(relativeY / 0.28)
+                        let col = clickPtX < 0.5 ? 0 : 1
+                        let index = row * 2 + col
+                        if index >= 0 && index < eligible.count {
+                            let chosenID = eligible[index].id
+                            snapWindow(chosenID, to: assist.target)
+                            dismissSplitAssist()
+                            return
+                        }
+                    }
+                }
+                return
+            } else {
+                dismissSplitAssist()
             }
         }
 
@@ -132,6 +210,11 @@ extension DesktopSession {
 
         activate(topID)
         primaryClick()
+
+        if window.title == "Photos" {
+            handlePhotosClick(at: cursor, in: frame)
+            return
+        }
 
         // Native text apps use the phone keyboard as their explicit editor.
         if window.title == "Documents" {
@@ -392,38 +475,93 @@ extension DesktopSession {
         )
     }
 
+    public func executeMenuBarAction(_ actionId: String) {
+        switch actionId {
+        case "apple.about", "apple.settings":
+            openProductivityApp("Settings", frame: CGRect(x: 0.16, y: 0.10, width: 0.68, height: 0.72))
+        case "apple.tutorial", "help.tutorial":
+            UserDefaults.standard.set(false, forKey: "hasCompletedDesktopOnboarding")
+        case "apple.wallpaper", "view.wallpaper":
+            showWallpaperPicker.toggle()
+        case "apple.widgets", "view.widgets":
+            let current = UserDefaults.standard.object(forKey: "kamihi.desktop.showWidgets") as? Bool ?? true
+            UserDefaults.standard.set(!current, forKey: "kamihi.desktop.showWidgets")
+        case "apple.closeAll":
+            closeAllDesktopWindows()
+        case "file.newWindow":
+            openProductivityApp("Documents", frame: CGRect(x: 0.22, y: 0.18, width: 0.58, height: 0.62))
+        case "file.newTab":
+            openProductivityApp("Browser", frame: CGRect(x: 0.18, y: 0.15, width: 0.64, height: 0.68))
+            DesktopBrowserState.shared.newTab()
+        case "file.closeWindow":
+            if let active = activeWindowID { close(active) }
+        case "edit.cut":
+            if let _ = UIPasteboard.general.string { deleteBackwardInActiveDesktopField() }
+        case "edit.copy":
+            break
+        case "edit.paste":
+            if let str = UIPasteboard.general.string { typeIntoActiveDesktopField(str) }
+        case "edit.selectAll":
+            if let title = activeWindow?.title {
+                DesktopWebInputRegistry.shared.click(key: title, x: 0.5, y: 0.5) { _ in }
+            }
+        case "view.resetLayout":
+            openVibeWorkspace()
+        case "window.minimize":
+            if let active = activeWindowID { minimize(active) }
+        case "window.zoom":
+            if let active = activeWindowID { toggleMaximize(active) }
+        case "window.tileLeft":
+            snapActiveLeft()
+        case "window.tileRight":
+            snapActiveRight()
+        case "window.bringFront":
+            for window in windows { restoreAndActivate(window.id) }
+        case "help.diagnostics":
+            openProductivityApp("Display Diagnostics", frame: CGRect(x: 0.16, y: 0.10, width: 0.68, height: 0.72))
+        default:
+            break
+        }
+    }
+
     private func handleDocumentsClick(at point: CGPoint, in frame: CGRect) {
         let titleBarHeight = DesktopWindowChrome.titleBarHeight(for: frame)
         let contentTop = frame.minY + titleBarHeight
         guard point.y > contentTop, frame.width > 0, frame.height > 0 else { return }
 
-        let localX = (point.x - frame.minX) / frame.width
-        let localY = (point.y - contentTop) / (frame.maxY - contentTop)
-        let sidebarFraction: CGFloat = 0.28
+        let windowPtWidth = frame.width * 1920
+        let clickPtX = (point.x - frame.minX) * 1920
+        let clickPtY = (point.y - contentTop) * 1080
 
-        if localX <= sidebarFraction {
+        let sidebarWidth: CGFloat = 220
+        let toolbarHeight: CGFloat = 44
+
+        if clickPtX <= sidebarWidth {
             // Sidebar region
-            if localY <= 0.12 && localX >= (sidebarFraction - 0.08) {
-                // "New document" button on top of sidebar
+            if clickPtY <= toolbarHeight && clickPtX >= (sidebarWidth - 44) {
+                // "New document" button on top right of sidebar toolbar
                 DesktopDocumentsStore.shared.createDocument()
                 wantsPhoneKeyboard = true
                 if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
                 return
-            } else if localY > 0.12 {
-                // Document row selection
+            } else if clickPtY > toolbarHeight {
+                // Document list selection (46 pt row + 4 pt spacing, starting at 7 pt padding)
                 let store = DesktopDocumentsStore.shared
                 let count = store.documents.count
                 if count > 0 {
-                    let clickedIndex = min(max(Int((localY - 0.12) / 0.11), 0), count - 1)
-                    store.select(store.documents[clickedIndex].id)
-                    wantsPhoneKeyboard = true
-                    if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
-                    return
+                    let rowOffset = clickPtY - toolbarHeight - 7
+                    if rowOffset >= 0 {
+                        let clickedIndex = min(max(Int(rowOffset / 50), 0), count - 1)
+                        store.select(store.documents[clickedIndex].id)
+                        wantsPhoneKeyboard = true
+                        if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                        return
+                    }
                 }
             }
         } else {
             // Canvas region: top right "+" button
-            if localY <= 0.12 && localX >= 0.88 {
+            if clickPtY <= toolbarHeight && clickPtX >= (windowPtWidth - 48) {
                 DesktopDocumentsStore.shared.createDocument()
                 wantsPhoneKeyboard = true
                 if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
@@ -439,35 +577,138 @@ extension DesktopSession {
         let contentTop = frame.minY + titleBarHeight
         guard point.y > contentTop, frame.width > 0, frame.height > 0 else { return }
 
-        let localX = (point.x - frame.minX) / frame.width
-        let localY = (point.y - contentTop) / (frame.maxY - contentTop)
-        let sidebarFraction: CGFloat = 0.28
+        let windowPtWidth = frame.width * 1920
+        let clickPtX = (point.x - frame.minX) * 1920
+        let clickPtY = (point.y - contentTop) * 1080
 
-        if localX <= sidebarFraction {
-            if localY <= 0.12 && localX >= (sidebarFraction - 0.08) {
+        let sidebarWidth: CGFloat = 220
+        let toolbarHeight: CGFloat = 44
+
+        if clickPtX <= sidebarWidth {
+            if clickPtY <= toolbarHeight && clickPtX >= (sidebarWidth - 44) {
                 DesktopNotesStore.shared.createNewNote()
                 wantsPhoneKeyboard = true
                 if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
                 return
-            } else if localY > 0.18 {
+            } else if clickPtY > (toolbarHeight + 34) {
                 let store = DesktopNotesStore.shared
                 let sorted = store.notes.sorted { $0.updatedAt > $1.updatedAt }
                 if !sorted.isEmpty {
-                    let clickedIndex = min(max(Int((localY - 0.18) / 0.12), 0), sorted.count - 1)
-                    store.select(sorted[clickedIndex].id)
-                    wantsPhoneKeyboard = true
-                    if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
-                    return
+                    let rowOffset = clickPtY - toolbarHeight - 34 - 7
+                    if rowOffset >= 0 {
+                        let clickedIndex = min(max(Int(rowOffset / 54), 0), sorted.count - 1)
+                        store.select(sorted[clickedIndex].id)
+                        wantsPhoneKeyboard = true
+                        if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                        return
+                    }
                 }
             }
         } else {
-            if localY <= 0.12 && localX >= 0.88 {
-                DesktopNotesStore.shared.deleteActiveNote()
+            if clickPtY <= toolbarHeight && clickPtX >= (windowPtWidth - 48) {
+                DesktopNotesStore.shared.createNewNote()
+                wantsPhoneKeyboard = true
                 if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
                 return
             }
         }
 
         wantsPhoneKeyboard = true
+    }
+
+    private func handlePhotosClick(at point: CGPoint, in frame: CGRect) {
+        let titleBarHeight = DesktopWindowChrome.titleBarHeight(for: frame)
+        let contentTop = frame.minY + titleBarHeight
+        guard point.y > contentTop, frame.width > 0, frame.height > 0 else { return }
+
+        let windowPtWidth = frame.width * 1920
+        let clickPtX = (point.x - frame.minX) * 1920
+        let clickPtY = (point.y - contentTop) * 1080
+
+        let store = DesktopPhotosStore.shared
+        let sidebarWidth: CGFloat = 174
+        let toolbarHeight: CGFloat = DesktopShellMetrics.toolbarHeight
+
+        // Check sidebar click
+        if clickPtX <= sidebarWidth {
+            let rowY = clickPtY - toolbarHeight - 7
+            if rowY >= 0 {
+                let rowIndex = Int(rowY / 34)
+                if rowIndex == 0 {
+                    store.selectedFilter = .library
+                    store.select(assetID: nil)
+                    if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                    return
+                } else if rowIndex == 1 {
+                    store.selectedFilter = .favorites
+                    store.select(assetID: nil)
+                    if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                    return
+                } else if rowIndex == 2 {
+                    store.selectedFilter = .recent
+                    store.select(assetID: nil)
+                    if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                    return
+                }
+            }
+            return
+        }
+
+        // Inside content area
+        let contentX = clickPtX - sidebarWidth
+        let contentY = clickPtY
+        let contentWidth = windowPtWidth - sidebarWidth
+
+        // If a photo is currently selected (Detail View)
+        if store.selectedAsset != nil {
+            if contentY <= toolbarHeight {
+                // Left: "Back to Photos" button [0...100]
+                if contentX <= 100 {
+                    store.select(assetID: nil)
+                    if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                    return
+                }
+                // Rightmost: "Delete" button [contentWidth - 85 ... contentWidth]
+                if contentX >= contentWidth - 85 {
+                    store.deleteSelectedAsset()
+                    if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                    return
+                }
+                // Middle right: "Favorite" button [contentWidth - 135 ... contentWidth - 85]
+                if contentX >= contentWidth - 135 && contentX < contentWidth - 85 {
+                    store.toggleFavoriteSelectedAsset()
+                    if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                    return
+                }
+            }
+            return
+        }
+
+        // Grid View
+        if contentY <= toolbarHeight {
+            return
+        }
+
+        // Grid items
+        let gridX = contentX - 10
+        let gridY = contentY - toolbarHeight - 10
+        let availableWidth = contentWidth - 20
+        guard gridX >= 0, gridY >= 0, availableWidth > 80 else { return }
+
+        let approxItemWidth: CGFloat = 120
+        let numCols = max(1, Int((availableWidth + 8) / (approxItemWidth + 8)))
+        let actualItemWidth = (availableWidth - CGFloat(numCols - 1) * 8) / CGFloat(numCols)
+        let itemHeight = actualItemWidth
+
+        let col = Int(gridX / (actualItemWidth + 8))
+        let row = Int(gridY / (itemHeight + 8))
+
+        if col >= 0 && col < numCols && row >= 0 {
+            let index = row * numCols + col
+            if index < store.assets.count {
+                store.selectIndex(index)
+                if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+            }
+        }
     }
 }

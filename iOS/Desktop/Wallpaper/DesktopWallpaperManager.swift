@@ -91,6 +91,7 @@ public final class DesktopWallpaperManager: ObservableObject {
     ]
 
     private let selectedKey = "kamihi.desktop.wallpaper.selected"
+    private static let customWallpaperFileName = "kamihi_custom_wallpaper.jpg"
 
     @Published public var selectedWallpaperID: String {
         didSet {
@@ -98,19 +99,64 @@ public final class DesktopWallpaperManager: ObservableObject {
         }
     }
 
+    @Published public var customWallpaperImage: UIImage?
+
     public var currentWallpaper: Wallpaper {
         wallpapers.first(where: { $0.id == selectedWallpaperID }) ?? wallpapers[0]
+    }
+
+    public var isCustomWallpaperActive: Bool {
+        selectedWallpaperID == "custom" && customWallpaperImage != nil
     }
 
     private init() {
         let saved = UserDefaults.standard.string(forKey: selectedKey)
         self.selectedWallpaperID = saved ?? "sonoma-horizon"
+        self.customWallpaperImage = Self.loadCustomWallpaperFromDisk()
     }
 
     public func selectWallpaper(id: String) {
-        if wallpapers.contains(where: { $0.id == id }) {
+        if id == "custom" && customWallpaperImage != nil {
+            selectedWallpaperID = "custom"
+        } else if wallpapers.contains(where: { $0.id == id }) {
             selectedWallpaperID = id
         }
+    }
+
+    public func setCustomWallpaper(image: UIImage) {
+        self.customWallpaperImage = image
+        self.selectedWallpaperID = "custom"
+        Self.saveCustomWallpaperToDisk(image)
+    }
+
+    public func removeCustomWallpaper() {
+        self.customWallpaperImage = nil
+        if selectedWallpaperID == "custom" {
+            selectedWallpaperID = wallpapers[0].id
+        }
+        Self.deleteCustomWallpaperFromDisk()
+    }
+
+    private static var customWallpaperURL: URL? {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
+            .appendingPathComponent(customWallpaperFileName)
+    }
+
+    private static func loadCustomWallpaperFromDisk() -> UIImage? {
+        guard let url = customWallpaperURL,
+              let data = try? Data(contentsOf: url) else { return nil }
+        return UIImage(data: data)
+    }
+
+    private static func saveCustomWallpaperToDisk(_ image: UIImage) {
+        guard let url = customWallpaperURL,
+              let data = image.jpegData(compressionQuality: 0.90) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+
+    private static func deleteCustomWallpaperFromDisk() {
+        guard let url = customWallpaperURL else { return }
+        try? FileManager.default.removeItem(at: url)
     }
 }
 
@@ -125,53 +171,64 @@ public struct DesktopWallpaperView: View {
         let wp = manager.currentWallpaper
 
         ZStack {
-            wp.backgroundColor
-                .ignoresSafeArea()
-
-            if !reduceTransparency {
-                // Layer 1: Ambient deep radial glow
-                RadialGradient(
-                    colors: [
-                        wp.primaryColor.opacity(0.45),
-                        wp.secondaryColor.opacity(0.25),
-                        Color.clear
-                    ],
-                    center: .topTrailing,
-                    startRadius: 80,
-                    endRadius: 900
-                )
-                .ignoresSafeArea()
-
-                // Layer 2: Radiant bottom-left aurora
-                RadialGradient(
-                    colors: [
-                        wp.accentColor.opacity(0.35),
-                        wp.primaryColor.opacity(0.20),
-                        Color.clear
-                    ],
-                    center: .bottomLeading,
-                    startRadius: 50,
-                    endRadius: 750
-                )
-                .ignoresSafeArea()
-
-                // Layer 3: Central glass refraction sweep
-                LinearGradient(
-                    colors: [
-                        wp.secondaryColor.opacity(0.30),
-                        wp.primaryColor.opacity(0.20),
-                        wp.accentColor.opacity(0.15),
-                        Color.clear
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
-
-                // Layer 4: Specular noise & frosted glass wash
-                Color.white.opacity(0.03)
-                    .blendMode(.overlay)
+            if manager.isCustomWallpaperActive, let image = manager.customWallpaperImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
                     .ignoresSafeArea()
+
+                // Subtle darkened vignette to ensure desktop windows and text stay readable
+                Color.black.opacity(0.18)
+                    .ignoresSafeArea()
+            } else {
+                wp.backgroundColor
+                    .ignoresSafeArea()
+
+                if !reduceTransparency {
+                    // Layer 1: Ambient deep radial glow
+                    RadialGradient(
+                        colors: [
+                            wp.primaryColor.opacity(0.45),
+                            wp.secondaryColor.opacity(0.25),
+                            Color.clear
+                        ],
+                        center: .topTrailing,
+                        startRadius: 80,
+                        endRadius: 900
+                    )
+                    .ignoresSafeArea()
+
+                    // Layer 2: Radiant bottom-left aurora
+                    RadialGradient(
+                        colors: [
+                            wp.accentColor.opacity(0.35),
+                            wp.primaryColor.opacity(0.20),
+                            Color.clear
+                        ],
+                        center: .bottomLeading,
+                        startRadius: 50,
+                        endRadius: 750
+                    )
+                    .ignoresSafeArea()
+
+                    // Layer 3: Central glass refraction sweep
+                    LinearGradient(
+                        colors: [
+                            wp.secondaryColor.opacity(0.30),
+                            wp.primaryColor.opacity(0.20),
+                            wp.accentColor.opacity(0.15),
+                            Color.clear
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .ignoresSafeArea()
+
+                    // Layer 4: Specular noise & frosted glass wash
+                    Color.white.opacity(0.03)
+                        .blendMode(.overlay)
+                        .ignoresSafeArea()
+                }
             }
         }
     }

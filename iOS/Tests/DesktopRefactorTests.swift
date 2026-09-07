@@ -138,9 +138,9 @@ public enum DesktopRefactorTests {
             let titleHeight = DesktopWindowChrome.titleBarHeight(for: frame)
             let y = frame.minY + titleHeight / 2
 
-            let closeX = frame.minX + 0.018
-            let minimizeX = frame.minX + 0.052
-            let maximizeX = frame.minX + 0.086
+            let closeX = frame.minX + 0.009
+            let minimizeX = frame.minX + 0.026
+            let maximizeX = frame.minX + 0.043
 
             guard DesktopWindowChrome.action(at: CGPoint(x: closeX, y: y), in: frame) == .close,
                   DesktopWindowChrome.action(at: CGPoint(x: minimizeX, y: y), in: frame) == .minimize,
@@ -176,8 +176,9 @@ public enum DesktopRefactorTests {
 
             guard abs(abs(natural.width) - abs(natural.height)) < tolerance,
                   abs(reversed.width + natural.width) < tolerance,
-                  abs(reversed.height + natural.height) < tolerance else {
-                throw NSError(domain: "Test", code: 12, userInfo: [NSLocalizedDescriptionKey: "Horizontal/vertical scroll gains diverged"])
+                  abs(reversed.height + natural.height) < tolerance,
+                  natural.height > 0 else {
+                throw NSError(domain: "Test", code: 12, userInfo: [NSLocalizedDescriptionKey: "Horizontal/vertical scroll gains diverged or natural scroll polarity incorrect"])
             }
             results.append(TestResult(name: "Two Axis Scroll Symmetry", passed: true, message: "OK"))
         } catch {
@@ -283,7 +284,7 @@ public enum DesktopRefactorTests {
             }
             let frame = desktop.effectiveFrame(for: window)
             let titleHeight = DesktopWindowChrome.titleBarHeight(for: frame)
-            let maximizeX = frame.minX + 0.086
+            let maximizeX = frame.minX + 0.043
 
             desktop.cursor = CGPoint(x: maximizeX, y: frame.minY + titleHeight / 2)
             desktop.clickAtCursor()
@@ -368,14 +369,14 @@ public enum DesktopRefactorTests {
             let titleMidY = frame.minY + titleHeight / 2
 
             // Check 1: Traffic light action partitioning (macOS Left side)
-            // Close zone: [frame.minX, frame.minX + 0.036)
-            let closeAction = DesktopWindowChrome.action(at: CGPoint(x: frame.minX + 0.018, y: titleMidY), in: frame)
-            // Minimize zone: [frame.minX + 0.036, frame.minX + 0.070)
-            let minAction = DesktopWindowChrome.action(at: CGPoint(x: frame.minX + 0.052, y: titleMidY), in: frame)
-            // Maximize zone: [frame.minX + 0.070, frame.minX + 0.105]
-            let maxAction = DesktopWindowChrome.action(at: CGPoint(x: frame.minX + 0.086, y: titleMidY), in: frame)
-            // Drag zone (fall-through): > frame.minX + 0.105
-            let dragAction = DesktopWindowChrome.action(at: CGPoint(x: frame.minX + 0.150, y: titleMidY), in: frame)
+            // Close zone: [frame.minX, frame.minX + 0.018)
+            let closeAction = DesktopWindowChrome.action(at: CGPoint(x: frame.minX + 0.009, y: titleMidY), in: frame)
+            // Minimize zone: [frame.minX + 0.018, frame.minX + 0.034)
+            let minAction = DesktopWindowChrome.action(at: CGPoint(x: frame.minX + 0.026, y: titleMidY), in: frame)
+            // Maximize zone: [frame.minX + 0.034, frame.minX + 0.052]
+            let maxAction = DesktopWindowChrome.action(at: CGPoint(x: frame.minX + 0.043, y: titleMidY), in: frame)
+            // Drag zone (fall-through): > frame.minX + 0.052
+            let dragAction = DesktopWindowChrome.action(at: CGPoint(x: frame.minX + 0.080, y: titleMidY), in: frame)
 
             guard closeAction == .close,
                   minAction == .minimize,
@@ -419,6 +420,151 @@ public enum DesktopRefactorTests {
             results.append(TestResult(name: "Window Chrome Partitioning, Edge Snapping & Title Bar Detection", passed: true, message: "OK"))
         } catch {
             results.append(TestResult(name: "Window Chrome Partitioning, Edge Snapping & Title Bar Detection", passed: false, message: error.localizedDescription))
+        }
+
+        // Test 14: Menu Bar Dropdown Activation, Actions & Dismiss
+        do {
+            let desktop = DesktopSession.shared
+            desktop.activeMenuBarMenu = nil
+
+            // 1. Toggle menu bar dropdown
+            desktop.activeMenuBarMenu = .file
+            guard desktop.activeMenuBarMenu == .file else {
+                throw NSError(domain: "Test", code: 33, userInfo: [NSLocalizedDescriptionKey: "Failed to set active menu bar menu"])
+            }
+
+            // 2. Execute menu bar action: file.newWindow (opens Documents)
+            desktop.executeMenuBarAction("file.newWindow")
+            guard desktop.windows.contains(where: { $0.title == "Documents" }) else {
+                throw NSError(domain: "Test", code: 34, userInfo: [NSLocalizedDescriptionKey: "file.newWindow did not open Documents"])
+            }
+
+            // 3. Close menu bar
+            desktop.closeMenuBar()
+            guard desktop.activeMenuBarMenu == nil else {
+                throw NSError(domain: "Test", code: 35, userInfo: [NSLocalizedDescriptionKey: "closeMenuBar did not reset active menu"])
+            }
+
+            // Clean up opened Documents window
+            if let docWin = desktop.windows.first(where: { $0.title == "Documents" }) {
+                desktop.close(docWin.id)
+            }
+
+            results.append(TestResult(name: "Menu Bar Dropdowns & Actions", passed: true, message: "OK"))
+        } catch {
+            results.append(TestResult(name: "Menu Bar Dropdowns & Actions", passed: false, message: error.localizedDescription))
+        }
+
+        // Test 15: Dock Auto-Hide, Fullscreen Bounds, and 8-Edge Resize Hit
+        do {
+            let desktop = DesktopSession.shared
+
+            // 1. Dock Auto-Hide State Machine
+            desktop.autohideDock = true
+            desktop.cursor = CGPoint(x: 0.50, y: 0.50)
+            desktop.movePointer(delta: CGSize(width: 0, height: -10)) // cursor at y < 0.88 -> hidden
+            guard desktop.isDockVisible == false else {
+                throw NSError(domain: "Test", code: 36, userInfo: [NSLocalizedDescriptionKey: "Dock should be hidden when autohide is true and cursor is in center"])
+            }
+
+            // Move cursor to bottom edge
+            desktop.cursor = CGPoint(x: 0.50, y: 0.97)
+            desktop.movePointer(delta: CGSize(width: 0, height: 1)) // y >= 0.965 -> reveal
+            guard desktop.isDockVisible == true else {
+                throw NSError(domain: "Test", code: 37, userInfo: [NSLocalizedDescriptionKey: "Dock should reveal when cursor reaches bottom edge"])
+            }
+
+            // Reset autohide
+            desktop.autohideDock = false
+            guard desktop.isDockVisible == true else {
+                throw NSError(domain: "Test", code: 38, userInfo: [NSLocalizedDescriptionKey: "Dock should remain visible when autohide is disabled"])
+            }
+
+            // 2. Fullscreen Frame calculation
+            var testWin = DesktopSession.DesktopWindow(
+                title: "TestFullscreenWin",
+                normalizedFrame: CGRect(x: 0.20, y: 0.20, width: 0.50, height: 0.50),
+                isMaximized: true
+            )
+            let maximizedFrame = desktop.effectiveFrame(for: testWin)
+            guard maximizedFrame.width >= 0.98, maximizedFrame.origin.y >= 0.035 else {
+                throw NSError(domain: "Test", code: 39, userInfo: [NSLocalizedDescriptionKey: "Maximized effective frame failed bounds check: \(maximizedFrame)"])
+            }
+
+            // 3. 8-Edge / Corner Resize Hit Testing
+            testWin.isMaximized = false
+            desktop.windows.append(testWin)
+            defer { desktop.windows.removeAll(where: { $0.id == testWin.id }) }
+
+            // Check bottom edge
+            desktop.cursor = CGPoint(x: testWin.normalizedFrame.midX, y: testWin.normalizedFrame.maxY)
+            guard desktop.resizeEdgeAtCursor() == .bottom else {
+                throw NSError(domain: "Test", code: 40, userInfo: [NSLocalizedDescriptionKey: "Expected bottom resize edge hit, got \(String(describing: desktop.resizeEdgeAtCursor()))"])
+            }
+
+            // Check bottom-right corner
+            desktop.cursor = CGPoint(x: testWin.normalizedFrame.maxX, y: testWin.normalizedFrame.maxY)
+            guard desktop.resizeEdgeAtCursor() == .bottomRight else {
+                throw NSError(domain: "Test", code: 41, userInfo: [NSLocalizedDescriptionKey: "Expected bottomRight resize corner hit, got \(String(describing: desktop.resizeEdgeAtCursor()))"])
+            }
+
+            // Check top edge (outside title bar traffic light zone)
+            desktop.cursor = CGPoint(x: testWin.normalizedFrame.midX, y: testWin.normalizedFrame.minY)
+            guard desktop.resizeEdgeAtCursor() == .top else {
+                throw NSError(domain: "Test", code: 42, userInfo: [NSLocalizedDescriptionKey: "Expected top resize edge hit, got \(String(describing: desktop.resizeEdgeAtCursor()))"])
+            }
+
+            results.append(TestResult(name: "Dock Auto-Hide, Fullscreen Bounds & 8-Edge Resize", passed: true, message: "OK"))
+        } catch {
+            results.append(TestResult(name: "Dock Auto-Hide, Fullscreen Bounds & 8-Edge Resize", passed: false, message: error.localizedDescription))
+        }
+
+        // Test 16: Photos Store & Split Screen Assist verification
+        do {
+            let desktop = DesktopSession.shared
+            let win1 = DesktopSession.DesktopWindow(title: "Photos", normalizedFrame: CGRect(x: 0.1, y: 0.1, width: 0.5, height: 0.5))
+            let win2 = DesktopSession.DesktopWindow(title: "Notes", normalizedFrame: CGRect(x: 0.3, y: 0.2, width: 0.4, height: 0.4))
+            desktop.windows = [win1, win2]
+            defer { desktop.windows.removeAll() }
+
+            // 1. Snapping to leftHalf must activate Split Screen Assist on the rightHalf
+            desktop.snapWindow(win1.id, to: .leftHalf)
+            guard let assist = desktop.splitAssistState else {
+                throw NSError(domain: "Test", code: 43, userInfo: [NSLocalizedDescriptionKey: "Split assist state was not activated on left half snap"])
+            }
+            guard assist.target == .rightHalf, assist.eligibleWindowIDs.contains(win2.id) else {
+                throw NSError(domain: "Test", code: 44, userInfo: [NSLocalizedDescriptionKey: "Split assist target mismatch: \(assist.target)"])
+            }
+
+            // 2. Snapping the candidate window to rightHalf via assist
+            desktop.snapWindow(win2.id, to: assist.target)
+            desktop.dismissSplitAssist()
+            guard desktop.splitAssistState == nil else {
+                throw NSError(domain: "Test", code: 45, userInfo: [NSLocalizedDescriptionKey: "Split assist was not dismissed"])
+            }
+            let win2Frame = desktop.effectiveFrame(for: desktop.windows.first(where: { $0.id == win2.id })!)
+            guard abs(win2Frame.origin.x - 0.506) < 0.01 else {
+                throw NSError(domain: "Test", code: 46, userInfo: [NSLocalizedDescriptionKey: "Win2 frame not snapped to right half: \(win2Frame)"])
+            }
+
+            // 3. Verify DesktopPhotosStore state transitions
+            let store = DesktopPhotosStore.shared
+            store.selectedFilter = .favorites
+            guard store.selectedFilter == .favorites else {
+                throw NSError(domain: "Test", code: 47, userInfo: [NSLocalizedDescriptionKey: "PhotosStore filter change failed"])
+            }
+            store.select(assetID: "test-photo-123")
+            guard store.selectedAssetID == "test-photo-123" else {
+                throw NSError(domain: "Test", code: 48, userInfo: [NSLocalizedDescriptionKey: "PhotosStore selection failed"])
+            }
+            store.select(assetID: nil)
+            guard store.selectedAssetID == nil else {
+                throw NSError(domain: "Test", code: 49, userInfo: [NSLocalizedDescriptionKey: "PhotosStore deselect failed"])
+            }
+
+            results.append(TestResult(name: "Photos Store & Split Screen Assist Verification", passed: true, message: "OK"))
+        } catch {
+            results.append(TestResult(name: "Photos Store & Split Screen Assist Verification", passed: false, message: error.localizedDescription))
         }
 
         return results

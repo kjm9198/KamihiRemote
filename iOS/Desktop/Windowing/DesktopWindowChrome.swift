@@ -16,6 +16,11 @@ public enum DesktopWindowChrome {
         min(max(frame.height * 0.095, 0.036), 0.052)
     }
 
+    public static let trafficLightsWidth: CGFloat = 0.052
+    public static let closeMaxXOffset: CGFloat = 0.018
+    public static let minimizeMaxXOffset: CGFloat = 0.034
+    public static let maximizeMaxXOffset: CGFloat = trafficLightsWidth
+
     public static func action(at point: CGPoint, in frame: CGRect) -> Action? {
         let titleHeight = titleBarHeight(for: frame)
         guard point.y >= frame.minY,
@@ -25,14 +30,14 @@ public enum DesktopWindowChrome {
         let yRange = (frame.minY + verticalInset)...(frame.minY + titleHeight - verticalInset)
         guard yRange.contains(point.y) else { return nil }
 
-        // Generous, non-overlapping left-side action zones. Anything to the right
-        // of the green control falls through to the normal title-bar drag path.
-        //   - Close:              [minX, minX + 0.036)
-        //   - Minimize:           [minX + 0.036, minX + 0.070)
-        //   - Full-screen/restore:[minX + 0.070, minX + 0.105]
-        let closeMaxX = frame.minX + 0.036
-        let minimizeMaxX = frame.minX + 0.070
-        let maximizeMaxX = frame.minX + 0.105
+        // Generous, non-overlapping left-side action zones aligned with visual traffic lights.
+        // On a 1920x1080 display:
+        //   - Close:              [minX, minX + 0.018)  (~0 to ~34pt)
+        //   - Minimize:           [minX + 0.018, minX + 0.034) (~34 to ~65pt)
+        //   - Full-screen/restore:[minX + 0.034, minX + 0.052] (~65 to ~100pt)
+        let closeMaxX = frame.minX + closeMaxXOffset
+        let minimizeMaxX = frame.minX + minimizeMaxXOffset
+        let maximizeMaxX = frame.minX + maximizeMaxXOffset
 
         guard point.x >= frame.minX, point.x <= maximizeMaxX else { return nil }
         if point.x < closeMaxX { return .close }

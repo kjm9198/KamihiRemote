@@ -25,6 +25,10 @@ struct DesktopBrowserView: View {
                 .frame(height: 42)
                 .desktopAppToolbar()
 
+            favoritesBar
+                .frame(height: 28)
+                .desktopAppToolbar()
+
             if showFind {
                 findBar
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -193,6 +197,83 @@ struct DesktopBrowserView: View {
             }
         }
         .padding(.horizontal, 8)
+    }
+
+    private var favoritesBar: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "star.fill")
+                .font(.system(size: 9.5))
+                .foregroundStyle(.yellow)
+                .padding(.leading, 8)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 3) {
+                    if state.bookmarks.isEmpty {
+                        // Default quick Safari favorites when no bookmarks imported yet
+                        favoritesItem(title: "Google", url: URL(string: "https://www.google.com")!)
+                        favoritesItem(title: "YouTube", url: URL(string: "https://www.youtube.com")!)
+                        favoritesItem(title: "Wikipedia", url: URL(string: "https://www.wikipedia.org")!)
+                        favoritesItem(title: "Apple", url: URL(string: "https://www.apple.com")!)
+                        favoritesItem(title: "GitHub", url: URL(string: "https://github.com")!)
+
+                        Button {
+                            showLibrary = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "square.and.arrow.down")
+                                    .font(.system(size: 8.5))
+                                Text("Import Safari Bookmarks…")
+                                    .font(.system(size: 10.5, weight: .medium))
+                            }
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Color.blue.opacity(0.12), in: Capsule())
+                            .foregroundStyle(.blue)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        ForEach(state.bookmarks.prefix(12)) { bm in
+                            favoritesItem(title: bm.title, url: bm.url)
+                        }
+
+                        if state.bookmarks.count > 12 {
+                            Button { showLibrary = true } label: {
+                                Text("+\(state.bookmarks.count - 12) more…")
+                                    .font(.system(size: 10.5, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+        }
+        .padding(.vertical, 2)
+        .background(Color.primary.opacity(0.02))
+    }
+
+    private func favoritesItem(title: String, url: URL) -> some View {
+        Button {
+            state.navigateActiveTab(to: url)
+            controller.navigate(to: url)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "globe")
+                    .font(.system(size: 8.5))
+                    .foregroundStyle(.secondary)
+                Text(title)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(.primary.opacity(0.85))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private var findBar: some View {

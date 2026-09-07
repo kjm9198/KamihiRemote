@@ -2,8 +2,20 @@ import SwiftUI
 import UIKit
 import WebKit
 
+public enum MenuBarDropdown: String, CaseIterable, Identifiable {
+    case apple = "Apple"
+    case file = "File"
+    case edit = "Edit"
+    case view = "View"
+    case window = "Window"
+    case help = "Help"
+
+    public var id: String { rawValue }
+}
+
 @MainActor
 final class DesktopSession: ObservableObject {
+    public typealias MenuBarDropdown = KamihiRemote.MenuBarDropdown
     static let shared = DesktopSession()
 
     struct DesktopWindow: Identifiable, Equatable, Codable {
@@ -50,8 +62,32 @@ final class DesktopSession: ObservableObject {
     @Published var wantsPhoneKeyboard = false
     @Published var showNotifications = false
     @Published var showControlCenter = false
+    @Published var activeMenuBarMenu: MenuBarDropdown? = nil
+    @Published var showWallpaperPicker = false
+    @Published var requestedTakeoverWindowID: UUID? = nil
+    @Published var autohideDock: Bool {
+        didSet {
+            UserDefaults.standard.set(autohideDock, forKey: "kamihi.desktop.autohideDock")
+            if !autohideDock { isDockVisible = true }
+        }
+    }
+    @Published var isDockVisible: Bool = true
     @Published private(set) var cursorInteractionState: CursorInteractionState = .defaultState
     @Published private(set) var snapPreviewTarget: WindowSnapEngine.SnapTarget?
+
+    public struct SplitAssistState: Equatable {
+        public let primaryWindowID: UUID
+        public let target: WindowSnapEngine.SnapTarget
+        public let eligibleWindowIDs: [UUID]
+
+        public init(primaryWindowID: UUID, target: WindowSnapEngine.SnapTarget, eligibleWindowIDs: [UUID]) {
+            self.primaryWindowID = primaryWindowID
+            self.target = target
+            self.eligibleWindowIDs = eligibleWindowIDs
+        }
+    }
+
+    @Published public var splitAssistState: SplitAssistState? = nil
 
     private let windowsStorageKey = "kamihi.desktop.windows.v2"
     private let activeWindowStorageKey = "kamihi.desktop.activeWindow.v2"
@@ -70,7 +106,16 @@ final class DesktopSession: ObservableObject {
     private var snapTargets: [UUID: WindowSnapEngine.SnapTarget] = [:]
 
     private init() {
+        self.autohideDock = UserDefaults.standard.bool(forKey: "kamihi.desktop.autohideDock")
         loadWindows()
+    }
+
+    public func closeMenuBar() {
+        activeMenuBarMenu = nil
+    }
+
+    public func requestPhoneTakeover(for windowID: UUID) {
+        requestedTakeoverWindowID = windowID
     }
 
     private func saveWindows() {
@@ -243,12 +288,30 @@ final class DesktopSession: ObservableObject {
         if target == .maximize {
             windows[index].isMaximized = true
             snapTargets[id] = nil
+            splitAssistState = nil
         } else {
             windows[index].isMaximized = false
             windows[index].normalizedFrame = WindowSnapEngine.frame(for: target)
             snapTargets[id] = target
+
+            // Trigger Split Screen Assist when snapping to left or right half:
+            if target == .leftHalf || target == .rightHalf {
+                let opposite: WindowSnapEngine.SnapTarget = (target == .leftHalf) ? .rightHalf : .leftHalf
+                let eligible = windows.filter { $0.id != id && !$0.isMinimized }
+                if !eligible.isEmpty {
+                    splitAssistState = SplitAssistState(primaryWindowID: id, target: opposite, eligibleWindowIDs: eligible.map { $0.id })
+                } else {
+                    splitAssistState = nil
+                }
+            } else {
+                splitAssistState = nil
+            }
         }
         activate(id)
+    }
+
+    public func dismissSplitAssist() {
+        splitAssistState = nil
     }
 
     func movePointer(delta: CGSize, sensitivity: CGFloat = 1.0) {
@@ -271,6 +334,17 @@ final class DesktopSession: ObservableObject {
         let dy = (delta.height / referenceHeight) * effectiveSensitivity
         cursor.x = min(max(cursor.x + dx, 0.006), 0.994)
         cursor.y = min(max(cursor.y + dy, 0.006), 0.994)
+
+        if autohideDock {
+            if cursor.y >= 0.965 {
+                if !isDockVisible { isDockVisible = true }
+            } else if cursor.y < 0.88 {
+                if isDockVisible { isDockVisible = false }
+            }
+        } else {
+            if !isDockVisible { isDockVisible = true }
+        }
+
         updateCursorAffordance()
         if DesktopDockHitRegistry.shared.isLauncherOpen {
             DesktopDockHitRegistry.shared.updateHover(at: cursor)
@@ -465,7 +539,9 @@ final class DesktopSession: ObservableObject {
 
     func effectiveFrame(for window: DesktopWindow) -> CGRect {
         if window.isMaximized {
-            return WindowSnapEngine.frame(for: .maximize)
+            let topY: CGFloat = 0.038
+            let bottomHeight: CGFloat = autohideDock ? 0.954 : 0.842
+            return CGRect(x: 0.008, y: topY, width: 0.984, height: bottomHeight)
         }
         return window.normalizedFrame
     }
@@ -476,45 +552,46 @@ final class DesktopSession: ObservableObject {
         let frame = effectiveFrame(for: window)
         let titleHeight = DesktopWindowChrome.titleBarHeight(for: frame)
         guard cursor.y >= frame.minY, cursor.y <= frame.minY + titleHeight else { return false }
-        return cursor.x > (frame.minX + 0.105) && cursor.x <= frame.maxX
+        return cursor.x > (frame.minX + DesktopWindowChrome.trafficLightsWidth) && cursor.x <= frame.maxX
     }
 
     private func resizeHit(at point: CGPoint) -> (id: UUID, edge: ResizeEdge)? {
-        // Precise, small border threshold so resizing requires being exactly on the border
-        let threshold: CGFloat = 0.010
-        let cornerThreshold: CGFloat = 0.014
+        let threshold: CGFloat = 0.012
+        let cornerThreshold: CGFloat = 0.016
 
         for window in windows.reversed() where !window.isMinimized && !window.isMaximized {
             let frame = window.normalizedFrame
             let titleHeight = DesktopWindowChrome.titleBarHeight(for: frame)
-
-            // Resizing is NEVER triggered over the title bar or anywhere near traffic lights
-            if point.y >= (frame.minY - threshold) && point.y <= (frame.minY + titleHeight + 0.006) {
-                // Top-right corner outside title bar is permitted only if strictly on right edge
-                let nearRight = abs(point.x - frame.maxX) <= threshold
-                let nearTop = abs(point.y - frame.minY) <= threshold
-                if nearRight && nearTop {
-                    return (window.id, .topRight)
-                }
-                continue
-            }
 
             let expanded = frame.insetBy(dx: -threshold, dy: -threshold)
             guard expanded.contains(point) else { continue }
 
             let nearLeft = abs(point.x - frame.minX) <= threshold
             let nearRight = abs(point.x - frame.maxX) <= threshold
+            let nearTop = abs(point.y - frame.minY) <= threshold
             let nearBottom = abs(point.y - frame.maxY) <= threshold
 
             let cornerLeft = abs(point.x - frame.minX) <= cornerThreshold
             let cornerRight = abs(point.x - frame.maxX) <= cornerThreshold
+            let cornerTop = abs(point.y - frame.minY) <= cornerThreshold
             let cornerBottom = abs(point.y - frame.maxY) <= cornerThreshold
 
+            // Corners have highest priority
+            if cornerLeft && cornerTop { return (window.id, .topLeft) }
+            if cornerRight && cornerTop { return (window.id, .topRight) }
             if cornerLeft && cornerBottom { return (window.id, .bottomLeft) }
             if cornerRight && cornerBottom { return (window.id, .bottomRight) }
+
+            // Edges
             if nearLeft { return (window.id, .left) }
             if nearRight { return (window.id, .right) }
             if nearBottom { return (window.id, .bottom) }
+            if nearTop {
+                // Top edge resize permitted if not over the traffic light region
+                if point.x > (frame.minX + 0.110) {
+                    return (window.id, .top)
+                }
+            }
         }
         return nil
     }

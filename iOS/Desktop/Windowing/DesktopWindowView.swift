@@ -177,7 +177,7 @@ struct DesktopWindowView<Content: View>: View {
                 trafficLights
                 Spacer(minLength: 12)
                 // Balance the left chrome so the app title remains optically centered.
-                Color.clear.frame(width: 64, height: 1)
+                Color.clear.frame(width: 80, height: 1)
             }
 
             HStack(spacing: 6) {
@@ -221,7 +221,7 @@ struct DesktopWindowView<Content: View>: View {
                 desktop.toggleMaximize(window.id)
             }
         }
-        .frame(width: 64, alignment: .leading)
+        .frame(width: 80, alignment: .leading)
     }
 
     private func chromeTrafficButton(
@@ -322,6 +322,16 @@ private struct DesktopResizeAffordances: View {
                         .strokeBorder(Color.accentColor.opacity(0.90), lineWidth: 2.2)
                         .frame(width: 14, height: 14)
                         .position(x: width - 7, y: height - 7)
+                case .top:
+                    Capsule(style: .continuous)
+                        .fill(Color.accentColor.opacity(0.85))
+                        .frame(width: min(max(width * 0.35, 40), 90), height: 3.5)
+                        .position(x: width / 2, y: 2)
+                case .topLeft:
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(0.90), lineWidth: 2.2)
+                        .frame(width: 14, height: 14)
+                        .position(x: 7, y: 7)
                 case .topRight:
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .strokeBorder(Color.accentColor.opacity(0.90), lineWidth: 2.2)

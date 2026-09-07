@@ -173,9 +173,9 @@ final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
             // current in-memory windows and therefore do not replay restoration.
             if !hasRestoredInitialPersistentDesktop {
                 hasRestoredInitialPersistentDesktop = true
-                if !DesktopFeatureState.shared.restoreSession(desktop: DesktopSession.shared) {
-                    DesktopSession.shared.closeAllDesktopWindows()
-                }
+                // DesktopSession.init() loaded persisted windows from its storage key.
+                // If saved windows exist, they are preserved and restored. If not, the
+                // desktop starts cleanly with 0 windows, satisfying clean start requirements.
             }
         }
     }

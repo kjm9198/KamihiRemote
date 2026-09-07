@@ -54,8 +54,13 @@ struct DesktopControllerView: View {
             TrackpadSettingsSheet()
         }
         .sheet(item: Binding(
-            get: { takeoverWindowID.map { IdentifiableUUID(id: $0) } },
-            set: { takeoverWindowID = $0?.id }
+            get: {
+                (desktop.requestedTakeoverWindowID ?? takeoverWindowID).map { IdentifiableUUID(id: $0) }
+            },
+            set: {
+                takeoverWindowID = $0?.id
+                desktop.requestedTakeoverWindowID = $0?.id
+            }
         )) { item in
             PhoneTakeoverView(windowID: item.id).environmentObject(desktop)
         }

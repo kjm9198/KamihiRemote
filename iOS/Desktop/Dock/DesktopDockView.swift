@@ -57,12 +57,23 @@ struct DesktopDockView: View {
                             symbol: "paintpalette.fill",
                             color: .cyan,
                             selected: false,
-                            hovered: false
+                            hovered: hitRegistry.hoveredDockTitle == "Wallpaper"
                         )
                         Color.clear.frame(width: 4.5, height: 4.5)
                     }
                 }
                 .buttonStyle(.plain)
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(
+                            key: DockGeometryPreferenceKey.self,
+                            value: [DockItemGeometryPreference(
+                                target: .wallpaperToggle,
+                                frameInSurface: geo.frame(in: .named("desktopSurface"))
+                            )]
+                        )
+                    }
+                )
                 .accessibilityLabel("Wallpaper Chooser")
             }
         }
