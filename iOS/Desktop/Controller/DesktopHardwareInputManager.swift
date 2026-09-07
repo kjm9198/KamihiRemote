@@ -136,14 +136,7 @@ final class DesktopHardwareInputManager: ObservableObject {
             Task { @MainActor in
                 let desktop = DesktopSession.shared
                 if pressed {
-                    // First dispatch a normal click so dock/app controls and
-                    // title-bar close/minimize/maximize stay deterministic.
-                    desktop.clickAtCursor()
-                    // A press on ordinary title-bar/edge space can then become
-                    // direct physical-mouse drag/resize without the touch hold.
-                    if desktop.isCursorOverTitleBar() || desktop.resizeEdgeAtCursor() != nil {
-                        _ = desktop.beginWindowDrag()
-                    }
+                    self.handlePrimaryMouseDown(desktop: desktop)
                 } else if desktop.isDraggingWindow || desktop.isResizingWindow {
                     desktop.endWindowDrag()
                 }
@@ -190,6 +183,42 @@ final class DesktopHardwareInputManager: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Physical mice should behave differently from the phone's gesture surface:
+    /// pressing on a window edge/title bar can begin direct manipulation
+    /// immediately, but clicking a traffic-light control must remain only a click.
+    /// Resolving intent before dispatch prevents Close/Minimize/Maximize from
+    /// changing focus and then accidentally arming a drag on the window underneath.
+    private func handlePrimaryMouseDown(desktop: DesktopSession) {
+        if DesktopDockHitRegistry.shared.hitTest(at: desktop.cursor) != nil {
+            desktop.clickAtCursor()
+            return
+        }
+
+        guard let targetID = desktop.topWindow(at: desktop.cursor),
+              let target = desktop.windows.first(where: { $0.id == targetID }) else {
+            desktop.clickAtCursor()
+            return
+        }
+
+        let frame = desktop.effectiveFrame(for: target)
+        if DesktopWindowChrome.action(at: desktop.cursor, in: frame) != nil {
+            desktop.clickAtCursor()
+            return
+        }
+
+        if desktop.resizeEdgeAtCursor() != nil {
+            _ = desktop.beginPointerResize()
+            return
+        }
+
+        if desktop.isCursorOverTitleBar() {
+            _ = desktop.beginWindowDrag()
+            return
+        }
+
+        desktop.clickAtCursor()
     }
 }
 
