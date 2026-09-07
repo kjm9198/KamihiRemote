@@ -25,8 +25,9 @@ final class TrackpadEngine: ObservableObject {
     }
 
     /// Window movement must be a deliberate title-bar hold, never a side effect
-    /// of ordinary pointer travel.
-    private static let windowDragHoldDuration: TimeInterval = 0.38
+    /// of ordinary pointer travel. Keep this aligned with the canonical 1.5-2s
+    /// desktop goal so normal pointer motion can never turn into a surprise drag.
+    private static let windowDragHoldDuration: TimeInterval = 1.60
     private static let windowDragPreHoldMovementTolerance: CGFloat = 8.0
 
     /// Two-finger movement normally means scrolling. Resizing is armed only by
@@ -396,28 +397,14 @@ final class TrackpadEngine: ObservableObject {
             return
         }
 
-        let heldDuration = now - gestureStartTime
-
-        // Ordinary one-finger pointer travel permanently disqualifies this touch
-        // from becoming a window drag, unless the user initiated a double-tap drag.
-        if !secondTapCandidate,
-           heldDuration < Self.windowDragHoldDuration,
+        // Any meaningful movement before the title-bar dwell completes commits
+        // this touch to ordinary pointer movement. It cannot later turn into a
+        // window drag until every finger lifts and a new gesture begins.
+        if dragHoldEligible,
            totalMovementDistance > Self.windowDragPreHoldMovementTolerance {
             dragHoldEligible = false
-        }
-
-        let wantsManipulation = (secondTapCandidate || (dragHoldEligible && heldDuration >= Self.windowDragHoldDuration)) &&
-            totalMovementDistance > 1.0
-
-        if wantsManipulation, desktop.beginWindowDrag() {
-            // Drag Lock remains available only through an equally deliberate
-            // second-tap-and-hold. A normal long hold behaves like direct drag.
-            state = secondTapCandidate && settings.dragLock ? .dragLocked : .dragging
-            resetPointerSmoothing()
-            if settings.hapticsEnabled { Haptics.touchTap() }
-            let delta = acceleratedDelta(dx: dx, dy: dy, dt: dt, settings: settings)
-            desktop.updateWindowDrag(delta: delta)
-            return
+            titleBarHoldTask?.cancel()
+            titleBarHoldTask = nil
         }
 
         state = .moving
@@ -427,7 +414,9 @@ final class TrackpadEngine: ObservableObject {
     }
 
     private func updateTitleBarHoldWatch(desktop: DesktopSession, settings: TrackpadSettings) {
-        guard activeFingers == 1, (state == .idle || state == .moving) else {
+        guard activeFingers == 1,
+              dragHoldEligible,
+              (state == .idle || state == .moving) else {
             titleBarHoldTask?.cancel()
             titleBarHoldTask = nil
             return
@@ -437,16 +426,19 @@ final class TrackpadEngine: ObservableObject {
             guard titleBarHoldTask == nil else { return }
             titleBarHoldTask = Task { @MainActor [weak self, weak desktop] in
                 do {
-                    try await Task.sleep(nanoseconds: 1_600_000_000)
+                    try await Task.sleep(
+                        nanoseconds: UInt64(Self.windowDragHoldDuration * 1_000_000_000)
+                    )
                 } catch {
                     return
                 }
                 guard let self, let desktop, !Task.isCancelled else { return }
                 guard self.activeFingers == 1,
+                      self.dragHoldEligible,
                       (self.state == .idle || self.state == .moving),
                       desktop.isCursorOverTitleBar() else { return }
                 if desktop.beginWindowDrag() {
-                    self.state = .dragging
+                    self.state = self.secondTapCandidate && settings.dragLock ? .dragLocked : .dragging
                     self.resetPointerSmoothing()
                     if settings.hapticsEnabled { Haptics.touchTap() }
                 }

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Deterministic source-level guardrails for the normal Kamihi Desktop phone controller.
 # These checks intentionally fail before expensive simulator work if a future edit
-# reintroduces retired Remote product UI or weakens keyboard target safety.
+# reintroduces retired Remote product UI or weakens keyboard/window-input safety.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONTROLLER="$ROOT/iOS/Desktop/Controller/DesktopControllerView.swift"
+TRACKPAD="$ROOT/iOS/Desktop/Controller/TrackpadEngine.swift"
 
 fail() {
   echo "desktop-controller-contract: FAIL: $*" >&2
@@ -27,6 +28,7 @@ reject_literal() {
 }
 
 [[ -f "$CONTROLLER" ]] || fail "DesktopControllerView.swift is missing"
+[[ -f "$TRACKPAD" ]] || fail "TrackpadEngine.swift is missing"
 
 # Normal launch must render the uninterrupted Desktop trackpad directly.
 require_literal "fullTrackpadLayout" "normal Desktop controller no longer renders the full trackpad"
@@ -43,6 +45,30 @@ require_literal "windowID: keyboardWindowID" "keyboard input bar is not bound to
 require_literal ".onChange(of: desktop.activeWindowID)" "keyboard does not observe desktop focus changes"
 require_literal "setKeyboardVisible(false)" "keyboard focus-change safety dismissal is missing"
 require_literal "guard let activeWindowID = desktop.activeWindowID else { return }" "keyboard can open without an active target window"
+
+# Deliberate window movement is a canonical product invariant. The trackpad may
+# arm a title-bar drag only after 1.5-2.0 seconds of continuous eligible dwell,
+# and normal movement must not retain a shorter synchronous manipulation bypass.
+python3 - "$TRACKPAD" <<'PY' || fail "deliberate title-bar hold contract is broken"
+import re
+import sys
+
+text = open(sys.argv[1], encoding="utf-8").read()
+match = re.search(r"windowDragHoldDuration:\s*TimeInterval\s*=\s*([0-9.]+)", text)
+if match is None:
+    raise SystemExit("windowDragHoldDuration is missing")
+duration = float(match.group(1))
+if not 1.5 <= duration <= 2.0:
+    raise SystemExit(f"window drag hold must be 1.5-2.0 seconds, found {duration}")
+if "let wantsManipulation =" in text:
+    raise SystemExit("short synchronous window-drag bypass returned")
+if re.search(r"guard\s+activeFingers\s*==\s*1,\s*dragHoldEligible,", text) is None:
+    raise SystemExit("title-bar hold does not require dragHoldEligible")
+if re.search(r"self\.activeFingers\s*==\s*1,\s*self\.dragHoldEligible,", text) is None:
+    raise SystemExit("title-bar hold completion does not re-check dragHoldEligible")
+if "Self.windowDragHoldDuration * 1_000_000_000" not in text:
+    raise SystemExit("title-bar timer is not derived from the canonical hold duration")
+PY
 
 # Kamihi Remote / Remote for Mac is retired and must never return to this surface.
 reject_literal 'Text("Remote for Mac")' "Remote for Mac was reintroduced into Kamihi Desktop"

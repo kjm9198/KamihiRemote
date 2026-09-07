@@ -2,7 +2,7 @@
 
 This matrix tracks the app-by-app bug-fix loop. `VERIFIED` means the flow is covered by current software evidence; `PARTIAL` means useful functionality exists but important flows remain unverified or incomplete; `PENDING` means it has not yet received a dedicated deep app run. Real-device and RayNeo-only behavior remains `NEEDS PHYSICAL TEST` until tested on hardware.
 
-Canonical product direction: one persistent iPhone-owned desktop, trackpad-first phone controller, no user-facing Remote-for-Mac product path, and no automatic app/window movement.
+Canonical product direction: one persistent iPhone-owned desktop, trackpad-first phone controller, no user-facing Remote-for-Mac product path, and no automatic app/window movement. The same app target also supports iPad; iPad simulator evidence is software-only and does not replace real Magic Keyboard/trackpad, multitasking, USB-C peripheral, or external-display validation.
 
 | App / surface | Open / restore / X lifecycle | Controls + content | Pointer / scroll | Keyboard | Empty / error / permission states | Persistence / reopen | Remaining app-specific work |
 |---|---|---|---|---|---|---|---|
@@ -28,6 +28,10 @@ Canonical product direction: one persistent iPhone-owned desktop, trackpad-first
 
 Every dedicated run must verify, where applicable: tap app -> visible window; reopening an existing app -> restore/activate without geometry reset; X -> window is actually removed; minimize/maximize -> deterministic; no minimized/invisible window owns keyboard or scrolling; two-finger vertical movement scrolls rather than resizing; visible buttons perform their advertised action; reconnect preserves a usable persistent desktop.
 
+Deliberate-window-movement invariant: the phone trackpad requires a continuous eligible title-bar dwell of 1.5–2.0 seconds before arming window movement. Meaningful pointer travel beyond the pre-hold tolerance cancels arming for that entire touch, including double-tap/drag-lock candidates; ordinary pointer movement must never transition into window dragging later in the same gesture. Current source uses a single 1.60-second hold duration for both arming logic and its async title-bar timer, with deterministic CI guardrails preventing a shorter synchronous bypass from returning.
+
 Smoothness/persistence invariant: pointer-rate drag/resize samples must not synchronously serialize the entire desktop window list to `UserDefaults` on every movement event. Current main coalesces writes only while manipulation is active, flushes the final geometry when drag/resize ends or is cancelled, and suppresses persistence observers while restoring saved windows so the stored active-window ID is not overwritten during load.
 
 Accessibility motion invariant: Dock and App Library hover/selection must remain fully usable with Reduce Motion enabled, with no scale/lift animation required to understand focus, running state, selection or click targets.
+
+iPad software-evidence invariant: the Apple Integration Smoke must exercise a current iPad simulator as well as the iPhone/Desktop Lab path and produce non-blank launch/layout evidence. Passing simulator coverage proves only that the shared app target builds, launches, and renders on iPad; real Magic Keyboard/trackpad feel, Bluetooth/USB-C peripherals, rotation/multitasking behavior, external display, battery, and thermal behavior remain NEEDS PHYSICAL TEST.
