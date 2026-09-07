@@ -61,7 +61,8 @@ final class DesktopNativeScrollRegistry {
         }
 
         let hoveredKey = hoveredWindow.title
-        let resolvedKey = resolvedScrollKey(for: hoveredKey, window: hoveredWindow)
+        let hoveredFrame = desktop.effectiveFrame(for: hoveredWindow)
+        let resolvedKey = resolvedScrollKey(for: hoveredKey, frame: hoveredFrame)
 
         if scrollResolved(key: resolvedKey, deltaX: deltaX, deltaY: deltaY) {
             return true
@@ -89,10 +90,9 @@ final class DesktopNativeScrollRegistry {
     /// must never steal wheel/two-finger input from each other, so the cursor's
     /// visible pane selects the registered UIScrollView before applying deltas.
     /// Other native apps keep their existing one-key behavior.
-    private func resolvedScrollKey(for key: String, window: DesktopWindow) -> String {
+    private func resolvedScrollKey(for key: String, frame: CGRect) -> String {
         guard key == "Notes" else { return key }
 
-        let frame = DesktopSession.shared.effectiveFrame(for: window)
         let cursor = DesktopSession.shared.cursor
         guard frame.contains(cursor), frame.width > 0 else { return key }
 
