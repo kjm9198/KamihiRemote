@@ -169,6 +169,7 @@ struct DesktopNotesView: View {
                             .padding(.horizontal, -5)
                             .accessibilityLabel("Note body")
                     }
+                    .background(DesktopNativeScrollBridge(key: "Notes"))
                     .frame(maxWidth: 720, alignment: .leading)
                     .padding(.horizontal, 38)
                     .padding(.vertical, 30)
