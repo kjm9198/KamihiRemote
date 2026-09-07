@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import UIKit
 
 /// Lightweight native spreadsheet surface for the external desktop. The grid
 /// remains fully local and pointer-driven while its toolbar and headers now use
@@ -8,6 +9,7 @@ struct DesktopSheetsView: View {
     @StateObject private var store = DesktopSheetsStore.shared
     @State private var showCSVImporter = false
     @State private var importErrorMessage: String?
+    @State private var clipboardStatus: String?
 
     private let rowHeaderWidth: CGFloat = 42
     private let columnHeaderHeight: CGFloat = 28
@@ -109,9 +111,40 @@ struct DesktopSheetsView: View {
 
             Spacer()
 
-            Text("Type on iPhone · Return moves down")
-                .font(.system(size: 10.5))
-                .foregroundStyle(.secondary)
+            if let clipboardStatus {
+                Text(clipboardStatus)
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .transition(.opacity)
+            } else {
+                Text("Type on iPhone · Return moves down")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+            }
+
+            Button(action: copyActiveCell) {
+                DesktopToolbarIconLabel("doc.on.doc")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Copy \(store.activeCellName)")
+            .accessibilityHint("Copies the selected cell to the iOS clipboard.")
+
+            Button(action: pasteClipboard) {
+                DesktopToolbarIconLabel("doc.on.clipboard")
+            }
+            .buttonStyle(.plain)
+            .disabled(UIPasteboard.general.string == nil)
+            .accessibilityLabel("Paste into \(store.activeCellName)")
+            .accessibilityHint("Pastes text or a tab-separated table starting at the selected cell.")
+
+            Button(role: .destructive, action: clearActiveCell) {
+                DesktopToolbarIconLabel("delete.left")
+            }
+            .buttonStyle(.plain)
+            .disabled(store.activeCellValue.isEmpty)
+            .accessibilityLabel("Clear \(store.activeCellName)")
+            .accessibilityHint("Clears the selected cell.")
 
             Button { showCSVImporter = true } label: {
                 DesktopToolbarIconLabel("square.and.arrow.down")
@@ -170,5 +203,36 @@ struct DesktopSheetsView: View {
             .accessibilityAction(named: "Move Down") { store.select(row: row + 1, column: column) }
             .accessibilityAction(named: "Move Left") { store.select(row: row, column: column - 1) }
             .accessibilityAction(named: "Move Right") { store.select(row: row, column: column + 1) }
+    }
+
+    private func copyActiveCell() {
+        UIPasteboard.general.string = store.activeCellValue
+        showClipboardStatus("Copied \(store.activeCellName)")
+    }
+
+    private func pasteClipboard() {
+        guard let text = UIPasteboard.general.string, !text.isEmpty else {
+            showClipboardStatus("Clipboard is empty")
+            return
+        }
+        let startCell = store.activeCellName
+        store.appendToActiveCell(text)
+        showClipboardStatus("Pasted at \(startCell)")
+    }
+
+    private func clearActiveCell() {
+        let cell = store.activeCellName
+        store.clearActiveCell()
+        showClipboardStatus("Cleared \(cell)")
+    }
+
+    private func showClipboardStatus(_ message: String) {
+        clipboardStatus = message
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.2))
+            if clipboardStatus == message {
+                clipboardStatus = nil
+            }
+        }
     }
 }
