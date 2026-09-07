@@ -23,24 +23,23 @@ public final class DesktopNotesStore: ObservableObject {
         didSet { save() }
     }
 
-    @Published public var activeNoteID: UUID?
+    @Published public var activeNoteID: UUID? {
+        didSet { saveActiveSelection() }
+    }
     @Published public var text: String = ""
 
     private let storageKey = "kamihi.desktop.notes.v2"
+    private let activeNoteStorageKey = "kamihi.desktop.notes.active.v1"
 
     private init() {
-        load()
-        if notes.isEmpty {
-            let defaultNote = Note(
-                title: "Welcome to Kamihi Notes",
-                body: "This is your native offline scratchpad for thoughts, outlines, and code snippets."
-            )
-            notes.append(defaultNote)
-            activeNoteID = defaultNote.id
-            text = defaultNote.body
+        // A successfully decoded empty array is a valid user state: it means the
+        // user deliberately deleted every note. Seed the welcome note only when
+        // there is no valid persisted collection at all, never merely because the
+        // restored collection happens to be empty.
+        if load() {
+            restoreActiveSelection()
         } else {
-            activeNoteID = notes.first?.id
-            text = notes.first?.body ?? ""
+            seedWelcomeNote()
         }
     }
 
@@ -60,6 +59,7 @@ public final class DesktopNotesStore: ObservableObject {
     }
 
     public func select(_ id: UUID) {
+        guard notes.contains(where: { $0.id == id }) else { return }
         activeNoteID = id
         text = activeNote?.body ?? ""
     }
@@ -108,10 +108,45 @@ public final class DesktopNotesStore: ObservableObject {
         }
     }
 
-    private func load() {
-        if let data = UserDefaults.standard.data(forKey: storageKey),
-           let saved = try? JSONDecoder().decode([Note].self, from: data) {
-            self.notes = saved
+    private func saveActiveSelection() {
+        if let activeNoteID {
+            UserDefaults.standard.set(activeNoteID.uuidString, forKey: activeNoteStorageKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: activeNoteStorageKey)
         }
+    }
+
+    /// Returns true whenever a valid collection was restored, including an empty
+    /// collection. That distinction is what makes delete-all survive app relaunch.
+    private func load() -> Bool {
+        guard let data = UserDefaults.standard.data(forKey: storageKey),
+              let saved = try? JSONDecoder().decode([Note].self, from: data) else {
+            return false
+        }
+        notes = saved
+        return true
+    }
+
+    private func restoreActiveSelection() {
+        if let rawID = UserDefaults.standard.string(forKey: activeNoteStorageKey),
+           let id = UUID(uuidString: rawID),
+           notes.contains(where: { $0.id == id }) {
+            activeNoteID = id
+            text = notes.first(where: { $0.id == id })?.body ?? ""
+            return
+        }
+
+        activeNoteID = notes.first?.id
+        text = activeNote?.body ?? ""
+    }
+
+    private func seedWelcomeNote() {
+        let defaultNote = Note(
+            title: "Welcome to Kamihi Notes",
+            body: "This is your native offline scratchpad for thoughts, outlines, and code snippets."
+        )
+        notes = [defaultNote]
+        activeNoteID = defaultNote.id
+        text = defaultNote.body
     }
 }

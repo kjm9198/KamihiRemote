@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Deterministic source-level guardrails for the normal Kamihi Desktop phone controller.
 # These checks intentionally fail before expensive simulator work if a future edit
-# reintroduces retired Remote product UI or weakens keyboard/window-input safety.
+# reintroduces retired Remote product UI or weakens keyboard/window/input persistence safety.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONTROLLER="$ROOT/iOS/Desktop/Controller/DesktopControllerView.swift"
 TRACKPAD="$ROOT/iOS/Desktop/Controller/TrackpadEngine.swift"
+NOTES_STORE="$ROOT/iOS/Desktop/Apps/Notes/DesktopNotesStore.swift"
 
 fail() {
   echo "desktop-controller-contract: FAIL: $*" >&2
@@ -29,6 +30,7 @@ reject_literal() {
 
 [[ -f "$CONTROLLER" ]] || fail "DesktopControllerView.swift is missing"
 [[ -f "$TRACKPAD" ]] || fail "TrackpadEngine.swift is missing"
+[[ -f "$NOTES_STORE" ]] || fail "DesktopNotesStore.swift is missing"
 
 # Normal launch must render the uninterrupted Desktop trackpad directly.
 require_literal "fullTrackpadLayout" "normal Desktop controller no longer renders the full trackpad"
@@ -68,6 +70,32 @@ if re.search(r"self\.activeFingers\s*==\s*1,\s*self\.dragHoldEligible,", text) i
     raise SystemExit("title-bar hold completion does not re-check dragHoldEligible")
 if "Self.windowDragHoldDuration * 1_000_000_000" not in text:
     raise SystemExit("title-bar timer is not derived from the canonical hold duration")
+PY
+
+# Notes persistence must distinguish a valid intentionally-empty collection from
+# first launch, and active-note focus must survive process restart. Otherwise a
+# user can delete every note only to have deleted content structure silently
+# recreated on relaunch, or reopen into the wrong note.
+python3 - "$NOTES_STORE" <<'PY' || fail "Notes delete/reopen persistence contract is broken"
+import sys
+
+text = open(sys.argv[1], encoding="utf-8").read()
+required = [
+    '@Published public var activeNoteID: UUID? {',
+    'didSet { saveActiveSelection() }',
+    'private let activeNoteStorageKey = "kamihi.desktop.notes.active.v1"',
+    'if load() {',
+    'restoreActiveSelection()',
+    'seedWelcomeNote()',
+    'private func load() -> Bool',
+    'notes = saved',
+    'return true',
+]
+for needle in required:
+    if needle not in text:
+        raise SystemExit(f"missing Notes persistence guard: {needle}")
+if 'if notes.isEmpty {' in text:
+    raise SystemExit("empty Notes collection is still treated as first launch")
 PY
 
 # Kamihi Remote / Remote for Mac is retired and must never return to this surface.
