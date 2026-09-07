@@ -146,6 +146,7 @@ struct DesktopDocumentsView: View {
                                 .accessibilityLabel("Document body")
                         }
                     }
+                    .background(DesktopNativeScrollBridge(key: "Documents"))
                     .padding(.horizontal, 40)
                     .padding(.vertical, 34)
                     .frame(maxWidth: 760, minHeight: 520, alignment: .topLeading)
