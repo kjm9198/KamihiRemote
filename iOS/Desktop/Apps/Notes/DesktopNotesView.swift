@@ -16,11 +16,12 @@ enum DesktopNotesLayoutMetrics {
     static var rowStride: CGFloat { rowHeight + rowSpacing }
 }
 
-/// Native offline Notes app using Kamihi's persistent store. The layout follows
-/// the desktop system language: edge-to-edge translucent sidebar, compact toolbar,
-/// coloured app identity and a quiet content canvas.
+/// Native local-first Notes workspace. Notes stay on-device in the persistent
+/// store, use iOS 26's attributed TextEditor for rich formatting, and expose
+/// keyboard-friendly slash commands for blocks/templates and optional on-device AI.
 struct DesktopNotesView: View {
     @StateObject private var store = DesktopNotesStore.shared
+    @State private var richSelection = AttributedTextSelection()
 
     var body: some View {
         HStack(spacing: 0) {
@@ -31,6 +32,12 @@ struct DesktopNotesView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(DesktopShellPalette.canvas)
+        .onChange(of: store.activeNoteID) { _, _ in
+            // A selection contains indices into one attributed string. Reset it
+            // whenever the user switches pages so stale indices never target the
+            // newly selected note.
+            richSelection = AttributedTextSelection()
+        }
     }
 
     private var sidebar: some View {
@@ -167,19 +174,48 @@ struct DesktopNotesView: View {
                             .foregroundStyle(.primary)
                             .onTapGesture { store.focus(.title) }
 
-                        Text(store.notes[index].updatedAt, format: .dateTime.month().day().year().hour().minute())
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(.tertiary)
-                            .accessibilityLabel("Last edited \(store.notes[index].updatedAt.formatted(date: .long, time: .shortened))")
+                        HStack(spacing: 7) {
+                            Text(store.notes[index].updatedAt, format: .dateTime.month().day().year().hour().minute())
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(.tertiary)
+                                .accessibilityLabel("Last edited \(store.notes[index].updatedAt.formatted(date: .long, time: .shortened))")
 
-                        TextEditor(text: bodyBinding(for: index))
-                            .font(.system(size: 15.5))
-                            .foregroundStyle(.primary)
-                            .scrollContentBackground(.hidden)
-                            .frame(minHeight: 430)
-                            .padding(.horizontal, -5)
-                            .onTapGesture { store.focus(.body) }
-                            .accessibilityLabel("Note body")
+                            Text("Local workspace · /help for blocks & AI")
+                                .font(.system(size: 10.5, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .accessibilityLabel("Local workspace. Type slash help for block and on-device AI commands.")
+                        }
+
+                        if !store.localAIStatus.isEmpty {
+                            HStack(spacing: 6) {
+                                if store.isLocalAIWorking {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                } else {
+                                    Image(systemName: "cpu")
+                                        .font(.system(size: 9.5, weight: .semibold))
+                                }
+                                Text(store.localAIStatus)
+                                    .font(.system(size: 10.5, weight: .medium))
+                            }
+                            .foregroundStyle(.secondary)
+                            .accessibilityElement(children: .combine)
+                        }
+
+                        // iOS 26's attributed TextEditor supplies native rich-text
+                        // editing/selection/formatting while the store persists the
+                        // AttributedString locally and mirrors plain text for search.
+                        TextEditor(
+                            text: attributedBodyBinding(for: activeID),
+                            selection: $richSelection
+                        )
+                        .font(.system(size: 15.5))
+                        .foregroundStyle(.primary)
+                        .scrollContentBackground(.hidden)
+                        .frame(minHeight: 430)
+                        .padding(.horizontal, -5)
+                        .onTapGesture { store.focus(.body) }
+                        .accessibilityLabel("Note body")
                     }
                     .background(DesktopNativeScrollBridge(key: "Notes.editor"))
                     .frame(maxWidth: 720, alignment: .leading)
@@ -238,13 +274,11 @@ struct DesktopNotesView: View {
         )
     }
 
-    private func bodyBinding(for index: Int) -> Binding<String> {
+    private func attributedBodyBinding(for id: UUID) -> Binding<AttributedString> {
         Binding(
-            get: { store.notes[index].body },
+            get: { store.attributedBody(for: id) },
             set: { value in
-                store.notes[index].body = value
-                store.notes[index].updatedAt = Date()
-                store.text = value
+                store.updateAttributedBody(value, for: id)
                 store.focus(.body)
             }
         )
