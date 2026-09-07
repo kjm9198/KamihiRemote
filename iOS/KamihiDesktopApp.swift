@@ -11,6 +11,7 @@ struct KamihiDesktopApp: App {
     @StateObject private var router = AppModeRouter()
     @StateObject private var desktop = DesktopSession.shared
     @StateObject private var desktopRecovery = DesktopRecoveryCoordinator.shared
+    @StateObject private var hardwareInput = DesktopHardwareInputManager.shared
 
     init() {
         Task { @MainActor in
@@ -47,8 +48,24 @@ struct KamihiDesktopApp: App {
             .environmentObject(desktopRecovery)
             .overlay {
                 if router.currentMode == .externalDesktop {
-                    DesktopHardwareShortcutLayer()
-                        .environmentObject(desktop)
+                    ZStack {
+                        DesktopHardwareShortcutLayer()
+                            .environmentObject(desktop)
+
+                        // A physical keyboard is connected to the iPhone scene,
+                        // while the desktop scene itself is intentionally passive.
+                        // Capture only while a desktop field explicitly owns text
+                        // focus, then route through the same safe app/WebKit paths
+                        // as the phone keyboard.
+                        DesktopHardwareKeyboardReceiver(
+                            isEnabled: hardwareInput.isKeyboardConnected && desktop.wantsPhoneKeyboard,
+                            desktop: desktop
+                        )
+                        .frame(width: 1, height: 1)
+                        .opacity(0.001)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                    }
                 }
             }
             .statusBarHidden(false)
