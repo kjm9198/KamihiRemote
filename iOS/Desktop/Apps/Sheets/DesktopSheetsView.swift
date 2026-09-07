@@ -13,15 +13,14 @@ struct DesktopSheetsView: View {
 
     private let rowHeaderWidth: CGFloat = 42
     private let columnHeaderHeight: CGFloat = 28
+    private let cellWidth: CGFloat = 112
+    private let cellHeight: CGFloat = 32
 
     var body: some View {
         VStack(spacing: 0) {
             toolbar
 
-            GeometryReader { geo in
-                let cellWidth = max(58, (geo.size.width - rowHeaderWidth) / CGFloat(DesktopSheetsStore.columnCount))
-                let cellHeight = max(24, (geo.size.height - columnHeaderHeight) / CGFloat(DesktopSheetsStore.rowCount))
-
+            ScrollView([.horizontal, .vertical]) {
                 VStack(spacing: 0) {
                     HStack(spacing: 0) {
                         Rectangle()
@@ -58,8 +57,14 @@ struct DesktopSheetsView: View {
                         }
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(
+                    width: rowHeaderWidth + (cellWidth * CGFloat(DesktopSheetsStore.columnCount)),
+                    height: columnHeaderHeight + (cellHeight * CGFloat(DesktopSheetsStore.rowCount)),
+                    alignment: .topLeading
+                )
             }
+            .scrollIndicators(.automatic)
+            .accessibilityLabel("Spreadsheet grid. Scroll vertically and horizontally to reach cells.")
         }
         .background(DesktopShellPalette.canvas)
         .fileImporter(
@@ -193,6 +198,8 @@ struct DesktopSheetsView: View {
                         lineWidth: isActive ? 1.5 : 0.5
                     )
             }
+            .contentShape(Rectangle())
+            .onTapGesture { store.select(row: row, column: column) }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(cellName)
             .accessibilityValue(cellValue.isEmpty ? "Empty" : cellValue)
