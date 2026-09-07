@@ -14,6 +14,8 @@ enum DesktopServicesTests {
             try check("windowCycling", windowCycling)
             try check("windowResizeBounds", windowResizeBounds)
             try check("windowOverviewBulkActions", windowOverviewBulkActions)
+            try check("hardwarePointerTuning", hardwarePointerTuning)
+            try check("hardwareScrollTuning", hardwareScrollTuning)
             NSLog("Kamihi desktop services self-checks passed")
             return true
         } catch {
@@ -142,5 +144,79 @@ enum DesktopServicesTests {
         try require(desktop.windows.allSatisfy { !$0.isMinimized }, "restore all must restore every window")
         try require(desktop.activeWindowID != nil, "restore all should activate a window")
         desktop.closeAllDesktopWindows()
+    }
+
+    /// Hardware-mouse motion is transport-independent public GameController input.
+    /// Keep deterministic checks around the tuning transform so future pointer work
+    /// cannot silently reintroduce inverted Y, broken user sensitivity, or an
+    /// acceleration curve that slows fast MX Master-class motion instead of gently
+    /// increasing it.
+    private static func hardwarePointerTuning() throws {
+        let precise = DesktopHardwareInputManager.hardwarePointerDelta(
+            deltaX: 1,
+            deltaY: 1,
+            sensitivity: 1.0,
+            acceleration: 0.0
+        )
+        let accelerated = DesktopHardwareInputManager.hardwarePointerDelta(
+            deltaX: 20,
+            deltaY: 20,
+            sensitivity: 1.0,
+            acceleration: 1.0
+        )
+        let fasterSensitivity = DesktopHardwareInputManager.hardwarePointerDelta(
+            deltaX: 1,
+            deltaY: 0,
+            sensitivity: 1.5,
+            acceleration: 0.0
+        )
+
+        try require(precise.width > 0, "positive hardware X must move the desktop pointer right")
+        try require(precise.height < 0, "positive GameController Y must map to upward desktop motion")
+        try require(abs(accelerated.width / 20) > abs(precise.width), "fast motion with acceleration should have higher per-count gain")
+        try require(fasterSensitivity.width > precise.width, "higher pointer sensitivity must increase hardware movement")
+        try require(abs(accelerated.width) < 44.1, "hardware pointer gain must remain inside the documented 2.2x safety cap")
+    }
+
+    /// MX Master-class wheels commonly emit tiny cross-axis noise. Verify that the
+    /// public wheel transform suppresses that noise, preserves real horizontal
+    /// thumb-wheel input, and reverses both axes consistently for Natural Scrolling.
+    private static func hardwareScrollTuning() throws {
+        let vertical = DesktopHardwareInputManager.hardwareScrollDelta(
+            xValue: 0.02,
+            yValue: 1.0,
+            speed: 1.0,
+            naturalScrolling: false
+        )
+        let horizontal = DesktopHardwareInputManager.hardwareScrollDelta(
+            xValue: 1.0,
+            yValue: 0.02,
+            speed: 1.0,
+            naturalScrolling: false
+        )
+        let diagonal = DesktopHardwareInputManager.hardwareScrollDelta(
+            xValue: 0.6,
+            yValue: 0.7,
+            speed: 1.0,
+            naturalScrolling: false
+        )
+        let natural = DesktopHardwareInputManager.hardwareScrollDelta(
+            xValue: 1.0,
+            yValue: 1.0,
+            speed: 1.0,
+            naturalScrolling: true
+        )
+        let standard = DesktopHardwareInputManager.hardwareScrollDelta(
+            xValue: 1.0,
+            yValue: 1.0,
+            speed: 1.0,
+            naturalScrolling: false
+        )
+
+        try require(vertical.width == 0 && vertical.height != 0, "vertical free-spin noise must not drift content sideways")
+        try require(horizontal.height == 0 && horizontal.width != 0, "horizontal thumb-wheel noise must not bob content vertically")
+        try require(diagonal.width != 0 && diagonal.height != 0, "genuine two-axis wheel input must remain two-axis")
+        try require(abs(natural.width + standard.width) < 0.001, "Natural Scrolling must reverse horizontal direction")
+        try require(abs(natural.height + standard.height) < 0.001, "Natural Scrolling must reverse vertical direction")
     }
 }
