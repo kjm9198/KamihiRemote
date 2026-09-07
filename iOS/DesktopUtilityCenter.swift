@@ -8,10 +8,36 @@ final class DesktopCalculatorStore: ObservableObject {
     @Published var expression = ""
     @Published var result = "0"
 
+    private static let binaryOperators: Set<Character> = ["+", "−", "×", "÷"]
     private init() {}
 
     func append(_ token: String) {
-        expression.append(token)
+        guard let character = token.first, token.count == 1 else { return }
+
+        if character.isNumber {
+            expression.append(character)
+            evaluatePreview()
+            return
+        }
+
+        switch character {
+        case ".":
+            appendDecimalPoint()
+        case "+", "−", "×", "÷":
+            appendOperator(character)
+        case "(":
+            if let last = expression.last, last.isNumber || last == ")" {
+                expression.append("×")
+            }
+            expression.append(character)
+        case ")":
+            guard unmatchedOpeningParentheses > 0,
+                  let last = expression.last,
+                  last.isNumber || last == ")" else { return }
+            expression.append(character)
+        default:
+            return
+        }
         evaluatePreview()
     }
 
@@ -27,10 +53,7 @@ final class DesktopCalculatorStore: ObservableObject {
     }
 
     func evaluate() {
-        let normalized = expression
-            .replacingOccurrences(of: "×", with: "*")
-            .replacingOccurrences(of: "÷", with: "/")
-            .replacingOccurrences(of: "−", with: "-")
+        let normalized = normalizedExpression
         guard isSafe(normalized) else {
             result = "Error"
             return
@@ -40,7 +63,51 @@ final class DesktopCalculatorStore: ObservableObject {
             result = "Error"
             return
         }
-        result = value.rounded() == value ? String(Int(value)) : String(format: "%.8g", value)
+        result = format(value)
+    }
+
+    private var normalizedExpression: String {
+        expression
+            .replacingOccurrences(of: "×", with: "*")
+            .replacingOccurrences(of: "÷", with: "/")
+            .replacingOccurrences(of: "−", with: "-")
+    }
+
+    private var unmatchedOpeningParentheses: Int {
+        expression.reduce(into: 0) { count, character in
+            if character == "(" { count += 1 }
+            if character == ")" { count = max(0, count - 1) }
+        }
+    }
+
+    private func appendDecimalPoint() {
+        let currentNumber = expression.reversed().prefix { character in
+            character.isNumber || character == "."
+        }
+        guard !currentNumber.contains(".") else { return }
+        if currentNumber.isEmpty {
+            expression.append("0")
+        }
+        expression.append(".")
+    }
+
+    private func appendOperator(_ newOperator: Character) {
+        guard !expression.isEmpty else {
+            if newOperator == "−" { expression.append(newOperator) }
+            return
+        }
+
+        if let last = expression.last, Self.binaryOperators.contains(last) {
+            expression.removeLast()
+            expression.append(newOperator)
+            return
+        }
+
+        guard expression.last != "(" else {
+            if newOperator == "−" { expression.append(newOperator) }
+            return
+        }
+        expression.append(newOperator)
     }
 
     private func evaluatePreview() {
@@ -48,7 +115,31 @@ final class DesktopCalculatorStore: ObservableObject {
             result = "0"
             return
         }
-        evaluate()
+
+        // In-progress keypad input such as `12+`, `(` or `4×(` is not an error.
+        // Keep the most recent valid result visible until the expression can be
+        // parsed again, and reserve Error for an explicit equals evaluation.
+        guard let last = expression.last,
+              !Self.binaryOperators.contains(last),
+              last != "(",
+              unmatchedOpeningParentheses == 0 else { return }
+
+        let normalized = normalizedExpression
+        guard isSafe(normalized) else { return }
+        var parser = ArithmeticParser(normalized)
+        guard let value = parser.parse(), value.isFinite else { return }
+        result = format(value)
+    }
+
+    private func format(_ value: Double) -> String {
+        // Avoid trapping on Double -> Int conversion when a valid calculation is
+        // integral but outside the platform Int range.
+        if value.rounded() == value,
+           value >= Double(Int.min),
+           value <= Double(Int.max) {
+            return String(Int(value))
+        }
+        return String(format: "%.8g", value)
     }
 
     private func isSafe(_ value: String) -> Bool {
@@ -328,6 +419,8 @@ struct DesktopCalculatorView: View {
                         .minimumScaleFactor(0.5)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .trailing)
+                        .accessibilityLabel("Result")
+                        .accessibilityValue(calculator.result)
                 }
                 .padding(14)
                 .desktopInsetPanel()
@@ -346,6 +439,7 @@ struct DesktopCalculatorView: View {
                                     )
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel(accessibilityLabel(for: key))
                         }
                     }
                 }
@@ -362,6 +456,22 @@ struct DesktopCalculatorView: View {
         case "⌫": calculator.backspace()
         case "=": calculator.evaluate()
         default: calculator.append(key)
+        }
+    }
+
+    private func accessibilityLabel(for key: String) -> String {
+        switch key {
+        case "÷": "Divide"
+        case "×": "Multiply"
+        case "−": "Subtract"
+        case "+": "Add"
+        case "=": "Equals"
+        case "⌫": "Delete last digit"
+        case "C": "Clear"
+        case ".": "Decimal point"
+        case "(": "Open parenthesis"
+        case ")": "Close parenthesis"
+        default: key
         }
     }
 }
