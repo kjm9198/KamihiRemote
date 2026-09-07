@@ -602,7 +602,12 @@ extension DesktopSession {
 
             if clickPtY > searchBottom {
                 let visible = store.visibleNotes
-                let rowOffset = clickPtY - searchBottom - DesktopNotesLayoutMetrics.listPadding
+                let sidebarScrollOffsetY = DesktopNativeScrollRegistry.shared
+                    .logicalContentOffset(for: "Notes.sidebar").y
+                let rowOffset = clickPtY
+                    - searchBottom
+                    - DesktopNotesLayoutMetrics.listPadding
+                    + sidebarScrollOffsetY
                 if rowOffset >= 0, !visible.isEmpty {
                     let clickedIndex = Int(rowOffset / DesktopNotesLayoutMetrics.rowStride)
                     if clickedIndex >= 0 && clickedIndex < visible.count {
