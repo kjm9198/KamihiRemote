@@ -10,14 +10,18 @@ struct DesktopDockView: View {
     var onOpenLauncher: () -> Void
     var onOpenWallpaperPicker: (() -> Void)? = nil
 
+    /// Keep Kamihi-owned apps visually distinct from Apple or third-party apps.
+    /// In particular, Kamihi Browser must never present Safari's compass glyph.
+    /// Third-party web apps use recognizable platform-neutral symbols here until
+    /// approved local brand assets are bundled; never synthesize/lookalike logos.
     private let pinnedApps: [(title: String, icon: String, color: Color)] = [
-        ("Browser", "safari.fill", .blue),
+        ("Browser", "globe.americas.fill", .blue),
         ("Documents", "doc.text.fill", .blue),
         ("Sheets", "tablecells.fill", .green),
         ("Files", "folder.fill", .blue),
         ("Notes", "note.text", .yellow),
         ("Photos", "photo.on.rectangle.angled", .purple),
-        ("ChatGPT", "sparkles", .mint),
+        ("ChatGPT", "bubble.left.and.bubble.right.fill", .mint),
         ("YouTube", "play.rectangle.fill", .red),
         ("Settings", "gearshape.fill", .gray)
     ]
@@ -156,7 +160,9 @@ struct DesktopDockView: View {
         if normalized.contains("sheet") { return "tablecells.fill" }
         if normalized.contains("pdf") { return "doc.richtext.fill" }
         if normalized.contains("clipboard") { return "doc.on.clipboard.fill" }
-        if normalized.contains("browser") || normalized.contains("web") { return "safari.fill" }
+        if normalized.contains("chatgpt") { return "bubble.left.and.bubble.right.fill" }
+        if normalized.contains("youtube") { return "play.rectangle.fill" }
+        if normalized.contains("browser") || normalized.contains("web") { return "globe.americas.fill" }
         return "app.fill"
     }
 
