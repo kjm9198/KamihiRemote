@@ -33,20 +33,53 @@ final class DesktopNativeScrollRegistry {
 
     @discardableResult
     func scroll(key: String, deltaX: CGFloat, deltaY: CGFloat) -> Bool {
-        let resolvedKey = resolvedScrollKey(for: key)
-        return scrollResolved(key: resolvedKey, deltaX: deltaX, deltaY: deltaY)
+        let desktop = DesktopSession.shared
+
+        // Scroll ownership follows the topmost visible window under the cursor,
+        // not a previously-active window behind it. This is especially important
+        // with overlapping Notes/Browser windows: moving the pointer over the
+        // front window and scrolling must never mutate content underneath.
+        guard let hoveredID = desktop.topWindow(at: desktop.cursor),
+              let hoveredWindow = desktop.windows.first(where: { $0.id == hoveredID }),
+              !hoveredWindow.isMinimized else {
+            // Cursor is on the desktop/background. Consume the wheel/two-finger
+            // input instead of leaking it into whichever app happened to be active.
+            return true
+        }
+
+        let hoveredKey = hoveredWindow.title
+        let resolvedKey = resolvedScrollKey(for: hoveredKey, window: hoveredWindow)
+
+        if scrollResolved(key: resolvedKey, deltaX: deltaX, deltaY: deltaY) {
+            return true
+        }
+
+        if hoveredKey != key {
+            // The hovered front window is web-backed (or a native surface without
+            // a scroll bridge). Route web scrolling directly to the hovered app;
+            // otherwise consume the event rather than falling through to a window
+            // behind it. DesktopWebInputRegistry safely ignores unknown native keys.
+            DesktopWebInputRegistry.shared.scroll(
+                key: hoveredKey,
+                deltaX: deltaX,
+                deltaY: deltaY
+            )
+            return true
+        }
+
+        // Same active/hovered window with no native surface: let the caller use
+        // the existing WebView path for this app.
+        return false
     }
 
     /// Notes owns two independent scroll surfaces. The sidebar list and editor
     /// must never steal wheel/two-finger input from each other, so the cursor's
     /// visible pane selects the registered UIScrollView before applying deltas.
     /// Other native apps keep their existing one-key behavior.
-    private func resolvedScrollKey(for key: String) -> String {
-        guard key == "Notes",
-              let activeWindow = DesktopSession.shared.activeWindow,
-              activeWindow.title == "Notes" else { return key }
+    private func resolvedScrollKey(for key: String, window: DesktopWindow) -> String {
+        guard key == "Notes" else { return key }
 
-        let frame = DesktopSession.shared.effectiveFrame(for: activeWindow)
+        let frame = DesktopSession.shared.effectiveFrame(for: window)
         let cursor = DesktopSession.shared.cursor
         guard frame.contains(cursor), frame.width > 0 else { return key }
 
