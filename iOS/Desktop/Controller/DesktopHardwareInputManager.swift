@@ -176,7 +176,7 @@ final class DesktopHardwareInputManager: ObservableObject {
 
         // MX Master-style side buttons are exposed as auxiliary mouse buttons.
         // The first pair follows the conventional browser Back/Forward mapping.
-        for (index, button) in input.auxiliaryButtons.enumerated() {
+        for (index, button) in (input.auxiliaryButtons ?? []).enumerated() {
             button.pressedChangedHandler = { _, _, pressed in
                 guard pressed else { return }
                 Task { @MainActor in
