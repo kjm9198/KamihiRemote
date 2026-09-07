@@ -7,6 +7,7 @@ import SwiftUI
 struct DesktopDockView: View {
     @EnvironmentObject private var desktop: DesktopSession
     @ObservedObject private var hitRegistry = DesktopDockHitRegistry.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var onOpenLauncher: () -> Void
     var onOpenWallpaperPicker: (() -> Void)? = nil
 
@@ -145,10 +146,10 @@ struct DesktopDockView: View {
                 .shadow(color: Color.black.opacity(0.14), radius: 1, y: 1)
         }
         .frame(width: 48, height: 48)
-        .scaleEffect(hovered ? 1.18 : (selected ? 1.04 : 1.0))
-        .offset(y: hovered ? -7 : 0)
-        .animation(KamihiTheme.Animation.fast, value: hovered)
-        .animation(KamihiTheme.Animation.fast, value: selected)
+        .scaleEffect(reduceMotion ? 1 : (hovered ? 1.18 : (selected ? 1.04 : 1.0)))
+        .offset(y: reduceMotion ? 0 : (hovered ? -7 : 0))
+        .animation(reduceMotion ? nil : KamihiTheme.Animation.fast, value: hovered)
+        .animation(reduceMotion ? nil : KamihiTheme.Animation.fast, value: selected)
     }
 
     private func symbolForRunningApp(_ title: String) -> String {
