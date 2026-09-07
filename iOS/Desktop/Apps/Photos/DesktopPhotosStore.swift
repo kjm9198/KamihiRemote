@@ -35,8 +35,19 @@ public final class DesktopPhotosStore: ObservableObject {
         return assets.first(where: { $0.localIdentifier == id })
     }
 
+    private var activationObserver: NSObjectProtocol?
+
     private init() {
         self.authorizationStatus = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        self.activationObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshAuthorizationStatus()
+            }
+        }
     }
 
     public func start() async {
@@ -45,6 +56,15 @@ public final class DesktopPhotosStore: ObservableObject {
         if current == .notDetermined {
             authorizationStatus = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
         }
+        reloadGrantedAssets()
+    }
+
+    /// Re-read the system-owned Photos authorization whenever Kamihi returns to
+    /// the foreground. This is important when the user changes access in Settings
+    /// or adjusts a Limited Library selection while the Photos window stays open.
+    public func refreshAuthorizationStatus() {
+        let current = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        authorizationStatus = current
         reloadGrantedAssets()
     }
 
@@ -106,10 +126,14 @@ public final class DesktopPhotosStore: ObservableObject {
         PHPhotoLibrary.shared().performChanges {
             let request = PHAssetChangeRequest(for: asset)
             request.isFavorite = nextState
-        } completionHandler: { [weak self] success, _ in
+        } completionHandler: { [weak self] success, error in
             Task { @MainActor in
-                guard let self = self, success else { return }
-                self.reloadGrantedAssets()
+                guard let self = self else { return }
+                if success {
+                    self.reloadGrantedAssets()
+                } else if let error {
+                    self.statusMessage = "Favorite update failed: \(error.localizedDescription)"
+                }
             }
         }
     }

@@ -36,6 +36,9 @@ jobs:
       - name: Verify local Notes workspace contract
         run: bash scripts/notes-local-workspace-contract-smoke.sh
 
+      - name: Verify Photos permission recovery contract
+        run: bash scripts/photos-permission-recovery-contract-smoke.sh
+
       # The script may recover transient simulator infrastructure internally,
       # but product/build/protocol failures remain hard failures. Do not rerun a
       # failed same-SHA workflow to manufacture a passing first-attempt result.
