@@ -13,8 +13,12 @@ struct KamihiDesktopApp: App {
     @StateObject private var desktopRecovery = DesktopRecoveryCoordinator.shared
 
     init() {
-        #if DEBUG
         Task { @MainActor in
+            // Hardware keyboards keep UIKit/SwiftUI's native text path, while
+            // Bluetooth or USB-C mice feed Kamihi's virtual desktop pointer.
+            DesktopHardwareInputManager.shared.start()
+
+            #if DEBUG
             let servicesPassed = DesktopServicesTests.runSelfChecks()
             let refactor = DesktopRefactorTests.runSelfChecks()
             print("=== KAMIHI DESKTOP RUNTIME SELF-CHECKS ===")
@@ -24,8 +28,8 @@ struct KamihiDesktopApp: App {
                 print("  [\(result.passed ? "PASS" : "FAIL")] \(result.name): \(result.message)")
             }
             print("==========================================")
+            #endif
         }
-        #endif
     }
 
     var body: some Scene {
