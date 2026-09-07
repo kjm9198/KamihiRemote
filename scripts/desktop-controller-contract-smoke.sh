@@ -60,7 +60,7 @@ require_literal "guard let activeWindowID = desktop.activeWindowID else { return
 python3 - "$TRACKPAD" <<'PY' || fail "deliberate title-bar hold contract is broken"
 import re
 import sys
-n
+
 text = open(sys.argv[1], encoding="utf-8").read()
 match = re.search(r"windowDragHoldDuration:\s*TimeInterval\s*=\s*([0-9.]+)", text)
 if match is None:
