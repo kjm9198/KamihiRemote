@@ -106,9 +106,20 @@ final class DesktopSession: ObservableObject {
     private var snapTargets: [UUID: WindowSnapEngine.SnapTarget] = [:]
     private var dockHoverTask: Task<Void, Never>? = nil
 
+    /// Drag and resize can mutate window geometry at pointer-sample frequency.
+    /// Persisting the whole Codable window array synchronously on every sample
+    /// adds avoidable main-thread work, especially with high-rate MX-class mice.
+    /// Coalesce only active manipulation writes; discrete lifecycle changes still
+    /// persist immediately, and gesture end/cancel explicitly flushes the final frame.
+    private var windowPersistenceTask: Task<Void, Never>? = nil
+    private var isRestoringWindowPersistence = false
+    private static let manipulationPersistenceDelayMilliseconds = 140
+
     private init() {
         self.autohideDock = UserDefaults.standard.bool(forKey: "kamihi.desktop.autohideDock")
+        isRestoringWindowPersistence = true
         loadWindows()
+        isRestoringWindowPersistence = false
     }
 
     public func closeMenuBar() {
@@ -120,6 +131,36 @@ final class DesktopSession: ObservableObject {
     }
 
     private func saveWindows() {
+        guard !isRestoringWindowPersistence else { return }
+
+        if dragWindowID != nil || resizeWindowID != nil {
+            scheduleWindowPersistence()
+        } else {
+            flushWindowPersistence()
+        }
+    }
+
+    private func scheduleWindowPersistence() {
+        windowPersistenceTask?.cancel()
+        windowPersistenceTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(Self.manipulationPersistenceDelayMilliseconds))
+            } catch {
+                return
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.windowPersistenceTask = nil
+            self.persistWindowsNow()
+        }
+    }
+
+    private func flushWindowPersistence() {
+        windowPersistenceTask?.cancel()
+        windowPersistenceTask = nil
+        persistWindowsNow()
+    }
+
+    private func persistWindowsNow() {
         if let data = try? JSONEncoder().encode(windows) {
             UserDefaults.standard.set(data, forKey: windowsStorageKey)
         }
@@ -462,6 +503,7 @@ final class DesktopSession: ObservableObject {
         if let id = completedWindowID, let target = completedSnapTarget {
             snapWindow(id, to: target)
         } else {
+            flushWindowPersistence()
             updateCursorAffordance()
         }
     }
@@ -530,6 +572,7 @@ final class DesktopSession: ObservableObject {
     func endWindowResize() {
         resizeWindowID = nil
         resizeEdge = nil
+        flushWindowPersistence()
         updateCursorAffordance()
     }
 
@@ -538,6 +581,7 @@ final class DesktopSession: ObservableObject {
         resizeWindowID = nil
         resizeEdge = nil
         snapPreviewTarget = nil
+        flushWindowPersistence()
         updateCursorAffordance()
     }
 
