@@ -19,6 +19,12 @@ public final class DesktopNotesStore: ObservableObject {
         }
     }
 
+    public enum InputTarget: String, Equatable {
+        case search
+        case title
+        case body
+    }
+
     @Published public var notes: [Note] = [] {
         didSet { save() }
     }
@@ -27,6 +33,8 @@ public final class DesktopNotesStore: ObservableObject {
         didSet { saveActiveSelection() }
     }
     @Published public var text: String = ""
+    @Published public var searchQuery: String = ""
+    @Published public private(set) var inputTarget: InputTarget = .body
 
     private let storageKey = "kamihi.desktop.notes.v2"
     private let activeNoteStorageKey = "kamihi.desktop.notes.active.v1"
@@ -51,17 +59,36 @@ public final class DesktopNotesStore: ObservableObject {
         }
     }
 
+    /// The UI and software-pointer hit-testing must consume the same filtered,
+    /// newest-first list. Keeping this in the shared store prevents a search result
+    /// row from selecting a different unfiltered note behind the scenes.
+    public var visibleNotes: [Note] {
+        let sorted = notes.sorted { $0.updatedAt > $1.updatedAt }
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return sorted }
+        return sorted.filter { note in
+            note.title.localizedCaseInsensitiveContains(query)
+                || note.body.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    public func focus(_ target: InputTarget) {
+        inputTarget = target
+    }
+
     public func createNewNote() {
         let note = Note()
         notes.insert(note, at: 0)
         activeNoteID = note.id
         text = note.body
+        inputTarget = .body
     }
 
     public func select(_ id: UUID) {
         guard notes.contains(where: { $0.id == id }) else { return }
         activeNoteID = id
         text = activeNote?.body ?? ""
+        inputTarget = .body
     }
 
     public func deleteNote(id: UUID) {
@@ -69,6 +96,9 @@ public final class DesktopNotesStore: ObservableObject {
         if activeNoteID == id {
             activeNoteID = notes.first?.id
             text = activeNote?.body ?? ""
+        }
+        if activeNoteID == nil {
+            inputTarget = .body
         }
     }
 
@@ -78,8 +108,56 @@ public final class DesktopNotesStore: ObservableObject {
         }
     }
 
-    /// Phone-keyboard bridge for the non-interactive external-display editor.
-    /// The phone edits the active note body directly; no Mac-remote path is involved.
+    /// Phone/hardware-keyboard bridge for the non-interactive external-display
+    /// editor. Search, title and body are distinct focus targets so clicking a
+    /// search/title field can never silently edit the note body instead.
+    public func appendToFocusedField(_ value: String) {
+        guard !value.isEmpty else { return }
+        switch inputTarget {
+        case .search:
+            searchQuery.append(value)
+        case .title:
+            guard let id = activeNoteID,
+                  let index = notes.firstIndex(where: { $0.id == id }) else { return }
+            notes[index].title.append(value)
+            notes[index].updatedAt = Date()
+        case .body:
+            appendToActiveBody(value)
+        }
+    }
+
+    public func deleteBackwardFromFocusedField() {
+        switch inputTarget {
+        case .search:
+            guard !searchQuery.isEmpty else { return }
+            searchQuery.removeLast()
+        case .title:
+            guard let id = activeNoteID,
+                  let index = notes.firstIndex(where: { $0.id == id }),
+                  !notes[index].title.isEmpty else { return }
+            notes[index].title.removeLast()
+            notes[index].updatedAt = Date()
+        case .body:
+            deleteBackwardFromActiveBody()
+        }
+    }
+
+    public func pressEnterInFocusedField() {
+        switch inputTarget {
+        case .search:
+            if let first = visibleNotes.first {
+                select(first.id)
+            } else {
+                inputTarget = .body
+            }
+        case .title:
+            inputTarget = .body
+        case .body:
+            insertNewlineIntoActiveBody()
+        }
+    }
+
+    /// Compatibility/body-specific bridge used by existing integrations.
     public func appendToActiveBody(_ value: String) {
         guard !value.isEmpty,
               let id = activeNoteID,

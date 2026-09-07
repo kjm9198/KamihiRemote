@@ -1,26 +1,31 @@
 import SwiftUI
 
+/// Shared geometry for Notes rendering and software-pointer hit-testing. Keeping
+/// these values in one place prevents the phone pointer from targeting a different
+/// row/control than the external-display UI actually shows.
+enum DesktopNotesLayoutMetrics {
+    static let sidebarWidth: CGFloat = DesktopShellMetrics.sidebarWidth
+    static let searchAreaHeight: CGFloat = 46
+    static let listPadding: CGFloat = 7
+    static let rowHeight: CGFloat = 51
+    static let rowSpacing: CGFloat = 3
+    static let toolbarButtonHitWidth: CGFloat = 40
+    static let editorTitleFocusTop: CGFloat = 18
+    static let editorTitleFocusHeight: CGFloat = 72
+
+    static var rowStride: CGFloat { rowHeight + rowSpacing }
+}
+
 /// Native offline Notes app using Kamihi's persistent store. The layout follows
 /// the desktop system language: edge-to-edge translucent sidebar, compact toolbar,
 /// coloured app identity and a quiet content canvas.
 struct DesktopNotesView: View {
     @StateObject private var store = DesktopNotesStore.shared
-    @State private var searchText = ""
-
-    private var visibleNotes: [DesktopNotesStore.Note] {
-        let sorted = store.notes.sorted { $0.updatedAt > $1.updatedAt }
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return sorted }
-        return sorted.filter { note in
-            note.title.localizedCaseInsensitiveContains(query)
-                || note.body.localizedCaseInsensitiveContains(query)
-        }
-    }
 
     var body: some View {
         HStack(spacing: 0) {
             sidebar
-                .frame(width: DesktopShellMetrics.sidebarWidth)
+                .frame(width: DesktopNotesLayoutMetrics.sidebarWidth)
 
             editor
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -56,11 +61,15 @@ struct DesktopNotesView: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
-                TextField("Search", text: $searchText)
+                TextField("Search", text: $store.searchQuery)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
-                if !searchText.isEmpty {
-                    Button { searchText = "" } label: {
+                    .onTapGesture { store.focus(.search) }
+                if !store.searchQuery.isEmpty {
+                    Button {
+                        store.searchQuery = ""
+                        store.focus(.search)
+                    } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
@@ -75,14 +84,14 @@ struct DesktopNotesView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 8)
 
-            if visibleNotes.isEmpty {
+            if store.visibleNotes.isEmpty {
                 VStack(spacing: 7) {
-                    Image(systemName: searchText.isEmpty ? "note.text" : "magnifyingglass")
+                    Image(systemName: store.searchQuery.isEmpty ? "note.text" : "magnifyingglass")
                         .font(.system(size: 22, weight: .light))
                         .foregroundStyle(.tertiary)
-                    Text(searchText.isEmpty ? "No Notes" : "No Results")
+                    Text(store.searchQuery.isEmpty ? "No Notes" : "No Results")
                         .font(.system(size: 12, weight: .semibold))
-                    if !searchText.isEmpty {
+                    if !store.searchQuery.isEmpty {
                         Text("Try another search")
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
@@ -91,10 +100,10 @@ struct DesktopNotesView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 3) {
-                        ForEach(visibleNotes) { note in noteRow(note) }
+                    LazyVStack(spacing: DesktopNotesLayoutMetrics.rowSpacing) {
+                        ForEach(store.visibleNotes) { note in noteRow(note) }
                     }
-                    .padding(7)
+                    .padding(DesktopNotesLayoutMetrics.listPadding)
                 }
             }
         }
@@ -104,8 +113,7 @@ struct DesktopNotesView: View {
     private func noteRow(_ note: DesktopNotesStore.Note) -> some View {
         let selected = note.id == store.activeNoteID
         return Button {
-            store.activeNoteID = note.id
-            store.text = note.body
+            store.select(note.id)
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 Text(displayTitle(for: note))
@@ -125,6 +133,7 @@ struct DesktopNotesView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 9)
             .padding(.vertical, 8)
+            .frame(height: DesktopNotesLayoutMetrics.rowHeight, alignment: .leading)
             .background(
                 selected ? Color.accentColor.opacity(0.14) : Color.clear,
                 in: RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -155,6 +164,7 @@ struct DesktopNotesView: View {
                             .font(.system(size: 24, weight: .bold))
                             .tracking(-0.45)
                             .foregroundStyle(.primary)
+                            .onTapGesture { store.focus(.title) }
 
                         Text(store.notes[index].updatedAt, format: .dateTime.month().day().year().hour().minute())
                             .font(.system(size: 10.5))
@@ -167,6 +177,7 @@ struct DesktopNotesView: View {
                             .scrollContentBackground(.hidden)
                             .frame(minHeight: 430)
                             .padding(.horizontal, -5)
+                            .onTapGesture { store.focus(.body) }
                             .accessibilityLabel("Note body")
                     }
                     .background(DesktopNativeScrollBridge(key: "Notes"))
@@ -221,6 +232,7 @@ struct DesktopNotesView: View {
             set: { value in
                 store.notes[index].title = value
                 store.notes[index].updatedAt = Date()
+                store.focus(.title)
             }
         )
     }
@@ -232,6 +244,7 @@ struct DesktopNotesView: View {
                 store.notes[index].body = value
                 store.notes[index].updatedAt = Date()
                 store.text = value
+                store.focus(.body)
             }
         )
     }

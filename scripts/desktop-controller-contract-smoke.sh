@@ -8,6 +8,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONTROLLER="$ROOT/iOS/Desktop/Controller/DesktopControllerView.swift"
 TRACKPAD="$ROOT/iOS/Desktop/Controller/TrackpadEngine.swift"
 NOTES_STORE="$ROOT/iOS/Desktop/Apps/Notes/DesktopNotesStore.swift"
+NOTES_VIEW="$ROOT/iOS/Desktop/Apps/Notes/DesktopNotesView.swift"
+SESSION_EXTENSIONS="$ROOT/iOS/Desktop/DesktopSessionExtensions.swift"
 
 fail() {
   echo "desktop-controller-contract: FAIL: $*" >&2
@@ -31,6 +33,8 @@ reject_literal() {
 [[ -f "$CONTROLLER" ]] || fail "DesktopControllerView.swift is missing"
 [[ -f "$TRACKPAD" ]] || fail "TrackpadEngine.swift is missing"
 [[ -f "$NOTES_STORE" ]] || fail "DesktopNotesStore.swift is missing"
+[[ -f "$NOTES_VIEW" ]] || fail "DesktopNotesView.swift is missing"
+[[ -f "$SESSION_EXTENSIONS" ]] || fail "DesktopSessionExtensions.swift is missing"
 
 # Normal launch must render the uninterrupted Desktop trackpad directly.
 require_literal "fullTrackpadLayout" "normal Desktop controller no longer renders the full trackpad"
@@ -96,6 +100,54 @@ for needle in required:
         raise SystemExit(f"missing Notes persistence guard: {needle}")
 if 'if notes.isEmpty {' in text:
     raise SystemExit("empty Notes collection is still treated as first launch")
+PY
+
+# Notes search/list hit-testing and keyboard focus must share one source of truth.
+# A filtered row must select the visible note, and typing in Search/Title must not
+# silently mutate the active note body. The software-pointer Delete zone must
+# delete rather than create a note.
+python3 - "$NOTES_STORE" "$NOTES_VIEW" "$SESSION_EXTENSIONS" <<'PY' || fail "Notes pointer/search/focus contract is broken"
+import sys
+
+store = open(sys.argv[1], encoding="utf-8").read()
+view = open(sys.argv[2], encoding="utf-8").read()
+session = open(sys.argv[3], encoding="utf-8").read()
+
+store_required = [
+    'public enum InputTarget: String, Equatable',
+    '@Published public var searchQuery: String = ""',
+    'public var visibleNotes: [Note]',
+    'public func appendToFocusedField(_ value: String)',
+    'public func deleteBackwardFromFocusedField()',
+    'public func pressEnterInFocusedField()',
+]
+view_required = [
+    'TextField("Search", text: $store.searchQuery)',
+    'ForEach(store.visibleNotes)',
+    '.frame(height: DesktopNotesLayoutMetrics.rowHeight',
+    'store.focus(.title)',
+    'store.focus(.body)',
+]
+session_required = [
+    'let visible = store.visibleNotes',
+    'DesktopNotesLayoutMetrics.rowStride',
+    'store.focus(.search)',
+    'store.deleteActiveNote()',
+    'DesktopNotesStore.shared.appendToFocusedField(text)',
+    'DesktopNotesStore.shared.deleteBackwardFromFocusedField()',
+    'DesktopNotesStore.shared.pressEnterInFocusedField()',
+]
+for needle in store_required:
+    if needle not in store:
+        raise SystemExit(f"missing Notes store focus/search guard: {needle}")
+for needle in view_required:
+    if needle not in view:
+        raise SystemExit(f"missing Notes view geometry/search guard: {needle}")
+for needle in session_required:
+    if needle not in session:
+        raise SystemExit(f"missing Notes software-pointer guard: {needle}")
+if 'let sorted = store.notes.sorted' in session:
+    raise SystemExit("Notes software-pointer still targets an unfiltered list")
 PY
 
 # Kamihi Remote / Remote for Mac is retired and must never return to this surface.

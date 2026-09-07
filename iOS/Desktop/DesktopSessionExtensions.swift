@@ -339,7 +339,7 @@ extension DesktopSession {
         guard !text.isEmpty else { return }
         switch activeWindow?.title {
         case "Notes":
-            DesktopNotesStore.shared.appendToActiveBody(text)
+            DesktopNotesStore.shared.appendToFocusedField(text)
             return
         case "Documents":
             DesktopDocumentsStore.shared.appendToActiveBody(text)
@@ -357,7 +357,7 @@ extension DesktopSession {
     public func deleteBackwardInActiveDesktopField() {
         switch activeWindow?.title {
         case "Notes":
-            DesktopNotesStore.shared.deleteBackwardFromActiveBody()
+            DesktopNotesStore.shared.deleteBackwardFromFocusedField()
             return
         case "Documents":
             DesktopDocumentsStore.shared.deleteBackwardFromActiveBody()
@@ -375,7 +375,7 @@ extension DesktopSession {
     public func pressEnterInActiveDesktopField() {
         switch activeWindow?.title {
         case "Notes":
-            DesktopNotesStore.shared.insertNewlineIntoActiveBody()
+            DesktopNotesStore.shared.pressEnterInFocusedField()
             return
         case "Documents":
             DesktopDocumentsStore.shared.insertNewlineIntoActiveBody()
@@ -581,38 +581,76 @@ extension DesktopSession {
         let clickPtX = (point.x - frame.minX) * 1920
         let clickPtY = (point.y - contentTop) * 1080
 
-        let sidebarWidth: CGFloat = 220
-        let toolbarHeight: CGFloat = 44
+        let store = DesktopNotesStore.shared
+        let sidebarWidth = DesktopNotesLayoutMetrics.sidebarWidth
+        let toolbarHeight = DesktopShellMetrics.toolbarHeight
 
         if clickPtX <= sidebarWidth {
             if clickPtY <= toolbarHeight && clickPtX >= (sidebarWidth - 44) {
-                DesktopNotesStore.shared.createNewNote()
+                store.createNewNote()
                 wantsPhoneKeyboard = true
                 if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
                 return
-            } else if clickPtY > (toolbarHeight + 34) {
-                let store = DesktopNotesStore.shared
-                let sorted = store.notes.sorted { $0.updatedAt > $1.updatedAt }
-                if !sorted.isEmpty {
-                    let rowOffset = clickPtY - toolbarHeight - 34 - 7
-                    if rowOffset >= 0 {
-                        let clickedIndex = min(max(Int(rowOffset / 54), 0), sorted.count - 1)
-                        store.select(sorted[clickedIndex].id)
+            }
+
+            let searchBottom = toolbarHeight + DesktopNotesLayoutMetrics.searchAreaHeight
+            if clickPtY > toolbarHeight && clickPtY <= searchBottom {
+                store.focus(.search)
+                wantsPhoneKeyboard = true
+                return
+            }
+
+            if clickPtY > searchBottom {
+                let visible = store.visibleNotes
+                let rowOffset = clickPtY - searchBottom - DesktopNotesLayoutMetrics.listPadding
+                if rowOffset >= 0, !visible.isEmpty {
+                    let clickedIndex = Int(rowOffset / DesktopNotesLayoutMetrics.rowStride)
+                    if clickedIndex >= 0 && clickedIndex < visible.count {
+                        store.select(visible[clickedIndex].id)
                         wantsPhoneKeyboard = true
                         if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
                         return
                     }
                 }
             }
-        } else {
-            if clickPtY <= toolbarHeight && clickPtX >= (windowPtWidth - 48) {
-                DesktopNotesStore.shared.createNewNote()
+
+            wantsPhoneKeyboard = false
+            return
+        }
+
+        // Editor toolbar has New immediately to the left of Delete. Keep these
+        // software-pointer hit zones explicit so Delete can never create a note.
+        if clickPtY <= toolbarHeight {
+            let hitWidth = DesktopNotesLayoutMetrics.toolbarButtonHitWidth
+            if clickPtX >= windowPtWidth - hitWidth {
+                store.deleteActiveNote()
+                wantsPhoneKeyboard = false
+                if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
+                return
+            }
+            if clickPtX >= windowPtWidth - (hitWidth * 2) {
+                store.createNewNote()
                 wantsPhoneKeyboard = true
                 if TrackpadSettings.shared.hapticsEnabled { Haptics.touchTap() }
                 return
             }
+            wantsPhoneKeyboard = false
+            return
         }
 
+        guard store.activeNoteID != nil else {
+            wantsPhoneKeyboard = false
+            return
+        }
+
+        let editorY = clickPtY - toolbarHeight
+        let titleTop = DesktopNotesLayoutMetrics.editorTitleFocusTop
+        let titleBottom = titleTop + DesktopNotesLayoutMetrics.editorTitleFocusHeight
+        if editorY >= titleTop && editorY <= titleBottom {
+            store.focus(.title)
+        } else {
+            store.focus(.body)
+        }
         wantsPhoneKeyboard = true
     }
 
