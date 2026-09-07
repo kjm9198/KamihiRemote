@@ -60,7 +60,7 @@ require_literal "guard let activeWindowID = desktop.activeWindowID else { return
 python3 - "$TRACKPAD" <<'PY' || fail "deliberate title-bar hold contract is broken"
 import re
 import sys
-
+n
 text = open(sys.argv[1], encoding="utf-8").read()
 match = re.search(r"windowDragHoldDuration:\s*TimeInterval\s*=\s*([0-9.]+)", text)
 if match is None:
@@ -155,19 +155,22 @@ PY
 # Notes has independent sidebar/editor scroll surfaces. Phone trackpad and public
 # GameController wheel input must resolve scroll ownership from the topmost window
 # under the cursor, not a previously-active window behind it. Within Notes, that
-# owner is further split into sidebar vs editor panes.
-python3 - "$NOTES_VIEW" "$NATIVE_SCROLL" "$TRACKPAD" <<'PY' || fail "frontmost Notes scroll-ownership contract is broken"
+# owner is further split into sidebar vs editor panes. Pointer row hit-testing must
+# also include the live sidebar content offset after scrolling.
+python3 - "$NOTES_VIEW" "$NATIVE_SCROLL" "$TRACKPAD" "$SESSION_EXTENSIONS" <<'PY' || fail "frontmost Notes scroll-ownership contract is broken"
 import sys
 
 view = open(sys.argv[1], encoding="utf-8").read()
 registry = open(sys.argv[2], encoding="utf-8").read()
 trackpad = open(sys.argv[3], encoding="utf-8").read()
+session = open(sys.argv[4], encoding="utf-8").read()
 
 required_view = [
     'DesktopNativeScrollBridge(key: "Notes.sidebar")',
     'DesktopNativeScrollBridge(key: "Notes.editor")',
 ]
 required_registry = [
+    'func logicalContentOffset(for key: String) -> CGPoint',
     'let hoveredID = desktop.topWindow(at: desktop.cursor)',
     'let hoveredKey = hoveredWindow.title',
     'resolvedScrollKey(for: hoveredKey, window: hoveredWindow)',
@@ -178,12 +181,20 @@ required_registry = [
     'guard !key.contains(".")',
     'return true',
 ]
+required_session = [
+    'let sidebarScrollOffsetY = DesktopNativeScrollRegistry.shared',
+    '.logicalContentOffset(for: "Notes.sidebar").y',
+    '+ sidebarScrollOffsetY',
+]
 for needle in required_view:
     if needle not in view:
         raise SystemExit(f"missing Notes pane bridge: {needle}")
 for needle in required_registry:
     if needle not in registry:
         raise SystemExit(f"missing frontmost scroll routing guard: {needle}")
+for needle in required_session:
+    if needle not in session:
+        raise SystemExit(f"missing scrolled Notes hit-test guard: {needle}")
 if 'DesktopNativeScrollRegistry.shared.scroll(key: key' not in trackpad:
     raise SystemExit("phone trackpad no longer routes native scrolling through the registry")
 PY
