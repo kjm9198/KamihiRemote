@@ -104,10 +104,13 @@ struct DesktopWindowView<Content: View>: View {
             .frame(width: frame.width, height: frame.height)
             .position(x: frame.midX, y: frame.midY)
             // A dock-directed shrink gives minimize/restore a much closer macOS
-            // spatial feel than simply fading the window in place.
+            // spatial feel than simply fading the window in place. Disable hit
+            // testing at the same transition boundary so the invisible minimized
+            // surface can never steal taps, scrolls, or focus from visible apps.
             .scaleEffect(window.isMinimized ? 0.78 : 1.0)
             .offset(y: window.isMinimized ? max(42, geo.size.height * 0.22) : 0)
             .opacity(window.isMinimized ? 0.0 : 1.0)
+            .allowsHitTesting(!window.isMinimized)
             .animation(reduceMotion ? nil : KamihiTheme.Animation.spatial, value: window.isMinimized)
             .animation(reduceMotion ? nil : KamihiTheme.Animation.spatial, value: window.isMaximized)
             .animation(reduceMotion ? nil : KamihiTheme.Animation.spatial, value: window.normalizedFrame)
