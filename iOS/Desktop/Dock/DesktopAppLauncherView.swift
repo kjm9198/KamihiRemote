@@ -6,6 +6,7 @@ import SwiftUI
 /// click semantics.
 struct DesktopAppLauncherView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var desktop: DesktopSession
     @ObservedObject private var hitRegistry = DesktopDockHitRegistry.shared
     @StateObject private var browser = DesktopBrowserState.shared
@@ -77,8 +78,6 @@ struct DesktopAppLauncherView: View {
 
     var body: some View {
         ZStack {
-            // The parent supplies the full glass surface. This subtle overlay gives
-            // the chooser the soft depth of macOS Launchpad without double-blurring.
             LinearGradient(
                 colors: [Color.white.opacity(0.055), Color.clear, Color.black.opacity(0.035)],
                 startPoint: .topLeading,
@@ -204,9 +203,9 @@ struct DesktopAppLauncherView: View {
                         .shadow(color: Color.black.opacity(0.16), radius: 1, y: 1)
                 }
                 .frame(width: 70, height: 70)
-                .scaleEffect(highlighted ? 1.08 : 1)
-                .offset(y: highlighted ? -4 : 0)
-                .animation(KamihiTheme.Animation.fast, value: highlighted)
+                .scaleEffect(reduceMotion ? 1 : (highlighted ? 1.08 : 1))
+                .offset(y: reduceMotion ? 0 : (highlighted ? -4 : 0))
+                .animation(reduceMotion ? nil : KamihiTheme.Animation.fast, value: highlighted)
 
                 Text(app.title)
                     .font(.system(size: 12, weight: .medium))
