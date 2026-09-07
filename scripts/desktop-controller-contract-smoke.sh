@@ -10,6 +10,7 @@ TRACKPAD="$ROOT/iOS/Desktop/Controller/TrackpadEngine.swift"
 NOTES_STORE="$ROOT/iOS/Desktop/Apps/Notes/DesktopNotesStore.swift"
 NOTES_VIEW="$ROOT/iOS/Desktop/Apps/Notes/DesktopNotesView.swift"
 SESSION_EXTENSIONS="$ROOT/iOS/Desktop/DesktopSessionExtensions.swift"
+NATIVE_SCROLL="$ROOT/iOS/Desktop/DesktopNativeScrollRegistry.swift"
 
 fail() {
   echo "desktop-controller-contract: FAIL: $*" >&2
@@ -35,6 +36,7 @@ reject_literal() {
 [[ -f "$NOTES_STORE" ]] || fail "DesktopNotesStore.swift is missing"
 [[ -f "$NOTES_VIEW" ]] || fail "DesktopNotesView.swift is missing"
 [[ -f "$SESSION_EXTENSIONS" ]] || fail "DesktopSessionExtensions.swift is missing"
+[[ -f "$NATIVE_SCROLL" ]] || fail "DesktopNativeScrollRegistry.swift is missing"
 
 # Normal launch must render the uninterrupted Desktop trackpad directly.
 require_literal "fullTrackpadLayout" "normal Desktop controller no longer renders the full trackpad"
@@ -148,6 +150,39 @@ for needle in session_required:
         raise SystemExit(f"missing Notes software-pointer guard: {needle}")
 if 'let sorted = store.notes.sorted' in session:
     raise SystemExit("Notes software-pointer still targets an unfiltered list")
+PY
+
+# Notes has independent sidebar/editor scroll surfaces. Both the phone trackpad
+# and public GameController wheel path call the native registry with key "Notes";
+# the registry must resolve that to the pane under the current cursor so one pane
+# cannot steal scrolling from the other.
+python3 - "$NOTES_VIEW" "$NATIVE_SCROLL" "$TRACKPAD" <<'PY' || fail "Notes pane scroll-ownership contract is broken"
+import sys
+
+view = open(sys.argv[1], encoding="utf-8").read()
+registry = open(sys.argv[2], encoding="utf-8").read()
+trackpad = open(sys.argv[3], encoding="utf-8").read()
+
+required_view = [
+    'DesktopNativeScrollBridge(key: "Notes.sidebar")',
+    'DesktopNativeScrollBridge(key: "Notes.editor")',
+]
+required_registry = [
+    'let resolvedKey = resolvedScrollKey(for: key)',
+    'guard key == "Notes"',
+    'DesktopSession.shared.cursor',
+    'return "Notes.sidebar"',
+    'return "Notes.editor"',
+    'guard !key.contains(".")',
+]
+for needle in required_view:
+    if needle not in view:
+        raise SystemExit(f"missing Notes pane bridge: {needle}")
+for needle in required_registry:
+    if needle not in registry:
+        raise SystemExit(f"missing Notes pane routing guard: {needle}")
+if 'DesktopNativeScrollRegistry.shared.scroll(key: key' not in trackpad:
+    raise SystemExit("phone trackpad no longer routes native scrolling through the registry")
 PY
 
 # Kamihi Remote / Remote for Mac is retired and must never return to this surface.
