@@ -31,6 +31,19 @@ final class DesktopNativeScrollRegistry {
         scrollViews.removeValue(forKey: key)
     }
 
+    /// Returns the visible content-space origin for a registered native scroll
+    /// surface. Hit-testing code uses this rather than assuming offset zero after
+    /// the user has scrolled a list/grid. Adjusted insets are folded in so callers
+    /// can work in the same logical coordinates as their SwiftUI content.
+    func logicalContentOffset(for key: String) -> CGPoint {
+        guard let scrollView = scrollViews[key]?.value else { return .zero }
+        let inset = scrollView.adjustedContentInset
+        return CGPoint(
+            x: max(0, scrollView.contentOffset.x + inset.left),
+            y: max(0, scrollView.contentOffset.y + inset.top)
+        )
+    }
+
     @discardableResult
     func scroll(key: String, deltaX: CGFloat, deltaY: CGFloat) -> Bool {
         let desktop = DesktopSession.shared
