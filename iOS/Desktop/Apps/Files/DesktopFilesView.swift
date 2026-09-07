@@ -118,6 +118,7 @@ struct DesktopFilesView: View {
                             fileRow(file)
                         }
                     }
+                    .background(DesktopNativeScrollBridge(key: "Files"))
                     .padding(7)
                 }
             }
@@ -346,13 +347,36 @@ private struct NativePDFPreview: UIViewRepresentable {
         view.displaysPageBreaks = true
         view.backgroundColor = .clear
         view.document = PDFDocument(url: url)
+        registerScrollableDescendant(of: view)
         return view
     }
 
     func updateUIView(_ view: PDFView, context: Context) {
+        registerScrollableDescendant(of: view)
         guard view.document?.documentURL != url else { return }
         view.document = PDFDocument(url: url)
         view.autoScales = true
+    }
+
+    static func dismantleUIView(_ view: PDFView, coordinator: ()) {
+        if let scrollView = firstScrollView(in: view) {
+            DesktopNativeScrollRegistry.shared.unregister(scrollView, key: "Files")
+        }
+    }
+
+    private func registerScrollableDescendant(of view: UIView) {
+        DispatchQueue.main.async {
+            guard let scrollView = Self.firstScrollView(in: view) else { return }
+            DesktopNativeScrollRegistry.shared.register(scrollView, key: "Files")
+        }
+    }
+
+    private static func firstScrollView(in view: UIView) -> UIScrollView? {
+        if let scrollView = view as? UIScrollView { return scrollView }
+        for subview in view.subviews {
+            if let scrollView = firstScrollView(in: subview) { return scrollView }
+        }
+        return nil
     }
 }
 
@@ -364,14 +388,36 @@ private struct QuickLookPreview: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> QLPreviewController {
         let controller = QLPreviewController()
         controller.dataSource = context.coordinator
+        DispatchQueue.main.async {
+            guard let scrollView = Self.firstScrollView(in: controller.view) else { return }
+            DesktopNativeScrollRegistry.shared.register(scrollView, key: "Files")
+        }
         return controller
     }
 
     func updateUIViewController(_ controller: QLPreviewController, context: Context) {
+        DispatchQueue.main.async {
+            guard let scrollView = Self.firstScrollView(in: controller.view) else { return }
+            DesktopNativeScrollRegistry.shared.register(scrollView, key: "Files")
+        }
         guard context.coordinator.url != url else { return }
         context.coordinator.url = url
         controller.reloadData()
         controller.currentPreviewItemIndex = 0
+    }
+
+    static func dismantleUIViewController(_ controller: QLPreviewController, coordinator: Coordinator) {
+        if let scrollView = firstScrollView(in: controller.view) {
+            DesktopNativeScrollRegistry.shared.unregister(scrollView, key: "Files")
+        }
+    }
+
+    private static func firstScrollView(in view: UIView) -> UIScrollView? {
+        if let scrollView = view as? UIScrollView { return scrollView }
+        for subview in view.subviews {
+            if let scrollView = firstScrollView(in: subview) { return scrollView }
+        }
+        return nil
     }
 
     final class Coordinator: NSObject, QLPreviewControllerDataSource {
