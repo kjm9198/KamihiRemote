@@ -363,9 +363,45 @@ private enum DesktopDocumentLibrary {
 
 private struct NativeFilePreview: View {
     let url: URL
+
+    @ViewBuilder
     var body: some View {
-        if url.pathExtension.lowercased() == "pdf" { NativePDFPreview(url: url) }
-        else { QuickLookPreview(url: url) }
+        if url.pathExtension.lowercased() == "pdf" {
+            if PDFDocument(url: url) != nil {
+                NativePDFPreview(url: url)
+            } else {
+                FilePreviewErrorView(
+                    title: "PDF Can’t Be Opened",
+                    message: "This file is damaged, incomplete, or not a readable PDF. You can still share it or remove it from Kamihi Files."
+                )
+            }
+        } else {
+            QuickLookPreview(url: url)
+        }
+    }
+}
+
+private struct FilePreviewErrorView: View {
+    let title: String
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(.secondary)
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+            Text(message)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 380)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title). \(message)")
     }
 }
 
