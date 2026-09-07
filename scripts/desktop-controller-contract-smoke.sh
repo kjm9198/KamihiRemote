@@ -152,11 +152,11 @@ if 'let sorted = store.notes.sorted' in session:
     raise SystemExit("Notes software-pointer still targets an unfiltered list")
 PY
 
-# Notes has independent sidebar/editor scroll surfaces. Both the phone trackpad
-# and public GameController wheel path call the native registry with key "Notes";
-# the registry must resolve that to the pane under the current cursor so one pane
-# cannot steal scrolling from the other.
-python3 - "$NOTES_VIEW" "$NATIVE_SCROLL" "$TRACKPAD" <<'PY' || fail "Notes pane scroll-ownership contract is broken"
+# Notes has independent sidebar/editor scroll surfaces. Phone trackpad and public
+# GameController wheel input must resolve scroll ownership from the topmost window
+# under the cursor, not a previously-active window behind it. Within Notes, that
+# owner is further split into sidebar vs editor panes.
+python3 - "$NOTES_VIEW" "$NATIVE_SCROLL" "$TRACKPAD" <<'PY' || fail "frontmost Notes scroll-ownership contract is broken"
 import sys
 
 view = open(sys.argv[1], encoding="utf-8").read()
@@ -168,19 +168,22 @@ required_view = [
     'DesktopNativeScrollBridge(key: "Notes.editor")',
 ]
 required_registry = [
-    'let resolvedKey = resolvedScrollKey(for: key)',
+    'let hoveredID = desktop.topWindow(at: desktop.cursor)',
+    'let hoveredKey = hoveredWindow.title',
+    'resolvedScrollKey(for: hoveredKey, window: hoveredWindow)',
+    'DesktopWebInputRegistry.shared.scroll(',
     'guard key == "Notes"',
-    'DesktopSession.shared.cursor',
     'return "Notes.sidebar"',
     'return "Notes.editor"',
     'guard !key.contains(".")',
+    'return true',
 ]
 for needle in required_view:
     if needle not in view:
         raise SystemExit(f"missing Notes pane bridge: {needle}")
 for needle in required_registry:
     if needle not in registry:
-        raise SystemExit(f"missing Notes pane routing guard: {needle}")
+        raise SystemExit(f"missing frontmost scroll routing guard: {needle}")
 if 'DesktopNativeScrollRegistry.shared.scroll(key: key' not in trackpad:
     raise SystemExit("phone trackpad no longer routes native scrolling through the registry")
 PY
