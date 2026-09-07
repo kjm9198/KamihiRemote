@@ -36,6 +36,14 @@ jobs:
       - name: Run Kamihi Desktop simulator smoke
         run: bash scripts/apple-integration-smoke.sh
 
+      # Kamihi targets both device families. Reuse the exact simulator build from
+      # the iPhone smoke and prove that the same binary launches and renders a
+      # non-blank regular-width Desktop Lab on a current iPad simulator. This is
+      # software evidence only; Magic Keyboard, pointer feel and external-display
+      # behavior remain physical checks.
+      - name: Run Kamihi Desktop iPad smoke
+        run: bash scripts/ipad-layout-smoke.sh
+
       - name: Upload smoke evidence
         if: always()
         uses: actions/upload-artifact@v4
