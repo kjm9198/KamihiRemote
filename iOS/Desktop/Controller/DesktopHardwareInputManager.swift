@@ -24,12 +24,21 @@ final class DesktopHardwareInputManager: ObservableObject {
     private var configuredMouse: GCMouse?
     private var started = false
 
+    /// Coalesce only active wheel bursts. This is deliberately task-driven rather
+    /// than a permanent display link/timer: an MX Master free-spin can otherwise
+    /// enqueue many tiny main-actor mutations per frame, while idle desktop energy
+    /// remains zero when the wheel is not moving.
+    private var pendingScrollDelta: CGSize = .zero
+    private var pendingScrollWindowID: UUID?
+    private var scrollFlushTask: Task<Void, Never>?
+
     /// A conservative baseline raw-delta gain tuned for high-DPI productivity
     /// mice such as Logitech MX Master. User sensitivity/acceleration preferences
     /// are applied on top so hardware and the phone trackpad do not feel like two
     /// unrelated pointers.
     private static let hardwarePointerGain: CGFloat = 0.72
     private static let wheelGain: CGFloat = 14.0
+    private static let wheelCoalescingMilliseconds = 8
 
     private init() {}
 
@@ -86,7 +95,7 @@ final class DesktopHardwareInputManager: ObservableObject {
         if let mouse = GCMouse.current ?? GCMouse.mice().last {
             configure(mouse: mouse)
         } else {
-            configuredMouse = nil
+            detachConfiguredMouse()
             isMouseConnected = false
             mouseName = "Mouse"
         }
@@ -104,6 +113,9 @@ final class DesktopHardwareInputManager: ObservableObject {
     }
 
     private func configure(mouse: GCMouse) {
+        if configuredMouse !== mouse {
+            detachConfiguredMouse()
+        }
         configuredMouse = mouse
         isMouseConnected = true
         mouseName = mouse.vendorName?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "Hardware Mouse"
@@ -152,7 +164,6 @@ final class DesktopHardwareInputManager: ObservableObject {
 
         input.scroll.valueChangedHandler = { _, xValue, yValue in
             Task { @MainActor in
-                let desktop = DesktopSession.shared
                 let settings = TrackpadSettings.shared
                 let delta = Self.hardwareScrollDelta(
                     xValue: CGFloat(xValue),
@@ -161,12 +172,7 @@ final class DesktopHardwareInputManager: ObservableObject {
                     naturalScrolling: settings.naturalScrolling
                 )
                 guard hypot(delta.width, delta.height) > 0 else { return }
-
-                guard let key = desktop.activeWindow?.title else { return }
-                if DesktopNativeScrollRegistry.shared.scroll(key: key, deltaX: delta.width, deltaY: delta.height) {
-                    return
-                }
-                desktop.scrollActiveWindow(deltaX: delta.width, deltaY: delta.height)
+                self.enqueueHardwareScroll(delta, desktop: DesktopSession.shared)
             }
         }
 
@@ -186,6 +192,75 @@ final class DesktopHardwareInputManager: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Remove closures from a mouse that is no longer current. iOS can keep more
+    /// than one GCMouse object alive while switching Bluetooth/USB devices; leaving
+    /// handlers attached risks duplicate pointer/wheel delivery if the old device
+    /// emits a late sample. This also drops any wheel burst owned by the old mouse.
+    private func detachConfiguredMouse() {
+        guard let input = configuredMouse?.mouseInput else {
+            configuredMouse = nil
+            cancelPendingScroll()
+            return
+        }
+
+        input.mouseMovedHandler = nil
+        input.leftButton.pressedChangedHandler = nil
+        input.rightButton?.pressedChangedHandler = nil
+        input.scroll.valueChangedHandler = nil
+        for button in input.auxiliaryButtons ?? [] {
+            button.pressedChangedHandler = nil
+        }
+
+        configuredMouse = nil
+        cancelPendingScroll()
+    }
+
+    /// Batch wheel samples that arrive inside one display-scale slice, then route
+    /// one combined delta to the window that owned the burst. If focus changes in
+    /// those few milliseconds, discard rather than scrolling a newly-active app.
+    private func enqueueHardwareScroll(_ delta: CGSize, desktop: DesktopSession) {
+        guard let activeWindowID = desktop.activeWindowID else { return }
+
+        if pendingScrollWindowID != activeWindowID {
+            pendingScrollDelta = .zero
+            pendingScrollWindowID = activeWindowID
+        }
+        pendingScrollDelta.width += delta.width
+        pendingScrollDelta.height += delta.height
+
+        guard scrollFlushTask == nil else { return }
+        scrollFlushTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(Self.wheelCoalescingMilliseconds))
+            guard !Task.isCancelled else { return }
+            self?.flushPendingScroll(desktop: desktop)
+        }
+    }
+
+    private func flushPendingScroll(desktop: DesktopSession) {
+        scrollFlushTask = nil
+        let delta = pendingScrollDelta
+        let ownerID = pendingScrollWindowID
+        pendingScrollDelta = .zero
+        pendingScrollWindowID = nil
+
+        guard hypot(delta.width, delta.height) > 0,
+              let ownerID,
+              desktop.activeWindowID == ownerID,
+              let key = desktop.activeWindow?.title else { return }
+
+        if DesktopNativeScrollRegistry.shared.scroll(key: key, deltaX: delta.width, deltaY: delta.height) {
+            return
+        }
+        desktop.scrollActiveWindow(deltaX: delta.width, deltaY: delta.height)
+    }
+
+    private func cancelPendingScroll() {
+        scrollFlushTask?.cancel()
+        scrollFlushTask = nil
+        pendingScrollDelta = .zero
+        pendingScrollWindowID = nil
     }
 
     /// Apply the same user-facing pointer tuning semantics to a physical mouse
