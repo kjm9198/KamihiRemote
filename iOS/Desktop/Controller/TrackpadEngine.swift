@@ -526,7 +526,7 @@ final class TrackpadEngine: ObservableObject {
         )
         guard hypot(delta.width, delta.height) > 0.10 else { return }
 
-        desktop.scrollActiveWindow(deltaX: delta.width, deltaY: delta.height)
+        routeScroll(delta: delta, desktop: desktop)
 
         let instantaneous = CGSize(
             width: delta.width / CGFloat(dt),
@@ -536,6 +536,14 @@ final class TrackpadEngine: ObservableObject {
             width: scrollVelocity.width * 0.72 + instantaneous.width * 0.28,
             height: scrollVelocity.height * 0.72 + instantaneous.height * 0.28
         )
+    }
+
+    private func routeScroll(delta: CGSize, desktop: DesktopSession) {
+        guard let key = desktop.activeWindow?.title else { return }
+        if DesktopNativeScrollRegistry.shared.scroll(key: key, deltaX: delta.width, deltaY: delta.height) {
+            return
+        }
+        desktop.scrollActiveWindow(deltaX: delta.width, deltaY: delta.height)
     }
 
     /// Symmetric two-axis scroll conversion. Keeping this pure makes vertical
@@ -578,9 +586,12 @@ final class TrackpadEngine: ObservableObject {
             while !Task.isCancelled &&
                     desktop.activeWindowID == momentumWindowID &&
                     hypot(velocity.width, velocity.height) > 6 {
-                desktop.scrollActiveWindow(
-                    deltaX: velocity.width * CGFloat(frameDuration),
-                    deltaY: velocity.height * CGFloat(frameDuration)
+                routeScroll(
+                    delta: CGSize(
+                        width: velocity.width * CGFloat(frameDuration),
+                        height: velocity.height * CGFloat(frameDuration)
+                    ),
+                    desktop: desktop
                 )
                 velocity.width *= decay
                 velocity.height *= decay
