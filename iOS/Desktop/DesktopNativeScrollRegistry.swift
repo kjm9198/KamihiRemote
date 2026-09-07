@@ -33,6 +33,31 @@ final class DesktopNativeScrollRegistry {
 
     @discardableResult
     func scroll(key: String, deltaX: CGFloat, deltaY: CGFloat) -> Bool {
+        let resolvedKey = resolvedScrollKey(for: key)
+        return scrollResolved(key: resolvedKey, deltaX: deltaX, deltaY: deltaY)
+    }
+
+    /// Notes owns two independent scroll surfaces. The sidebar list and editor
+    /// must never steal wheel/two-finger input from each other, so the cursor's
+    /// visible pane selects the registered UIScrollView before applying deltas.
+    /// Other native apps keep their existing one-key behavior.
+    private func resolvedScrollKey(for key: String) -> String {
+        guard key == "Notes",
+              let activeWindow = DesktopSession.shared.activeWindow,
+              activeWindow.title == "Notes" else { return key }
+
+        let frame = DesktopSession.shared.effectiveFrame(for: activeWindow)
+        let cursor = DesktopSession.shared.cursor
+        guard frame.contains(cursor), frame.width > 0 else { return key }
+
+        let localXInCanvasPoints = (cursor.x - frame.minX) * 1920
+        if localXInCanvasPoints <= DesktopNotesLayoutMetrics.sidebarWidth {
+            return "Notes.sidebar"
+        }
+        return "Notes.editor"
+    }
+
+    private func scrollResolved(key: String, deltaX: CGFloat, deltaY: CGFloat) -> Bool {
         let scrollView: UIScrollView?
         if let registered = scrollViews[key]?.value {
             scrollView = registered
@@ -68,7 +93,11 @@ final class DesktopNativeScrollRegistry {
     /// fallback discovers the largest scrollable surface inside the active desktop
     /// window so newly-created native app scroll views do not silently stop working.
     private func discoverVisibleScrollView(for key: String) -> UIScrollView? {
-        guard autoDiscoverableApps.contains(key),
+        // Pane-specific keys such as Notes.sidebar/Notes.editor are intentionally
+        // explicit-only. Falling back to the largest Notes scroll view could route
+        // a sidebar wheel gesture into the editor, recreating the ownership bug.
+        guard !key.contains("."),
+              autoDiscoverableApps.contains(key),
               let activeWindow = DesktopSession.shared.activeWindow,
               activeWindow.title == key else { return nil }
 
