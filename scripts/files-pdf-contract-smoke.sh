@@ -17,6 +17,17 @@ grep -Fq 'UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy
 grep -Fq 'picker.allowsMultipleSelection = true' "$FILES_VIEW" \
   || fail "multi-file import support disappeared"
 
+# Provider-backed URLs can require a security scope while copying. Import failures
+# must be returned to the UI rather than silently disappearing.
+grep -Fq 'source.startAccessingSecurityScopedResource()' "$FILES_VIEW" \
+  || fail "security-scoped provider access disappeared"
+grep -Fq 'source.stopAccessingSecurityScopedResource()' "$FILES_VIEW" \
+  || fail "security-scoped provider cleanup disappeared"
+grep -Fq 'let failedNames: [String]' "$FILES_VIEW" \
+  || fail "import result no longer records failures"
+grep -Fq '.alert("Couldn’t Import Some Files"' "$FILES_VIEW" \
+  || fail "visible import-failure state disappeared"
+
 # Imported content belongs in Application Support and duplicate names must never
 # overwrite an existing Kamihi-owned file.
 grep -Fq '.applicationSupportDirectory' "$FILES_VIEW" \
