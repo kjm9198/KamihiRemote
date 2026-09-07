@@ -29,8 +29,9 @@ final class TrackpadEngine: ObservableObject {
     private static let windowDragHoldDuration: TimeInterval = 0.38
     private static let windowDragPreHoldMovementTolerance: CGFloat = 8.0
 
-    /// Two-finger movement normally means scrolling. Resizing is armed when
-    /// fingers are placed over a window edge or held momentarily.
+    /// Two-finger movement normally means scrolling. Resizing is armed only by
+    /// a deliberate hold before movement, never merely because the pointer happens
+    /// to be resting near a window edge.
     private static let resizeHoldDuration: TimeInterval = 0.24
     private static let resizePreHoldMovementTolerance: CGFloat = 7.0
 
@@ -487,22 +488,15 @@ final class TrackpadEngine: ObservableObject {
             return
         }
 
-        // If the cursor is already over a window resize edge/corner, immediately
-        // prioritize resize over scrolling.
-        if desktop.resizeEdgeAtCursor() != nil, desktop.beginPointerResize() {
-            state = .resizing
-            scrollVelocity = .zero
-            if settings.hapticsEnabled { Haptics.touchTap() }
-            desktop.updatePointerResize(delta: CGSize(width: dx, height: dy))
-            return
-        }
-
         let heldDuration = now - (twoFingerStartTime ?? now)
 
         // Ignore tiny resting jitter while determining intent.
         guard twoFingerMovementDistance > Self.resizePreHoldMovementTolerance else { return }
 
+        // A moving two-finger gesture is scrolling by default. Resize only wins
+        // when the user deliberately held first and is actually on an edge/corner.
         if heldDuration >= Self.resizeHoldDuration,
+           desktop.resizeEdgeAtCursor() != nil,
            desktop.beginPointerResize() {
             state = .resizing
             scrollVelocity = .zero
