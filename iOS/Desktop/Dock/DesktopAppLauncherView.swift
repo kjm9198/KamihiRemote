@@ -29,13 +29,16 @@ struct DesktopAppLauncherView: View {
         }
     }
 
+    /// Kamihi-owned apps use their own visual identity rather than impersonating
+    /// Apple apps. Third-party web apps keep recognizable neutral symbols until
+    /// approved official brand assets are bundled locally.
     private let apps: [AppItem] = [
-        AppItem(title: "Browser", icon: "safari.fill", color: .blue, category: "Web"),
+        AppItem(title: "Browser", icon: "globe.americas.fill", color: .blue, category: "Web"),
         AppItem(title: "Documents", icon: "doc.text.fill", color: .blue, category: "Productivity"),
         AppItem(title: "Sheets", icon: "tablecells.fill", color: .green, category: "Productivity"),
         AppItem(title: "Notes", icon: "note.text", color: .yellow, category: "Productivity"),
         AppItem(title: "Files", icon: "folder.fill", color: .blue, category: "Utilities"),
-        AppItem(title: "ChatGPT", icon: "sparkles", color: .mint, category: "AI & Productivity"),
+        AppItem(title: "ChatGPT", icon: "bubble.left.and.bubble.right.fill", color: .mint, category: "AI & Productivity"),
         AppItem(title: "YouTube", icon: "play.rectangle.fill", color: .red, category: "Media"),
         AppItem(title: "Photos", icon: "photo.on.rectangle.angled", color: .purple, category: "Media"),
         AppItem(title: "Calculator", icon: "plus.forwardslash.minus", color: .orange, category: "Utilities"),
