@@ -52,12 +52,17 @@ grep -Fq 'ShareLink(item: file)' "$FILES_VIEW" \
 grep -Fq 'Button(role: .destructive) { remove(file) }' "$FILES_VIEW" \
   || fail "remove action disappeared"
 
-# PDFs must stay on PDFKit continuous vertical scrolling; other supported files
-# use Quick Look. Both preview paths must register their real UIScrollView with
-# Kamihi's native-scroll bridge so phone two-finger and hardware wheel input route
-# to the frontmost visible preview instead of manipulating a window behind it.
-grep -Fq 'if url.pathExtension.lowercased() == "pdf" { NativePDFPreview(url: url) }' "$FILES_VIEW" \
+# PDFs must stay on PDFKit continuous vertical scrolling; unreadable PDFs must
+# produce a visible recoverable error instead of a blank PDFView. Other supported
+# files use Quick Look. Both preview paths must register their real UIScrollView
+# with Kamihi's native-scroll bridge so phone two-finger and hardware wheel input
+# route to the frontmost visible preview instead of manipulating a window behind it.
+grep -Fq 'if url.pathExtension.lowercased() == "pdf" {' "$FILES_VIEW" \
   || fail "PDF routing disappeared"
+grep -Fq 'if PDFDocument(url: url) != nil {' "$FILES_VIEW" \
+  || fail "PDF readability validation disappeared"
+grep -Fq 'title: "PDF Can’t Be Opened"' "$FILES_VIEW" \
+  || fail "visible unreadable-PDF error state disappeared"
 grep -Fq 'view.displayMode = .singlePageContinuous' "$FILES_VIEW" \
   || fail "PDF continuous-page mode disappeared"
 grep -Fq 'view.displayDirection = .vertical' "$FILES_VIEW" \
