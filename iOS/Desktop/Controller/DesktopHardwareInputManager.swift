@@ -24,11 +24,11 @@ final class DesktopHardwareInputManager: ObservableObject {
     private var configuredMouse: GCMouse?
     private var started = false
 
-    /// A conservative raw-delta gain tuned for high-DPI productivity mice such
-    /// as Logitech MX Master. DesktopSession still applies its bounded pointer
-    /// acceleration curve, so slow movement remains precise and fast movement
-    /// can cross a 1080p desktop without feeling twitchy.
-    private let hardwarePointerGain: CGFloat = 0.72
+    /// A conservative baseline raw-delta gain tuned for high-DPI productivity
+    /// mice such as Logitech MX Master. User sensitivity/acceleration preferences
+    /// are applied on top so hardware and the phone trackpad do not feel like two
+    /// unrelated pointers.
+    private static let hardwarePointerGain: CGFloat = 0.72
     private let wheelGain: CGFloat = 14.0
 
     private init() {}
@@ -110,15 +110,15 @@ final class DesktopHardwareInputManager: ObservableObject {
 
         guard let input = mouse.mouseInput else { return }
 
-        input.mouseMovedHandler = { [weak self] _, deltaX, deltaY in
+        input.mouseMovedHandler = { _, deltaX, deltaY in
             Task { @MainActor in
-                guard let self else { return }
                 let desktop = DesktopSession.shared
-                let delta = CGSize(
-                    width: CGFloat(deltaX) * self.hardwarePointerGain,
-                    // GameController reports positive Y upward; Kamihi's
-                    // normalized desktop coordinate grows downward.
-                    height: -CGFloat(deltaY) * self.hardwarePointerGain
+                let settings = TrackpadSettings.shared
+                let delta = Self.hardwarePointerDelta(
+                    deltaX: CGFloat(deltaX),
+                    deltaY: CGFloat(deltaY),
+                    sensitivity: settings.pointerSensitivity,
+                    acceleration: settings.pointerAcceleration
                 )
 
                 // Window drag/resize owns pointer advancement internally. Routing
@@ -183,6 +183,33 @@ final class DesktopHardwareInputManager: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Apply the same user-facing pointer tuning semantics to a physical mouse
+    /// without relying on device-specific Logitech APIs. The raw GameController
+    /// delta is already high resolution, so this intentionally uses a bounded,
+    /// distance-based acceleration gain instead of time-based smoothing. That
+    /// keeps low-speed MX Master motion precise while still honoring the Fast /
+    /// Precision profiles and avoiding an idle timer or extra frame loop.
+    static func hardwarePointerDelta(
+        deltaX: CGFloat,
+        deltaY: CGFloat,
+        sensitivity: Double,
+        acceleration: Double
+    ) -> CGSize {
+        let normalizedSensitivity = CGFloat(TrackpadSettings.normalizedPointerSensitivity(sensitivity))
+        let normalizedAcceleration = CGFloat(TrackpadSettings.normalizedPointerAcceleration(acceleration))
+        let rawDistance = hypot(deltaX, deltaY)
+        let accelerationProgress = min(max((rawDistance - 1.0) / 18.0, 0), 1)
+        let accelerationGain = 1.0 + normalizedAcceleration * accelerationProgress * 0.22
+        let gain = min(Self.hardwarePointerGain * normalizedSensitivity * accelerationGain, 2.2)
+
+        return CGSize(
+            width: deltaX * gain,
+            // GameController reports positive Y upward; Kamihi's normalized
+            // desktop coordinate grows downward.
+            height: -deltaY * gain
+        )
     }
 
     /// Physical mice should behave differently from the phone's gesture surface:
