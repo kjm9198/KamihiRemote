@@ -29,7 +29,7 @@ final class DesktopHardwareInputManager: ObservableObject {
     /// are applied on top so hardware and the phone trackpad do not feel like two
     /// unrelated pointers.
     private static let hardwarePointerGain: CGFloat = 0.72
-    private let wheelGain: CGFloat = 14.0
+    private static let wheelGain: CGFloat = 14.0
 
     private init() {}
 
@@ -150,20 +150,23 @@ final class DesktopHardwareInputManager: ObservableObject {
             }
         }
 
-        input.scroll.valueChangedHandler = { [weak self] _, xValue, yValue in
+        input.scroll.valueChangedHandler = { _, xValue, yValue in
             Task { @MainActor in
-                guard let self else { return }
                 let desktop = DesktopSession.shared
                 let settings = TrackpadSettings.shared
-                let direction: CGFloat = settings.naturalScrolling ? -1 : 1
-                let deltaX = CGFloat(xValue) * self.wheelGain * CGFloat(settings.scrollSpeed) * direction
-                let deltaY = -CGFloat(yValue) * self.wheelGain * CGFloat(settings.scrollSpeed) * direction
+                let delta = Self.hardwareScrollDelta(
+                    xValue: CGFloat(xValue),
+                    yValue: CGFloat(yValue),
+                    speed: settings.scrollSpeed,
+                    naturalScrolling: settings.naturalScrolling
+                )
+                guard hypot(delta.width, delta.height) > 0 else { return }
 
                 guard let key = desktop.activeWindow?.title else { return }
-                if DesktopNativeScrollRegistry.shared.scroll(key: key, deltaX: deltaX, deltaY: deltaY) {
+                if DesktopNativeScrollRegistry.shared.scroll(key: key, deltaX: delta.width, deltaY: delta.height) {
                     return
                 }
-                desktop.scrollActiveWindow(deltaX: deltaX, deltaY: deltaY)
+                desktop.scrollActiveWindow(deltaX: delta.width, deltaY: delta.height)
             }
         }
 
@@ -209,6 +212,41 @@ final class DesktopHardwareInputManager: ObservableObject {
             // GameController reports positive Y upward; Kamihi's normalized
             // desktop coordinate grows downward.
             height: -deltaY * gain
+        )
+    }
+
+    /// Converts high-resolution mouse-wheel samples into Kamihi's two-axis scroll
+    /// coordinates while suppressing tiny cross-axis sensor noise. This is
+    /// especially important for MX Master-class wheels: a vertical free-spin
+    /// should not slowly drift a spreadsheet/browser sideways, and the horizontal
+    /// thumb wheel should not make content bob vertically. Genuine diagonal input
+    /// is preserved whenever both axes are substantial.
+    static func hardwareScrollDelta(
+        xValue: CGFloat,
+        yValue: CGFloat,
+        speed: Double,
+        naturalScrolling: Bool
+    ) -> CGSize {
+        var x = abs(xValue) < 0.025 ? 0 : xValue
+        var y = abs(yValue) < 0.025 ? 0 : yValue
+
+        let absX = abs(x)
+        let absY = abs(y)
+        if absX > 0, absY > 0 {
+            if absX < absY * 0.24 {
+                x = 0
+            } else if absY < absX * 0.24 {
+                y = 0
+            }
+        }
+
+        let direction: CGFloat = naturalScrolling ? -1 : 1
+        let gain = Self.wheelGain * CGFloat(TrackpadSettings.normalizedScrollSpeed(speed)) * direction
+        return CGSize(
+            width: x * gain,
+            // GameController wheel Y is positive upward while content-space Y
+            // grows downward, matching the existing trackpad scroll convention.
+            height: -y * gain
         )
     }
 
