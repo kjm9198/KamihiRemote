@@ -5,7 +5,7 @@ import WebKit
 
 /// Persistent desktop browser with one retained WKWebView per warm tab. The tab
 /// strip and navigation controls use the same uniform Golden Gate toolbar system
-/// as native Kamihi apps while preserving desktop Safari-style web behavior.
+/// as native Kamihi apps while preserving desktop-class WebKit behavior.
 struct DesktopBrowserView: View {
     @StateObject private var state = DesktopBrowserState.shared
     @StateObject private var controller = DesktopBrowserController()
@@ -209,7 +209,7 @@ struct DesktopBrowserView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 3) {
                     if state.bookmarks.isEmpty {
-                        // Default quick Safari favorites when no bookmarks imported yet
+                        // Default quick favorites when no bookmarks imported yet.
                         favoritesItem(title: "Google", url: URL(string: "https://www.google.com")!)
                         favoritesItem(title: "YouTube", url: URL(string: "https://www.youtube.com")!)
                         favoritesItem(title: "Wikipedia", url: URL(string: "https://www.wikipedia.org")!)
@@ -450,7 +450,10 @@ final class DesktopBrowserController: ObservableObject {
         configuration.defaultWebpagePreferences.preferredContentMode = .desktop
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15"
+        // Request desktop page layout through WebKit's public API while keeping
+        // WKWebView's real iOS/WebKit user agent. Pretending to be macOS Safari
+        // can make sites select Safari-only auth, passkey, or media assumptions
+        // that do not match the actual embedded WebKit runtime.
         webView.isOpaque = false
         webView.backgroundColor = .systemBackground
         webView.scrollView.backgroundColor = .systemBackground
