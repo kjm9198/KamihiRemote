@@ -11,6 +11,7 @@ struct DesktopFilesView: View {
     @State private var showDocumentPicker = false
     @State private var selectedFile: URL?
     @State private var searchText = ""
+    @State private var importErrorMessage: String?
 
     private var visibleFiles: [URL] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -27,14 +28,23 @@ struct DesktopFilesView: View {
         .background(DesktopShellPalette.canvas)
         .sheet(isPresented: $showDocumentPicker) {
             DocumentPicker { pickedFiles in
-                let imported = DesktopDocumentLibrary.importCopies(from: pickedFiles)
+                let result = DesktopDocumentLibrary.importCopies(from: pickedFiles)
                 importedFiles = DesktopDocumentLibrary.load()
-                if let first = imported.first {
+                if let first = result.imported.first {
                     selectedFile = first
                 } else if selectedFile == nil {
                     selectedFile = importedFiles.first
                 }
+                importErrorMessage = result.failureMessage
             }
+        }
+        .alert("Couldn’t Import Some Files", isPresented: Binding(
+            get: { importErrorMessage != nil },
+            set: { if !$0 { importErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { importErrorMessage = nil }
+        } message: {
+            Text(importErrorMessage ?? "The selected files could not be imported.")
         }
         .onAppear {
             importedFiles = DesktopDocumentLibrary.load()
@@ -267,6 +277,19 @@ struct DesktopFilesView: View {
 private enum DesktopDocumentLibrary {
     private static let folderName = "Kamihi Desktop Files"
 
+    struct ImportResult {
+        let imported: [URL]
+        let failedNames: [String]
+
+        var failureMessage: String? {
+            guard !failedNames.isEmpty else { return nil }
+            if failedNames.count == 1 {
+                return "\(failedNames[0]) couldn’t be copied into Kamihi Files. The original file was not changed."
+            }
+            return "\(failedNames.count) files couldn’t be copied into Kamihi Files. The original files were not changed."
+        }
+    }
+
     static func load() -> [URL] {
         guard let directory = directory(createIfNeeded: true),
               let files = try? FileManager.default.contentsOfDirectory(
@@ -282,19 +305,29 @@ private enum DesktopDocumentLibrary {
         }
     }
 
-    static func importCopies(from urls: [URL]) -> [URL] {
-        guard let directory = directory(createIfNeeded: true) else { return [] }
+    static func importCopies(from urls: [URL]) -> ImportResult {
+        guard let directory = directory(createIfNeeded: true) else {
+            return ImportResult(imported: [], failedNames: urls.map(\.lastPathComponent))
+        }
+
         var imported: [URL] = []
+        var failedNames: [String] = []
         for source in urls {
             let destination = uniqueDestination(for: source.lastPathComponent, in: directory)
+            let didAccessSecurityScope = source.startAccessingSecurityScopedResource()
+            defer {
+                if didAccessSecurityScope {
+                    source.stopAccessingSecurityScopedResource()
+                }
+            }
             do {
                 try FileManager.default.copyItem(at: source, to: destination)
                 imported.append(destination)
             } catch {
-                continue
+                failedNames.append(source.lastPathComponent)
             }
         }
-        return imported
+        return ImportResult(imported: imported, failedNames: failedNames)
     }
 
     static func remove(_ url: URL) {
