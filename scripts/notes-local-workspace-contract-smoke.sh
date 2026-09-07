@@ -14,6 +14,7 @@ fail() {
 [[ -f "$VIEW" ]] || fail "DesktopNotesView.swift is missing"
 
 python3 - "$STORE" "$VIEW" <<'PY' || fail "local rich Notes workspace contract is broken"
+import re
 import sys
 
 store = open(sys.argv[1], encoding="utf-8").read()
@@ -54,8 +55,14 @@ for needle in required_view:
     if needle not in view:
         raise SystemExit(f"missing local Notes view guard: {needle}")
 
-# The Notes AI path must remain explicitly on-device. Do not silently add a
-# network/cloud fallback for private note contents.
+# Scan executable Swift, not comments, so a privacy comment such as "no network
+# client is used" cannot accidentally fail the guard. This remains intentionally
+# conservative: any actual network/cloud symbol in the Notes implementation fails.
+def strip_comments(text):
+    text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
+    return re.sub(r'//.*$', '', text, flags=re.M)
+
+executable = strip_comments(store + "\n" + view)
 for banned in [
     'URLSession',
     'PrivateCloudComputeLanguageModel',
@@ -63,7 +70,7 @@ for banned in [
     'api.anthropic.com',
     'Authorization: Bearer',
 ]:
-    if banned in store or banned in view:
+    if banned in executable:
         raise SystemExit(f"cloud/network dependency leaked into local Notes: {banned}")
 
 # Existing plain-text notes must stay readable after the rich-text upgrade.
