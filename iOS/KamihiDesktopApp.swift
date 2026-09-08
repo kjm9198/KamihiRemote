@@ -15,6 +15,10 @@ struct KamihiDesktopApp: App {
 
     init() {
         Task { @MainActor in
+            // Restore Calculator state before any Desktop Lab/app-flow harness or
+            // user interaction can mutate it, then observe future local changes.
+            DesktopCalculatorPersistence.shared.activate()
+
             // Hardware keyboards keep UIKit/SwiftUI's native text path, while
             // Bluetooth or USB-C mice feed Kamihi's virtual desktop pointer.
             DesktopHardwareInputManager.shared.start()
