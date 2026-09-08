@@ -3,6 +3,7 @@ set -euo pipefail
 
 SOURCE="iOS/DesktopUtilityCenter.swift"
 KEYBOARD="iOS/Desktop/Controller/DesktopHardwareKeyboardReceiver.swift"
+CONTROLLER="iOS/Desktop/Controller/DesktopControllerView.swift"
 APP="iOS/KamihiDesktopApp.swift"
 POINTER="iOS/Desktop/Apps/Calculator/DesktopCalculatorHitRegistry.swift"
 SESSION="iOS/Desktop/DesktopSessionExtensions.swift"
@@ -14,6 +15,7 @@ fail() {
 
 [[ -f "$SOURCE" ]] || fail "missing $SOURCE"
 [[ -f "$KEYBOARD" ]] || fail "missing $KEYBOARD"
+[[ -f "$CONTROLLER" ]] || fail "missing $CONTROLLER"
 [[ -f "$APP" ]] || fail "missing $APP"
 [[ -f "$POINTER" ]] || fail "missing $POINTER"
 [[ -f "$SESSION" ]] || fail "missing $SESSION"
@@ -41,6 +43,18 @@ grep -Fq 'case "*", "×":' "$KEYBOARD" || fail "hardware multiply mapping missin
 grep -Fq 'case "/", "÷":' "$KEYBOARD" || fail "hardware divide mapping missing"
 grep -Fq 'case "-", "−":' "$KEYBOARD" || fail "hardware subtract mapping missing"
 grep -Fq 'desktop.wantsPhoneKeyboard || desktop.activeWindow?.title == "Calculator"' "$APP" || fail "frontmost Calculator does not keep hardware receiver active"
+
+# Phone software keyboard must also stay Calculator-local instead of falling
+# through the generic WebKit typing route.
+grep -Fq 'activeWindowTitle == "Calculator" ? .numbersAndPunctuation : .default' "$CONTROLLER" || fail "Calculator phone keyboard type missing"
+grep -Fq 'case "Calculator": return "Enter calculation…"' "$CONTROLLER" || fail "Calculator phone keyboard placeholder missing"
+grep -Fq 'if activeWindowTitle == "Calculator" {' "$CONTROLLER" || fail "Calculator phone keyboard ownership missing"
+grep -Fq 'DesktopCalculatorStore.shared.evaluate()' "$CONTROLLER" || fail "Calculator phone Return/equals routing missing"
+grep -Fq 'DesktopCalculatorStore.shared.backspace()' "$CONTROLLER" || fail "Calculator phone delete routing missing"
+grep -Fq 'routeCalculatorText(String(newChars.dropFirst(common)))' "$CONTROLLER" || fail "Calculator phone text routing missing"
+grep -Fq 'case "*", "×":' "$CONTROLLER" || fail "phone multiply mapping missing"
+grep -Fq 'case "/", "÷":' "$CONTROLLER" || fail "phone divide mapping missing"
+grep -Fq 'case "-", "−":' "$CONTROLLER" || fail "phone subtract mapping missing"
 
 # Phone-controlled software pointer must hit the real rendered keypad geometry,
 # not approximate fixed coordinates that drift after window resize or on iPad.
