@@ -12,14 +12,18 @@ extension DesktopSession {
     ]
 
     /// Clipboard is a normal desktop window, so opening or clicking it makes it
-    /// frontmost. Paste must therefore resolve the most-recent visible editable
-    /// app *behind* Clipboard instead of typing into the Clipboard window itself.
+    /// frontmost. Paste must target the immediately previous visible window only;
+    /// skipping an unsupported app could unexpectedly inject text into an older
+    /// editor that the user did not intend to target.
     var clipboardPasteDestination: DesktopWindow? {
-        windows.reversed().first { window in
-            !window.isMinimized &&
-            window.title != "Clipboard" &&
-            Self.clipboardPasteTargetTitles.contains(window.title)
-        }
+        guard activeWindow?.title == "Clipboard",
+              let clipboardID = activeWindowID,
+              let clipboardIndex = windows.lastIndex(where: { $0.id == clipboardID }) else { return nil }
+
+        let previousVisible = windows[..<clipboardIndex].reversed().first { !$0.isMinimized }
+        guard let previousVisible,
+              Self.clipboardPasteTargetTitles.contains(previousVisible.title) else { return nil }
+        return previousVisible
     }
 
     var canPasteClipboardIntoPreviousApp: Bool {
