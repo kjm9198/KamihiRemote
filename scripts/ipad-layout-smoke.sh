@@ -85,8 +85,8 @@ wait_for_marker() {
   local category="$1"
   local marker="$2"
   local label="$3"
-  for poll in $(seq 1 20); do
-    if xcrun simctl spawn "$UDID" log show --last 2m --style compact \
+  for poll in $(seq 1 30); do
+    if xcrun simctl spawn "$UDID" log show --last 3m --style compact \
         --predicate "subsystem == \"com.kamihi.remote\" AND category == \"$category\"" \
         2>/dev/null | grep -Fq "$marker"; then
       echo "$label ready on poll $poll"
@@ -121,17 +121,11 @@ if ! xcrun simctl launch "$UDID" com.kamihi.remote -KamihiDesktopLab -KamihiCalc
   exit 1
 fi
 
-# Give SwiftUI enough time to resolve the regular-width layout, Desktop Lab,
-# and the Calculator lifecycle harness that leaves the reopened Calculator
-# frontmost for visual evidence.
 sleep 3
 wait_for_marker "CalculatorSmoke" "KAMIHI_CALCULATOR_LIFECYCLE_OK" "iPad Calculator lifecycle marker"
 capture_nonblank "$SMOKE_DIR/ipad-desktop-lab.png"
 echo "KAMIHI_IPAD_CALCULATOR_LIFECYCLE_OK" | tee "$SMOKE_DIR/ipad-calculator-smoke.txt"
 
-# Terminate the process without uninstalling or erasing the simulator. The next
-# launch must restore the calculation written by the first run from the exact
-# same app container, proving iPad process-restart continuity as well.
 xcrun simctl terminate "$UDID" com.kamihi.remote >/dev/null 2>&1 || true
 if ! xcrun simctl launch "$UDID" com.kamihi.remote -KamihiDesktopLab -KamihiCalculatorPersistenceVerifySmoke >> "$IPAD_LOG" 2>&1; then
   echo "Kamihi Desktop failed to relaunch for Calculator persistence on iPad Simulator"
@@ -142,10 +136,10 @@ wait_for_marker "CalculatorSmoke" "KAMIHI_CALCULATOR_PROCESS_RESTART_OK" "iPad C
 capture_nonblank "$SMOKE_DIR/ipad-calculator-process-restart.png"
 echo "KAMIHI_IPAD_CALCULATOR_PROCESS_RESTART_OK" | tee "$SMOKE_DIR/ipad-calculator-process-restart-smoke.txt"
 
-# Clipboard has its own iPad app-flow gate rather than inheriting confidence
-# from the generic layout launch. This exercises Notes -> Clipboard paste/focus,
-# minimize/restore/maximize/X lifecycle, and the unsupported adjacent-target
-# rejection using the same shared DesktopSession used by the iPhone lab.
+# Clipboard has its own iPad app-flow gate. The first marker proves lifecycle and
+# destination ownership; the second is emitted only after the rendered SwiftUI
+# Refresh/Copy/Notes/Paste/Share/Clear targets and long-history native scrolling
+# have been driven through the same software pointer used by the iPhone trackpad.
 xcrun simctl terminate "$UDID" com.kamihi.remote >/dev/null 2>&1 || true
 if ! xcrun simctl launch "$UDID" com.kamihi.remote -KamihiDesktopLab -KamihiClipboardLifecycleSmoke >> "$IPAD_LOG" 2>&1; then
   echo "Kamihi Desktop failed to relaunch for Clipboard lifecycle on iPad Simulator"
@@ -153,13 +147,12 @@ if ! xcrun simctl launch "$UDID" com.kamihi.remote -KamihiDesktopLab -KamihiClip
 fi
 sleep 2
 wait_for_marker "ClipboardSmoke" "KAMIHI_CLIPBOARD_LIFECYCLE_OK" "iPad Clipboard lifecycle marker"
-capture_nonblank "$SMOKE_DIR/ipad-clipboard-lifecycle.png"
+wait_for_marker "ClipboardPointerSmoke" "KAMIHI_CLIPBOARD_POINTER_OK" "iPad Clipboard rendered-pointer marker"
+capture_nonblank "$SMOKE_DIR/ipad-clipboard-pointer-controls.png"
 echo "KAMIHI_IPAD_CLIPBOARD_LIFECYCLE_OK" | tee "$SMOKE_DIR/ipad-clipboard-smoke.txt"
+echo "KAMIHI_IPAD_CLIPBOARD_POINTER_OK" | tee "$SMOKE_DIR/ipad-clipboard-pointer-smoke.txt"
 
-# Confirm the app is still alive after regular-width layout/rendering.
 if ! xcrun simctl spawn "$UDID" launchctl print system 2>/dev/null | grep -Fq "com.kamihi.remote"; then
-  # launchctl representation differs across simulator runtimes; fall back to
-  # checking that a second screenshot succeeds without relaunching the app.
   if ! xcrun simctl io "$UDID" screenshot "$SMOKE_DIR/ipad-desktop-lab-alive.png" >/dev/null 2>&1; then
     echo "Kamihi Desktop did not remain alive on iPad Simulator"
     exit 1
