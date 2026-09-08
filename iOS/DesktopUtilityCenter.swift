@@ -260,118 +260,144 @@ struct DesktopClipboardCenterView: View {
     @State private var confirmClear = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "doc.on.clipboard.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.indigo)
-                    .frame(width: 26, height: 26)
-                    .background(Color.indigo.opacity(0.11), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                Text("Clipboard")
-                    .font(.system(size: 13, weight: .semibold))
-                Spacer()
-                Button { clipboard.captureIfChanged() } label: {
-                    DesktopToolbarIconLabel("arrow.clockwise")
+        GeometryReader { clipboardGeo in
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.on.clipboard.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.indigo)
+                        .frame(width: 26, height: 26)
+                        .background(Color.indigo.opacity(0.11), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    Text("Clipboard")
+                        .font(.system(size: 13, weight: .semibold))
+                    Spacer()
+                    Button { clipboard.captureIfChanged() } label: {
+                        DesktopToolbarIconLabel("arrow.clockwise")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Refresh clipboard")
+                    .desktopClipboardHitTarget(.toolbarRefresh, containerSize: clipboardGeo.size)
+                    Button(role: .destructive) { confirmClear = true } label: {
+                        DesktopToolbarIconLabel("trash")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(clipboard.items.isEmpty && UIPasteboard.general.items.isEmpty)
+                    .accessibilityLabel("Clear clipboard")
+                    .desktopClipboardHitTarget(.toolbarClear, containerSize: clipboardGeo.size)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Refresh clipboard")
-                Button(role: .destructive) { confirmClear = true } label: {
-                    DesktopToolbarIconLabel("trash")
-                }
-                .buttonStyle(.plain)
-                .disabled(clipboard.items.isEmpty && UIPasteboard.general.items.isEmpty)
-                .accessibilityLabel("Clear clipboard")
-            }
-            .padding(.horizontal, 10)
-            .frame(height: DesktopShellMetrics.toolbarHeight)
-            .desktopAppToolbar()
+                .padding(.horizontal, 10)
+                .frame(height: DesktopShellMetrics.toolbarHeight)
+                .desktopAppToolbar()
 
-            if clipboard.items.isEmpty {
-                VStack(spacing: 10) {
-                    Image(systemName: "doc.on.clipboard")
-                        .font(.system(size: 36, weight: .light))
-                        .foregroundStyle(.tertiary)
-                    Text("Clipboard Empty")
-                        .font(.system(size: 15, weight: .semibold))
-                    Text("Copy text on the iPhone, then refresh. Kamihi keeps clipboard history only in memory.")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 380)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(Array(clipboard.items.enumerated()), id: \.offset) { _, item in
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text(item)
-                                    .font(.system(size: 12.5))
-                                    .lineLimit(5)
-                                    .textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                if clipboard.items.isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "doc.on.clipboard")
+                            .font(.system(size: 36, weight: .light))
+                            .foregroundStyle(.tertiary)
+                        Text("Clipboard Empty")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("Copy text on the iPhone, then refresh. Kamihi keeps clipboard history only in memory.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 380)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 8) {
+                            ForEach(Array(clipboard.items.enumerated()), id: \.offset) { _, item in
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text(item)
+                                        .font(.system(size: 12.5))
+                                        .lineLimit(5)
+                                        .textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                                HStack(spacing: 6) {
-                                    Button("Paste", systemImage: "arrow.down.doc") {
-                                        desktop.pasteClipboardItemIntoPreviousApp(item)
-                                    }
-                                    .buttonStyle(.borderedProminent)
-                                    .controlSize(.small)
-                                    .disabled(!desktop.canPasteClipboardIntoPreviousApp)
-                                    .accessibilityHint("Pastes into the most recently used editable app behind Clipboard")
+                                    HStack(spacing: 6) {
+                                        Button("Paste", systemImage: "arrow.down.doc") {
+                                            desktop.pasteClipboardItemIntoPreviousApp(item)
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                        .controlSize(.small)
+                                        .disabled(!desktop.canPasteClipboardIntoPreviousApp)
+                                        .accessibilityHint("Pastes into the most recently used editable app behind Clipboard")
+                                        .desktopClipboardHitTarget(.itemPaste(item), containerSize: clipboardGeo.size)
 
-                                    Button("Copy", systemImage: "doc.on.doc") { clipboard.copy(item) }
+                                        Button("Copy", systemImage: "doc.on.doc") { clipboard.copy(item) }
+                                            .buttonStyle(.bordered)
+                                            .controlSize(.small)
+                                            .desktopClipboardHitTarget(.itemCopy(item), containerSize: clipboardGeo.size)
+
+                                        Button("Notes", systemImage: "note.text.badge.plus") {
+                                            if !notes.text.isEmpty { notes.text += "\n\n" }
+                                            notes.text += item
+                                            desktop.openNotes()
+                                        }
                                         .buttonStyle(.bordered)
                                         .controlSize(.small)
+                                        .desktopClipboardHitTarget(.itemNotes(item), containerSize: clipboardGeo.size)
 
-                                    Button("Notes", systemImage: "note.text.badge.plus") {
-                                        if !notes.text.isEmpty { notes.text += "\n\n" }
-                                        notes.text += item
-                                        desktop.openNotes()
+                                        ShareLink(item: item) {
+                                            Image(systemName: "square.and.arrow.up")
+                                                .frame(width: 26, height: 26)
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.small)
+                                        .accessibilityLabel("Share clipboard item")
+                                        .desktopClipboardHitTarget(.itemShare(item), containerSize: clipboardGeo.size)
                                     }
-                                    .buttonStyle(.bordered)
-                                    .controlSize(.small)
-
-                                    ShareLink(item: item) {
-                                        Image(systemName: "square.and.arrow.up")
-                                            .frame(width: 26, height: 26)
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .controlSize(.small)
-                                    .accessibilityLabel("Share clipboard item")
                                 }
+                                .padding(12)
+                                .desktopInsetPanel()
                             }
-                            .padding(12)
-                            .desktopInsetPanel()
                         }
+                        .background(DesktopNativeScrollBridge(key: "Clipboard"))
+                        .padding(14)
                     }
-                    .padding(14)
                 }
-            }
 
-            HStack(spacing: 7) {
-                Image(systemName: "hand.raised.fill")
-                    .foregroundStyle(.secondary)
-                Text("Clipboard history is not written to disk. Refresh reads the current iOS pasteboard only when requested.")
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(.secondary)
-                Spacer()
+                HStack(spacing: 7) {
+                    Image(systemName: "hand.raised.fill")
+                        .foregroundStyle(.secondary)
+                    Text("Clipboard history is not written to disk. Refresh reads the current iOS pasteboard only when requested.")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .frame(height: 34)
+                .desktopAppToolbar()
             }
-            .padding(.horizontal, 12)
-            .frame(height: 34)
-            .desktopAppToolbar()
+            .coordinateSpace(name: "desktopClipboardContent")
+            .onPreferenceChange(DesktopClipboardHitPreferenceKey.self) { preferences in
+                DesktopClipboardHitRegistry.shared.update(
+                    entries: preferences.map {
+                        DesktopClipboardHitRegistry.Entry(
+                            target: $0.target,
+                            normalizedFrame: $0.normalizedFrame
+                        )
+                    }
+                )
+            }
+            .onAppear {
+                DesktopClipboardHitRegistry.shared.onClearRequested = { confirmClear = true }
+                clipboard.captureIfChanged()
+            }
+            .onDisappear {
+                DesktopClipboardHitRegistry.shared.clear()
+            }
+            .confirmationDialog("Clear clipboard?", isPresented: $confirmClear, titleVisibility: .visible) {
+                Button("Clear iOS Clipboard & Kamihi History", role: .destructive) {
+                    UIPasteboard.general.items = []
+                    clipboard.clear()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes Kamihi's in-memory history and clears the current iOS system clipboard. It cannot be undone.")
+            }
         }
         .background(DesktopShellPalette.canvas)
-        .onAppear { clipboard.captureIfChanged() }
-        .confirmationDialog("Clear clipboard?", isPresented: $confirmClear, titleVisibility: .visible) {
-            Button("Clear iOS Clipboard & Kamihi History", role: .destructive) {
-                UIPasteboard.general.items = []
-                clipboard.clear()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This removes Kamihi's in-memory history and clears the current iOS system clipboard. It cannot be undone.")
-        }
     }
 }
 
