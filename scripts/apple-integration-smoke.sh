@@ -177,6 +177,22 @@ wait_for_ready_marker() {
   return 0
 }
 
+wait_for_calculator_marker() {
+  local poll=1
+  while (( poll <= 10 )); do
+    if xcrun simctl spawn "$UDID" log show --last 1m --style compact \
+      --predicate 'subsystem == "com.kamihi.remote" AND composedMessage CONTAINS "KAMIHI_CALCULATOR_LIFECYCLE_OK"' 2>/dev/null \
+      | grep -Fq "KAMIHI_CALCULATOR_LIFECYCLE_OK"; then
+      echo "Calculator lifecycle runtime marker observed"
+      return 0
+    fi
+    sleep 1
+    poll=$((poll + 1))
+  done
+  echo "Calculator lifecycle marker was not observed"
+  return 1
+}
+
 run_desktop_lab_attempt() {
   local attempt="$1"
   local output="$SMOKE_DIR/desktop-lab-attempt-${attempt}.png"
@@ -198,17 +214,34 @@ run_desktop_lab_attempt() {
   return 1
 }
 
+run_calculator_lifecycle_smoke() {
+  local output="$SMOKE_DIR/calculator-lifecycle.png"
+
+  echo "==> Launching Calculator lifecycle smoke (mandatory attempt 1)"
+  xcrun simctl terminate "$UDID" com.kamihi.remote >/dev/null 2>&1 || true
+  if ! xcrun simctl launch "$UDID" com.kamihi.remote -KamihiDesktopLab -KamihiCalculatorLifecycleSmoke >> "$SIM_LOG" 2>&1; then
+    echo "Calculator lifecycle simctl launch failed"
+    return 1
+  fi
+
+  sleep 2
+  wait_for_calculator_marker || return 1
+  capture_desktop_lab_screen "$output" || return 1
+  echo "KAMIHI_CALCULATOR_LIFECYCLE_SMOKE_OK" | tee "$SMOKE_DIR/calculator-lifecycle-smoke.txt"
+}
+
 if ! boot_simulator; then
   echo "Initial simulator boot failed; erasing and retrying once"
   recover_simulator true
 fi
 install_app
 
+smoke_ok=false
 attempt=1
 while (( attempt <= 3 )); do
   if run_desktop_lab_attempt "$attempt"; then
-    echo "KAMIHI_DESKTOP_SMOKE_OK" | tee "$SMOKE_DIR/desktop-smoke.txt"
-    exit 0
+    smoke_ok=true
+    break
   fi
 
   if (( attempt < 3 )); then
@@ -222,5 +255,17 @@ while (( attempt <= 3 )); do
   attempt=$((attempt + 1))
 done
 
-echo "Desktop Lab failed all three bounded smoke attempts"
-exit 1
+if [[ "$smoke_ok" != "true" ]]; then
+  echo "Desktop Lab failed all three bounded smoke attempts"
+  exit 1
+fi
+
+echo "KAMIHI_DESKTOP_SMOKE_OK" | tee "$SMOKE_DIR/desktop-smoke.txt"
+
+# Calculator is now a dedicated app-completeness gate. Unlike the broad simulator
+# boot harness above, this app-flow assertion is intentionally first-attempt only:
+# a failed lifecycle run must remain visible as a failure rather than being hidden
+# behind a same-SHA retry.
+run_calculator_lifecycle_smoke
+
+echo "KAMIHI_APP_FLOW_SMOKE_OK" | tee "$SMOKE_DIR/app-flow-smoke.txt"
