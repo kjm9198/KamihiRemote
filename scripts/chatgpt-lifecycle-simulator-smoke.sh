@@ -9,6 +9,24 @@ mkdir -p "$SMOKE_DIR"
 
 [[ -d "$APP" ]] || { echo "ChatGPT smoke requires the simulator build from apple-integration-smoke.sh"; exit 1; }
 
+# CoreSimulator commands occasionally wedge on hosted macOS runners. Bound only
+# infrastructure operations; the actual ChatGPT lifecycle assertion still gets
+# exactly one app launch and must emit its own success marker.
+bounded() {
+  local seconds="$1"
+  shift
+  python3 - "$seconds" "$@" <<'PY'
+import subprocess, sys
+seconds=float(sys.argv[1])
+cmd=sys.argv[2:]
+try:
+    completed=subprocess.run(cmd, timeout=seconds)
+except subprocess.TimeoutExpired:
+    raise SystemExit(124)
+raise SystemExit(completed.returncode)
+PY
+}
+
 pick_device() {
   local family="$1"
   xcrun simctl list devices available -j | python3 -c '
@@ -53,15 +71,12 @@ ensure_simulator_ready() {
   local name="$2"
   local attempt
 
-  # `simctl bootstatus -b` can block for many minutes on GitHub's macOS-26
-  # runners even after CoreSimulator already reports the device as Booted.
-  # Bound readiness by observable state and by a successful install instead.
   if ! is_booted "$udid"; then
-    xcrun simctl boot "$udid" >/dev/null 2>&1 || true
+    bounded 8 xcrun simctl boot "$udid" >/dev/null 2>&1 || true
   fi
 
   attempt=1
-  while (( attempt <= 60 )); do
+  while (( attempt <= 45 )); do
     if is_booted "$udid"; then
       break
     fi
@@ -73,12 +88,12 @@ ensure_simulator_ready() {
     return 1
   fi
 
-  xcrun simctl terminate "$udid" "$BUNDLE" >/dev/null 2>&1 || true
-  xcrun simctl uninstall "$udid" "$BUNDLE" >/dev/null 2>&1 || true
+  bounded 5 xcrun simctl terminate "$udid" "$BUNDLE" >/dev/null 2>&1 || true
+  bounded 8 xcrun simctl uninstall "$udid" "$BUNDLE" >/dev/null 2>&1 || true
 
   attempt=1
-  while (( attempt <= 45 )); do
-    if xcrun simctl install "$udid" "$APP" >/dev/null 2>&1; then
+  while (( attempt <= 8 )); do
+    if bounded 10 xcrun simctl install "$udid" "$APP" >/dev/null 2>&1; then
       return 0
     fi
     sleep 2
@@ -92,19 +107,18 @@ ensure_simulator_ready() {
 capture_evidence() {
   local udid="$1"
   local slug="$2"
-  xcrun simctl io "$udid" screenshot "$SMOKE_DIR/chatgpt-lifecycle-${slug}.png" >/dev/null 2>&1 || true
-  xcrun simctl spawn "$udid" log show --last 4m --style compact \
-    --predicate 'subsystem == "com.kamihi.remote" AND composedMessage CONTAINS "KAMIHI_CHATGPT_LIFECYCLE"' \
-    > "$SMOKE_DIR/chatgpt-lifecycle-${slug}.log" 2>/dev/null || true
+  bounded 6 xcrun simctl io "$udid" screenshot "$SMOKE_DIR/chatgpt-lifecycle-${slug}.png" >/dev/null 2>&1 || true
 }
 
 run_family() {
   local family="$1"
   local slug="$2"
-  local selection udid name poll
+  local selection udid name poll log_file log_pid=""
   selection="$(pick_device "$family")"
   udid="${selection%%|*}"
   name="${selection#*|}"
+  log_file="$SMOKE_DIR/chatgpt-lifecycle-${slug}.log"
+  : > "$log_file"
   echo "==> ChatGPT lifecycle smoke on $name ($udid)"
 
   if ! ensure_simulator_ready "$udid" "$name"; then
@@ -112,29 +126,40 @@ run_family() {
     return 1
   fi
 
-  if ! xcrun simctl launch "$udid" "$BUNDLE" -KamihiDesktopLab -KamihiChatGPTLifecycleSmoke >/dev/null; then
+  # Stream only lifecycle messages once. Repeated `log show` calls were taking
+  # minutes each on macOS-26 runners even after the app had already succeeded,
+  # exhausting the job budget and cancelling later Clipboard/iPad gates.
+  xcrun simctl spawn "$udid" log stream --style compact --level info \
+    --predicate 'subsystem == "com.kamihi.remote" AND composedMessage CONTAINS "KAMIHI_CHATGPT_LIFECYCLE"' \
+    > "$log_file" 2>&1 &
+  log_pid=$!
+  sleep 1
+
+  if ! bounded 10 xcrun simctl launch "$udid" "$BUNDLE" -KamihiDesktopLab -KamihiChatGPTLifecycleSmoke >/dev/null; then
     echo "ChatGPT lifecycle app launch failed on $name"
+    kill "$log_pid" >/dev/null 2>&1 || true
+    wait "$log_pid" >/dev/null 2>&1 || true
     capture_evidence "$udid" "$slug"
     return 1
   fi
 
   poll=1
-  while (( poll <= 20 )); do
-    if xcrun simctl spawn "$udid" log show --last 2m --style compact \
-      --predicate 'subsystem == "com.kamihi.remote" AND composedMessage CONTAINS "KAMIHI_CHATGPT_LIFECYCLE_OK"' 2>/dev/null \
-      | grep -Fq "KAMIHI_CHATGPT_LIFECYCLE_OK"; then
+  while (( poll <= 30 )); do
+    if grep -Fq "KAMIHI_CHATGPT_LIFECYCLE_OK" "$log_file"; then
       capture_evidence "$udid" "$slug"
       echo "KAMIHI_CHATGPT_LIFECYCLE_OK ($name)"
-      xcrun simctl terminate "$udid" "$BUNDLE" >/dev/null 2>&1 || true
+      bounded 5 xcrun simctl terminate "$udid" "$BUNDLE" >/dev/null 2>&1 || true
+      kill "$log_pid" >/dev/null 2>&1 || true
+      wait "$log_pid" >/dev/null 2>&1 || true
       return 0
     fi
 
-    if xcrun simctl spawn "$udid" log show --last 2m --style compact \
-      --predicate 'subsystem == "com.kamihi.remote" AND composedMessage CONTAINS "KAMIHI_CHATGPT_LIFECYCLE_FAIL"' 2>/dev/null \
-      | grep -Fq "KAMIHI_CHATGPT_LIFECYCLE_FAIL"; then
+    if grep -Fq "KAMIHI_CHATGPT_LIFECYCLE_FAIL" "$log_file"; then
       echo "ChatGPT lifecycle harness reported failure on $name"
       capture_evidence "$udid" "$slug"
-      xcrun simctl terminate "$udid" "$BUNDLE" >/dev/null 2>&1 || true
+      bounded 5 xcrun simctl terminate "$udid" "$BUNDLE" >/dev/null 2>&1 || true
+      kill "$log_pid" >/dev/null 2>&1 || true
+      wait "$log_pid" >/dev/null 2>&1 || true
       return 1
     fi
 
@@ -144,7 +169,9 @@ run_family() {
 
   echo "ChatGPT lifecycle success marker was not observed on $name"
   capture_evidence "$udid" "$slug"
-  xcrun simctl terminate "$udid" "$BUNDLE" >/dev/null 2>&1 || true
+  bounded 5 xcrun simctl terminate "$udid" "$BUNDLE" >/dev/null 2>&1 || true
+  kill "$log_pid" >/dev/null 2>&1 || true
+  wait "$log_pid" >/dev/null 2>&1 || true
   return 1
 }
 
