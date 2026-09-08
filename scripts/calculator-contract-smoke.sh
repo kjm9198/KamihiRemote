@@ -10,21 +10,16 @@ POINTER="iOS/Desktop/Apps/Calculator/DesktopCalculatorHitRegistry.swift"
 SESSION="iOS/Desktop/DesktopSessionExtensions.swift"
 LIFECYCLE="iOS/Desktop/Debug/DesktopCalculatorLifecycleSmoke.swift"
 SIM_SMOKE="scripts/apple-integration-smoke.sh"
+IPAD_SMOKE="scripts/ipad-layout-smoke.sh"
 
 fail() {
   echo "Calculator contract failed: $1" >&2
   exit 1
 }
 
-[[ -f "$SOURCE" ]] || fail "missing $SOURCE"
-[[ -f "$PERSISTENCE" ]] || fail "missing $PERSISTENCE"
-[[ -f "$KEYBOARD" ]] || fail "missing $KEYBOARD"
-[[ -f "$CONTROLLER" ]] || fail "missing $CONTROLLER"
-[[ -f "$APP" ]] || fail "missing $APP"
-[[ -f "$POINTER" ]] || fail "missing $POINTER"
-[[ -f "$SESSION" ]] || fail "missing $SESSION"
-[[ -f "$LIFECYCLE" ]] || fail "missing $LIFECYCLE"
-[[ -f "$SIM_SMOKE" ]] || fail "missing $SIM_SMOKE"
+for file in "$SOURCE" "$PERSISTENCE" "$KEYBOARD" "$CONTROLLER" "$APP" "$POINTER" "$SESSION" "$LIFECYCLE" "$SIM_SMOKE" "$IPAD_SMOKE"; do
+  [[ -f "$file" ]] || fail "missing $file"
+done
 
 grep -Fq 'private static let binaryOperators: Set<Character>' "$SOURCE" || fail "binary operator normalization missing"
 grep -Fq 'appendDecimalPoint()' "$SOURCE" || fail "decimal de-duplication path missing"
@@ -36,12 +31,10 @@ grep -Fq 'reserve Error for an explicit equals evaluation' "$SOURCE" || fail "in
 grep -Fq '.accessibilityLabel(accessibilityLabel(for: key))' "$SOURCE" || fail "keypad accessibility labels missing"
 grep -Fq '.accessibilityValue(calculator.result)' "$SOURCE" || fail "result accessibility value missing"
 
-# Division-by-zero and malformed expressions must remain explicit equals errors.
 grep -Fq 'if token == "/" && rhs == 0 { return nil }' "$SOURCE" || fail "division-by-zero parser guard missing"
 grep -Fq 'result = "Error"' "$SOURCE" || fail "explicit evaluation error state missing"
 
-# Calculator value must survive a real app-process restart through small,
-# calculator-owned UserDefaults state. Corrupt/oversized state is rejected.
+# Calculator state must survive a real process restart on both simulator families.
 grep -Fq 'kamihi.desktop.calculator.expression' "$PERSISTENCE" || fail "persisted expression key missing"
 grep -Fq 'kamihi.desktop.calculator.result' "$PERSISTENCE" || fail "persisted result key missing"
 grep -Fq 'DesktopCalculatorStore.shared' "$PERSISTENCE" || fail "Calculator persistence is not attached to the local store"
@@ -50,8 +43,10 @@ grep -Fq 'value.count <= 64' "$PERSISTENCE" || fail "persisted result size bound
 grep -Fq 'DesktopCalculatorPersistence.shared.activate()' "$APP" || fail "Calculator persistence is not activated during app launch"
 grep -Fq 'persistenceVerifyLaunchArgument' "$LIFECYCLE" || fail "process-restart verification launch argument missing"
 grep -Fq 'KAMIHI_CALCULATOR_PROCESS_RESTART_OK' "$LIFECYCLE" || fail "process-restart runtime success marker missing"
-grep -Fq 'run_calculator_process_restart_smoke' "$SIM_SMOKE" || fail "simulator process-restart gate missing"
-grep -Fq -- '-KamihiCalculatorPersistenceVerifySmoke' "$SIM_SMOKE" || fail "process-restart relaunch argument missing"
+grep -Fq 'run_calculator_process_restart_smoke' "$SIM_SMOKE" || fail "iPhone simulator process-restart gate missing"
+grep -Fq -- '-KamihiCalculatorPersistenceVerifySmoke' "$SIM_SMOKE" || fail "iPhone process-restart relaunch argument missing"
+grep -Fq -- '-KamihiCalculatorPersistenceVerifySmoke' "$IPAD_SMOKE" || fail "iPad process-restart relaunch argument missing"
+grep -Fq 'KAMIHI_IPAD_CALCULATOR_PROCESS_RESTART_OK' "$IPAD_SMOKE" || fail "iPad process-restart success artifact missing"
 
 # Hardware keyboard Calculator routing must stay local and transport-independent.
 grep -Fq 'desktop.activeWindow?.title == "Calculator"' "$KEYBOARD" || fail "Calculator hardware-keyboard focus route missing"
@@ -63,8 +58,7 @@ grep -Fq 'case "/", "÷":' "$KEYBOARD" || fail "hardware divide mapping missing"
 grep -Fq 'case "-", "−":' "$KEYBOARD" || fail "hardware subtract mapping missing"
 grep -Fq 'desktop.wantsPhoneKeyboard || desktop.activeWindow?.title == "Calculator"' "$APP" || fail "frontmost Calculator does not keep hardware receiver active"
 
-# Phone software keyboard must also stay Calculator-local instead of falling
-# through the generic WebKit typing route.
+# Phone software keyboard must stay Calculator-local rather than fall through WebKit.
 grep -Fq 'activeWindowTitle == "Calculator" ? .numbersAndPunctuation : .default' "$CONTROLLER" || fail "Calculator phone keyboard type missing"
 grep -Fq 'case "Calculator": return "Enter calculation…"' "$CONTROLLER" || fail "Calculator phone keyboard placeholder missing"
 grep -Fq 'if activeWindowTitle == "Calculator" {' "$CONTROLLER" || fail "Calculator phone keyboard ownership missing"
@@ -75,8 +69,7 @@ grep -Fq 'case "*", "×":' "$CONTROLLER" || fail "phone multiply mapping missing
 grep -Fq 'case "/", "÷":' "$CONTROLLER" || fail "phone divide mapping missing"
 grep -Fq 'case "-", "−":' "$CONTROLLER" || fail "phone subtract mapping missing"
 
-# Phone-controlled software pointer must hit the real rendered keypad geometry,
-# not approximate fixed coordinates that drift after window resize or on iPad.
+# Software pointer uses actual rendered keypad geometry and top-window ownership.
 grep -Fq '.desktopCalculatorHitTarget(.toolbarClear, containerSize: calculatorGeo.size)' "$SOURCE" || fail "toolbar clear geometry reporting missing"
 grep -Fq '.desktopCalculatorHitTarget(.key(key), containerSize: calculatorGeo.size)' "$SOURCE" || fail "keypad geometry reporting missing"
 grep -Fq '.coordinateSpace(name: "desktopCalculatorContent")' "$SOURCE" || fail "Calculator local coordinate space missing"
@@ -87,7 +80,6 @@ grep -Fq 'if window.title == "Calculator" {' "$SESSION" || fail "Calculator top-
 grep -Fq 'handleCalculatorClick(at: cursor, in: frame)' "$SESSION" || fail "Calculator software-pointer click routing missing"
 grep -Fq 'window.title != "Calculator"' "$SESSION" || fail "Calculator context clicks still fall through to WebKit"
 
-# Guard against reintroducing the unsafe integral formatting shortcut.
 if grep -Fq 'value.rounded() == value ? String(Int(value))' "$SOURCE"; then
   fail "unsafe unbounded Double-to-Int formatting returned"
 fi
