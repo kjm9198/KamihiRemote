@@ -10,7 +10,7 @@ require() {
   local pattern="$1"
   local file="$2"
   local message="$3"
-  if ! grep -Fq "$pattern" "$file"; then
+  if ! grep -Fq -- "$pattern" "$file"; then
     echo "Clipboard contract failed: $message" >&2
     exit 1
   fi
