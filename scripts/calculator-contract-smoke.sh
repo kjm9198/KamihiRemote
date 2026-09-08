@@ -4,6 +4,8 @@ set -euo pipefail
 SOURCE="iOS/DesktopUtilityCenter.swift"
 KEYBOARD="iOS/Desktop/Controller/DesktopHardwareKeyboardReceiver.swift"
 APP="iOS/KamihiDesktopApp.swift"
+POINTER="iOS/Desktop/Apps/Calculator/DesktopCalculatorHitRegistry.swift"
+SESSION="iOS/Desktop/DesktopSessionExtensions.swift"
 
 fail() {
   echo "Calculator contract failed: $1" >&2
@@ -13,6 +15,8 @@ fail() {
 [[ -f "$SOURCE" ]] || fail "missing $SOURCE"
 [[ -f "$KEYBOARD" ]] || fail "missing $KEYBOARD"
 [[ -f "$APP" ]] || fail "missing $APP"
+[[ -f "$POINTER" ]] || fail "missing $POINTER"
+[[ -f "$SESSION" ]] || fail "missing $SESSION"
 
 grep -Fq 'private static let binaryOperators: Set<Character>' "$SOURCE" || fail "binary operator normalization missing"
 grep -Fq 'appendDecimalPoint()' "$SOURCE" || fail "decimal de-duplication path missing"
@@ -37,6 +41,18 @@ grep -Fq 'case "*", "×":' "$KEYBOARD" || fail "hardware multiply mapping missin
 grep -Fq 'case "/", "÷":' "$KEYBOARD" || fail "hardware divide mapping missing"
 grep -Fq 'case "-", "−":' "$KEYBOARD" || fail "hardware subtract mapping missing"
 grep -Fq 'desktop.wantsPhoneKeyboard || desktop.activeWindow?.title == "Calculator"' "$APP" || fail "frontmost Calculator does not keep hardware receiver active"
+
+# Phone-controlled software pointer must hit the real rendered keypad geometry,
+# not approximate fixed coordinates that drift after window resize or on iPad.
+grep -Fq '.desktopCalculatorHitTarget(.toolbarClear, containerSize: calculatorGeo.size)' "$SOURCE" || fail "toolbar clear geometry reporting missing"
+grep -Fq '.desktopCalculatorHitTarget(.key(key), containerSize: calculatorGeo.size)' "$SOURCE" || fail "keypad geometry reporting missing"
+grep -Fq '.coordinateSpace(name: "desktopCalculatorContent")' "$SOURCE" || fail "Calculator local coordinate space missing"
+grep -Fq 'DesktopCalculatorHitRegistry.shared.update(' "$SOURCE" || fail "Calculator hit registry update missing"
+grep -Fq 'func hitTest(at normalizedPoint: CGPoint)' "$POINTER" || fail "Calculator hit testing missing"
+grep -Fq 'func handleCalculatorClick(at point: CGPoint, in frame: CGRect)' "$POINTER" || fail "Calculator pointer handler missing"
+grep -Fq 'if window.title == "Calculator" {' "$SESSION" || fail "Calculator top-window click dispatch missing"
+grep -Fq 'handleCalculatorClick(at: cursor, in: frame)' "$SESSION" || fail "Calculator software-pointer click routing missing"
+grep -Fq 'window.title != "Calculator"' "$SESSION" || fail "Calculator context clicks still fall through to WebKit"
 
 # Guard against reintroducing the unsafe integral formatting shortcut.
 if grep -Fq 'value.rounded() == value ? String(Int(value))' "$SOURCE"; then
