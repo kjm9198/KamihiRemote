@@ -24,7 +24,6 @@ enum DesktopClipboardWebViewSmoke {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 800, height: 600), configuration: configuration)
-        DesktopWebInputRegistry.shared.register(webView, key: "Browser")
         defer {
             DesktopWebInputRegistry.shared.unregister(webView)
         }
@@ -76,6 +75,17 @@ enum DesktopClipboardWebViewSmoke {
             return fail("ownership", "Clipboard did not resolve the immediately-adjacent Browser window")
         }
 
+        // Opening the real Browser window also creates/registers its production
+        // WKWebView under the "Browser" key. The local fixture must own that key
+        // only for the exact insertion under test; otherwise the smoke can route
+        // into the real Browser renderer and falsely report that the clipboard
+        // bridge failed. Focus the local editor first, then register and paste
+        // without any suspension between those two operations.
+        guard await focusEditor(in: webView) else {
+            return fail("focus-fixture", "Local WebView editor could not become the active element")
+        }
+        DesktopWebInputRegistry.shared.register(webView, key: "Browser")
+
         let payload = "Kamihi WebView paste once"
         guard desktop.pasteClipboardItemIntoPreviousApp(payload) else {
             return fail("route", "Clipboard rejected the supported Browser destination")
@@ -100,6 +110,23 @@ enum DesktopClipboardWebViewSmoke {
         logger.notice("\(successMarker, privacy: .public)")
         print(successMarker)
         return true
+    }
+
+    private static func focusEditor(in webView: WKWebView) async -> Bool {
+        await withCheckedContinuation { continuation in
+            webView.evaluateJavaScript(
+                """
+                (() => {
+                  const editor = document.getElementById('editor');
+                  if (!editor || editor.disabled || editor.readOnly) return false;
+                  editor.focus();
+                  return document.activeElement === editor;
+                })();
+                """
+            ) { result, _ in
+                continuation.resume(returning: result as? Bool ?? false)
+            }
+        }
     }
 
     private static func waitForTitle(
