@@ -256,7 +256,6 @@ extension DesktopSession {
 struct DesktopClipboardCenterView: View {
     @EnvironmentObject private var desktop: DesktopSession
     @ObservedObject private var clipboard = DesktopClipboardStore.shared
-    @ObservedObject private var notes = DesktopNotesStore.shared
     @State private var confirmClear = false
 
     var body: some View {
@@ -330,9 +329,7 @@ struct DesktopClipboardCenterView: View {
                                             .desktopClipboardHitTarget(.itemCopy(item), containerSize: clipboardGeo.size)
 
                                         Button("Notes", systemImage: "note.text.badge.plus") {
-                                            if !notes.text.isEmpty { notes.text += "\n\n" }
-                                            notes.text += item
-                                            desktop.openNotes()
+                                            _ = DesktopClipboardHitRegistry.shared.perform(.itemNotes(item), desktop: desktop)
                                         }
                                         .buttonStyle(.bordered)
                                         .controlSize(.small)
