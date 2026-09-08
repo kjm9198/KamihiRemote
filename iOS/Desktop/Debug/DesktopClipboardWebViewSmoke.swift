@@ -63,6 +63,14 @@ enum DesktopClipboardWebViewSmoke {
             frame: CGRect(x: 0.42, y: 0.14, width: 0.50, height: 0.64)
         )
 
+        // This smoke runs immediately before the rendered-pointer smoke in the
+        // same process. Require the Clipboard SwiftUI view to actually appear so
+        // its later teardown can be observed; otherwise a delayed onDisappear
+        // from this fixture can clear the next Clipboard view's shared hit registry.
+        guard await waitForClipboardViewAppearance() else {
+            return fail("clipboard-render", "Clipboard view never registered its rendered controls")
+        }
+
         guard desktop.activeWindowID == clipboardID,
               desktop.clipboardPasteDestination?.id == browserID else {
             return fail("ownership", "Clipboard did not resolve the immediately-adjacent Browser window")
@@ -79,6 +87,16 @@ enum DesktopClipboardWebViewSmoke {
             return fail("insert", "Focused WebView editor did not receive exactly one Clipboard insertion")
         }
 
+        // Leave the next smoke a genuinely clean lifecycle boundary. Closing the
+        // model windows is synchronous, while SwiftUI onDisappear is not, so wait
+        // for the Clipboard hit registry/callback to be released instead of using
+        // an arbitrary sleep or letting teardown race the next reopen.
+        desktop.close(clipboardID)
+        desktop.close(browserID)
+        guard await waitForClipboardViewTeardown() else {
+            return fail("cleanup", "Clipboard view did not release its rendered hit registry after close")
+        }
+
         logger.notice("\(successMarker, privacy: .public)")
         print(successMarker)
         return true
@@ -91,6 +109,30 @@ enum DesktopClipboardWebViewSmoke {
     ) async -> Bool {
         for _ in 0..<attempts {
             if !webView.isLoading, webView.title == expected { return true }
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return false
+    }
+
+    private static func waitForClipboardViewAppearance(attempts: Int = 50) async -> Bool {
+        for _ in 0..<attempts {
+            if DesktopClipboardHitRegistry.shared.entries.contains(where: { $0.target == .toolbarRefresh }),
+               DesktopClipboardHitRegistry.shared.onClearRequested != nil {
+                return true
+            }
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return false
+    }
+
+    private static func waitForClipboardViewTeardown(attempts: Int = 50) async -> Bool {
+        for _ in 0..<attempts {
+            if DesktopClipboardHitRegistry.shared.entries.isEmpty,
+               DesktopClipboardHitRegistry.shared.onClearRequested == nil {
+                return true
+            }
             await Task.yield()
             try? await Task.sleep(for: .milliseconds(100))
         }
