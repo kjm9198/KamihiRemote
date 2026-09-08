@@ -7,6 +7,7 @@ ROUTING="iOS/Desktop/Apps/DesktopClipboardRouting.swift"
 HITS="iOS/Desktop/Apps/DesktopClipboardHitRegistry.swift"
 SESSION="iOS/Desktop/DesktopSessionExtensions.swift"
 POINTER_SMOKE="iOS/Desktop/Debug/DesktopClipboardPointerSmoke.swift"
+WEBVIEW_SMOKE="iOS/Desktop/Debug/DesktopClipboardWebViewSmoke.swift"
 IPHONE_SMOKE="scripts/clipboard-simulator-smoke.sh"
 IPAD_SMOKE="scripts/ipad-layout-smoke.sh"
 
@@ -62,6 +63,14 @@ require '(!clipboard.items.isEmpty || !UIPasteboard.general.items.isEmpty)' "$HI
 require 'UIActivityViewController(activityItems: [text]' "$HITS" 'software-pointer Share must use the public system activity controller'
 require '$0.activationState == .foregroundActive && $0.screen === UIScreen.main' "$HITS" 'Share must target the interactive main-screen scene rather than the passive external display'
 
+require 'KAMIHI_CLIPBOARD_WEBVIEW_OK' "$WEBVIEW_SMOKE" 'WebView handoff smoke success marker missing'
+require 'WKWebViewConfiguration()' "$WEBVIEW_SMOKE" 'WebView handoff smoke must use a real local WKWebView'
+require 'configuration.websiteDataStore = .nonPersistent()' "$WEBVIEW_SMOKE" 'WebView fixture must not persist website data'
+require 'DesktopWebInputRegistry.shared.register(webView, key: "Browser")' "$WEBVIEW_SMOKE" 'WebView fixture must use the production Browser input registry'
+require 'desktop.clipboardPasteDestination?.id == browserID' "$WEBVIEW_SMOKE" 'WebView smoke must prove immediate-adjacent Browser ownership'
+require 'desktop.pasteClipboardItemIntoPreviousApp(payload)' "$WEBVIEW_SMOKE" 'WebView smoke must exercise the production Clipboard paste route'
+require 'VALUE:\(payload)' "$WEBVIEW_SMOKE" 'WebView smoke must require exactly one editor insertion'
+
 require 'KAMIHI_CLIPBOARD_POINTER_OK' "$POINTER_SMOKE" 'rendered pointer smoke success marker missing'
 require 'desktop.clickAtCursor()' "$POINTER_SMOKE" 'rendered pointer smoke must exercise the production software-pointer path'
 require '.toolbarRefresh' "$POINTER_SMOKE" 'pointer smoke must exercise Refresh'
@@ -74,14 +83,17 @@ require 'DesktopNativeScrollRegistry.shared.scroll(key: "Clipboard"' "$POINTER_S
 
 require '-KamihiClipboardLifecycleSmoke' "$IPHONE_SMOKE" 'iPhone smoke must launch the Clipboard harness'
 require 'KAMIHI_CLIPBOARD_LIFECYCLE_OK' "$IPHONE_SMOKE" 'iPhone smoke must require the lifecycle marker'
+require 'KAMIHI_CLIPBOARD_WEBVIEW_OK' "$IPHONE_SMOKE" 'iPhone smoke must require the WebView handoff marker'
 require 'KAMIHI_CLIPBOARD_POINTER_OK' "$IPHONE_SMOKE" 'iPhone smoke must require the rendered-pointer marker'
 require 'clipboard-pointer-controls.png' "$IPHONE_SMOKE" 'iPhone smoke must capture pointer-control visual evidence'
 
 require '-KamihiClipboardLifecycleSmoke' "$IPAD_SMOKE" 'iPad smoke must launch the Clipboard lifecycle harness'
 require '"ClipboardSmoke" "KAMIHI_CLIPBOARD_LIFECYCLE_OK"' "$IPAD_SMOKE" 'iPad smoke must require the Clipboard lifecycle success marker'
+require '"ClipboardWebViewSmoke" "KAMIHI_CLIPBOARD_WEBVIEW_OK"' "$IPAD_SMOKE" 'iPad smoke must require the Clipboard WebView handoff marker'
 require '"ClipboardPointerSmoke" "KAMIHI_CLIPBOARD_POINTER_OK"' "$IPAD_SMOKE" 'iPad smoke must require the rendered Clipboard pointer success marker'
 require 'ipad-clipboard-pointer-controls.png' "$IPAD_SMOKE" 'iPad smoke must capture rendered Clipboard visual evidence'
 require 'KAMIHI_IPAD_CLIPBOARD_LIFECYCLE_OK' "$IPAD_SMOKE" 'iPad Clipboard lifecycle success artifact missing'
+require 'KAMIHI_IPAD_CLIPBOARD_WEBVIEW_OK' "$IPAD_SMOKE" 'iPad Clipboard WebView success artifact missing'
 require 'KAMIHI_IPAD_CLIPBOARD_POINTER_OK' "$IPAD_SMOKE" 'iPad Clipboard pointer success artifact missing'
 
 if grep -Fq 'desktop.typeIntoActiveDesktopField(item)' "$UI"; then
