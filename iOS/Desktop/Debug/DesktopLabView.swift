@@ -49,6 +49,7 @@ struct DesktopLabView: View {
             bootDesktopIfNeeded()
             #if DEBUG
             _ = DesktopCalculatorLifecycleSmoke.run(on: desktop)
+            _ = DesktopClipboardLifecycleSmoke.run(on: desktop)
             #endif
             signalReadinessAfterInitialRender()
         }
