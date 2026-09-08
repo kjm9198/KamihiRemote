@@ -63,8 +63,11 @@ final class DesktopClipboardHitRegistry {
             clipboard.copy(item)
         case .itemNotes(let item):
             let notes = DesktopNotesStore.shared
-            if !notes.text.isEmpty { notes.text += "\n\n" }
-            notes.text += item
+            if notes.activeNoteID == nil { notes.createNewNote() }
+            let body = notes.activeNote?.body ?? ""
+            if !body.isEmpty { notes.appendToActiveBody("\n\n") }
+            notes.appendToActiveBody(item)
+            notes.focus(.body)
             desktop.openNotes()
         case .itemShare(let item):
             return DesktopClipboardSharePresenter.present(item)
