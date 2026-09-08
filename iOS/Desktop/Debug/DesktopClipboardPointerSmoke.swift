@@ -23,8 +23,7 @@ enum DesktopClipboardPointerSmoke {
         clipboard.clear()
         let notes = DesktopNotesStore.shared
         if notes.activeNoteID == nil { notes.createNewNote() }
-        notes.text = ""
-        notes.focus(.body)
+        clearActiveNoteBody(notes)
 
         let seed = "Kamihi pointer seed"
         UIPasteboard.general.string = seed
@@ -68,7 +67,7 @@ enum DesktopClipboardPointerSmoke {
             return fail("copy", "Pointer Copy did not update the system clipboard/history")
         }
 
-        notes.text = ""
+        clearActiveNoteBody(notes)
         guard await click(.itemNotes(refreshed), desktop: desktop, clipboardID: clipboardID) else {
             return fail("notes-hit", "Notes hit target was unavailable")
         }
@@ -143,6 +142,16 @@ enum DesktopClipboardPointerSmoke {
         logger.notice("\(successMarker, privacy: .public)")
         print(successMarker)
         return true
+    }
+
+    /// Keep the simulator smoke on the same authoritative rich/plain body path as
+    /// production Notes input. Mutating only the compatibility `text` mirror can
+    /// leave persisted `Note.body`/`richBody` content behind and create false
+    /// duplicate-insertion failures on a reused simulator container.
+    private static func clearActiveNoteBody(_ notes: DesktopNotesStore) {
+        guard let id = notes.activeNoteID else { return }
+        notes.updateAttributedBody(AttributedString(), for: id)
+        notes.focus(.body)
     }
 
     private static func waitForTarget(
