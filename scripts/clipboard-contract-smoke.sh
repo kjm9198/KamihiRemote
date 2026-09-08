@@ -4,6 +4,7 @@ set -euo pipefail
 SERVICES="iOS/DesktopServices.swift"
 UI="iOS/DesktopUtilityCenter.swift"
 ROUTING="iOS/Desktop/Apps/DesktopClipboardRouting.swift"
+IPAD_SMOKE="scripts/ipad-layout-smoke.sh"
 
 require() {
   local pattern="$1"
@@ -40,6 +41,11 @@ require 'let previousVisible = windows[..<clipboardIndex].reversed().first { !$0
 require 'Self.clipboardPasteTargetTitles.contains(previousVisible.title)' "$ROUTING" 'Unsupported prior windows must disable paste instead of being skipped'
 require 'restoreAndActivate(destination.id)' "$ROUTING" 'Paste must transfer focus to the intended destination before insertion'
 require 'typeIntoActiveDesktopField(text)' "$ROUTING" 'Paste must reuse the normal app-specific typing pipeline'
+
+require '-KamihiClipboardLifecycleSmoke' "$IPAD_SMOKE" 'iPad smoke must launch the Clipboard lifecycle harness'
+require '"ClipboardSmoke" "KAMIHI_CLIPBOARD_LIFECYCLE_OK"' "$IPAD_SMOKE" 'iPad smoke must require the Clipboard lifecycle success marker'
+require 'ipad-clipboard-lifecycle.png' "$IPAD_SMOKE" 'iPad smoke must capture Clipboard visual evidence'
+require 'KAMIHI_IPAD_CLIPBOARD_LIFECYCLE_OK' "$IPAD_SMOKE" 'iPad Clipboard success artifact missing'
 
 if grep -Fq 'desktop.typeIntoActiveDesktopField(item)' "$UI"; then
   echo 'Clipboard contract failed: Paste must never type while Clipboard owns active-window focus' >&2
