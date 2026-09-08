@@ -91,8 +91,9 @@ enum DesktopClipboardPointerSmoke {
         }
 
         // Share is deliberately presented on the interactive main-screen scene,
-        // never the passive external display. Prove a software-pointer click opens
-        // a real UIActivityViewController, then dismiss it so the smoke can continue.
+        // never the passive external display. Wait for UIKit's actual presentation
+        // state instead of assuming a fixed CI timing, and resolve the same visible
+        // fallback window that production uses when no main-screen window is key.
         desktop.restoreAndActivate(clipboardID)
         guard await waitForTarget(.itemShare(refreshed)) != nil else {
             return fail("share-render", "Share hit target was unavailable")
@@ -100,12 +101,13 @@ enum DesktopClipboardPointerSmoke {
         guard await click(.itemShare(refreshed), desktop: desktop, clipboardID: clipboardID) else {
             return fail("share-hit", "Pointer Share target did not execute")
         }
-        try? await Task.sleep(for: .milliseconds(250))
-        guard let activity = presentedActivityController() else {
+        guard let activity = await waitForPresentedActivityController() else {
             return fail("share", "Pointer Share did not present UIActivityViewController on the interactive scene")
         }
         activity.dismiss(animated: false)
-        try? await Task.sleep(for: .milliseconds(150))
+        guard await waitForActivityControllerDismissal() else {
+            return fail("share-dismiss", "Share sheet did not dismiss before the remaining Clipboard flow")
+        }
 
         // Force a long list and verify the explicitly registered native Clipboard
         // ScrollView owns wheel/two-finger deltas while Clipboard is frontmost.
@@ -113,7 +115,6 @@ enum DesktopClipboardPointerSmoke {
             clipboard.copy("Kamihi scroll item \(index)")
         }
         desktop.restoreAndActivate(clipboardID)
-        try? await Task.sleep(for: .milliseconds(350))
         guard await waitForTarget(.itemCopy("Kamihi scroll item 19")) != nil else {
             return fail("scroll-render", "Long Clipboard history did not render")
         }
@@ -126,8 +127,7 @@ enum DesktopClipboardPointerSmoke {
         guard DesktopNativeScrollRegistry.shared.scroll(key: "Clipboard", deltaX: 0, deltaY: 280) else {
             return fail("scroll-route", "Clipboard native scroll registry did not own the scroll")
         }
-        let afterScroll = DesktopNativeScrollRegistry.shared.logicalContentOffset(for: "Clipboard").y
-        guard afterScroll > beforeScroll else {
+        guard await waitForScrollAdvance(from: beforeScroll) else {
             return fail("scroll", "Clipboard long-history scroll offset did not advance")
         }
 
@@ -147,7 +147,7 @@ enum DesktopClipboardPointerSmoke {
 
     private static func waitForTarget(
         _ target: DesktopClipboardHitRegistry.Target,
-        attempts: Int = 30
+        attempts: Int = 50
     ) async -> DesktopClipboardHitRegistry.Entry? {
         for _ in 0..<attempts {
             if let entry = DesktopClipboardHitRegistry.shared.entries.first(where: { $0.target == target }),
@@ -183,14 +183,48 @@ enum DesktopClipboardPointerSmoke {
         return true
     }
 
+    private static func waitForPresentedActivityController(
+        attempts: Int = 50
+    ) async -> UIActivityViewController? {
+        for _ in 0..<attempts {
+            if let activity = presentedActivityController() { return activity }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return nil
+    }
+
+    private static func waitForActivityControllerDismissal(
+        attempts: Int = 50
+    ) async -> Bool {
+        for _ in 0..<attempts {
+            if presentedActivityController() == nil { return true }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return false
+    }
+
+    private static func waitForScrollAdvance(
+        from initialOffset: CGFloat,
+        attempts: Int = 30
+    ) async -> Bool {
+        for _ in 0..<attempts {
+            let current = DesktopNativeScrollRegistry.shared.logicalContentOffset(for: "Clipboard").y
+            if current > initialOffset + 0.5 { return true }
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return false
+    }
+
     private static func presentedActivityController() -> UIActivityViewController? {
         let scenes = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .filter { $0.activationState == .foregroundActive && $0.screen === UIScreen.main }
-        let root = scenes
-            .flatMap(\.windows)
-            .first(where: { $0.isKeyWindow })?
-            .rootViewController
+        let windows = scenes.flatMap(\.windows)
+        let root = (
+            windows.first(where: { $0.isKeyWindow })
+            ?? windows.first(where: { !$0.isHidden && $0.alpha > 0.01 })
+        )?.rootViewController
         return topPresented(from: root) as? UIActivityViewController
     }
 
@@ -203,8 +237,9 @@ enum DesktopClipboardPointerSmoke {
     }
 
     private static func fail(_ step: String, _ message: String) -> Bool {
-        logger.error("KAMIHI_CLIPBOARD_POINTER_FAIL [\(step, privacy: .public)] \(message, privacy: .public)")
-        assertionFailure("Clipboard pointer smoke failed at \(step): \(message)")
+        let diagnostic = "KAMIHI_CLIPBOARD_POINTER_FAIL [\(step)] \(message)"
+        logger.error("\(diagnostic, privacy: .public)")
+        print(diagnostic)
         return false
     }
 }
