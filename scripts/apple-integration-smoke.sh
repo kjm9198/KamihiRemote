@@ -193,6 +193,22 @@ wait_for_calculator_marker() {
   return 1
 }
 
+wait_for_calculator_restart_marker() {
+  local poll=1
+  while (( poll <= 10 )); do
+    if xcrun simctl spawn "$UDID" log show --last 1m --style compact \
+      --predicate 'subsystem == "com.kamihi.remote" AND composedMessage CONTAINS "KAMIHI_CALCULATOR_PROCESS_RESTART_OK"' 2>/dev/null \
+      | grep -Fq "KAMIHI_CALCULATOR_PROCESS_RESTART_OK"; then
+      echo "Calculator process-restart persistence marker observed"
+      return 0
+    fi
+    sleep 1
+    poll=$((poll + 1))
+  done
+  echo "Calculator process-restart persistence marker was not observed"
+  return 1
+}
+
 run_desktop_lab_attempt() {
   local attempt="$1"
   local output="$SMOKE_DIR/desktop-lab-attempt-${attempt}.png"
@@ -230,6 +246,22 @@ run_calculator_lifecycle_smoke() {
   echo "KAMIHI_CALCULATOR_LIFECYCLE_SMOKE_OK" | tee "$SMOKE_DIR/calculator-lifecycle-smoke.txt"
 }
 
+run_calculator_process_restart_smoke() {
+  local output="$SMOKE_DIR/calculator-process-restart.png"
+
+  echo "==> Relaunching Calculator after process termination (mandatory attempt 1)"
+  xcrun simctl terminate "$UDID" com.kamihi.remote >/dev/null 2>&1 || true
+  if ! xcrun simctl launch "$UDID" com.kamihi.remote -KamihiDesktopLab -KamihiCalculatorPersistenceVerifySmoke >> "$SIM_LOG" 2>&1; then
+    echo "Calculator process-restart simctl launch failed"
+    return 1
+  fi
+
+  sleep 2
+  wait_for_calculator_restart_marker || return 1
+  capture_desktop_lab_screen "$output" || return 1
+  echo "KAMIHI_CALCULATOR_PROCESS_RESTART_SMOKE_OK" | tee "$SMOKE_DIR/calculator-process-restart-smoke.txt"
+}
+
 if ! boot_simulator; then
   echo "Initial simulator boot failed; erasing and retrying once"
   recover_simulator true
@@ -263,9 +295,9 @@ fi
 echo "KAMIHI_DESKTOP_SMOKE_OK" | tee "$SMOKE_DIR/desktop-smoke.txt"
 
 # Calculator is now a dedicated app-completeness gate. Unlike the broad simulator
-# boot harness above, this app-flow assertion is intentionally first-attempt only:
-# a failed lifecycle run must remain visible as a failure rather than being hidden
-# behind a same-SHA retry.
+# boot harness above, these app-flow assertions are intentionally first-attempt
+# only: same-SHA retries must not hide lifecycle or persistence regressions.
 run_calculator_lifecycle_smoke
+run_calculator_process_restart_smoke
 
 echo "KAMIHI_APP_FLOW_SMOKE_OK" | tee "$SMOKE_DIR/app-flow-smoke.txt"
