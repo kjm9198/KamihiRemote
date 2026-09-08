@@ -47,6 +47,9 @@ struct DesktopLabView: View {
         .background(KamihiTheme.Colors.surfaceBackground.ignoresSafeArea())
         .onAppear {
             bootDesktopIfNeeded()
+            #if DEBUG
+            _ = DesktopCalculatorLifecycleSmoke.run(on: desktop)
+            #endif
             signalReadinessAfterInitialRender()
         }
         .onDisappear {
