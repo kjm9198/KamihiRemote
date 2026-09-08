@@ -11,7 +11,7 @@ mkdir -p "$SMOKE_DIR"
 
 pick_device() {
   local family="$1"
-  xcrun simctl list devices available -j | python3 - "$family" <<'PY'
+  xcrun simctl list devices available -j | python3 -c '
 import json, re, sys
 family=sys.argv[1]
 payload=json.load(sys.stdin)
@@ -31,7 +31,7 @@ latest=max(item[0] for item in candidates)
 choices=sorted(item for item in candidates if item[0] == latest)
 _, name, udid=choices[0]
 print(f"{udid}|{name}")
-PY
+' "$family"
 }
 
 run_family() {
