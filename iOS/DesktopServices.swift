@@ -308,7 +308,12 @@ final class DesktopClipboardStore: ObservableObject {
     static let shared = DesktopClipboardStore()
 
     @Published private(set) var items: [String] = []
-    private var lastChangeCount = UIPasteboard.general.changeCount
+
+    // Start behind every real UIPasteboard changeCount so the first explicit
+    // Clipboard open/refresh can capture text that was copied before this store
+    // was initialized. Initializing to the live changeCount made the first
+    // refresh a no-op for pre-existing clipboard text.
+    private var lastChangeCount = -1
 
     private init() {}
 
@@ -327,7 +332,13 @@ final class DesktopClipboardStore: ObservableObject {
         captureIfChanged()
     }
 
-    func clear() { items.removeAll() }
+    func clear() {
+        items.removeAll()
+        // Keep our change counter synchronized after a caller clears the system
+        // pasteboard so a subsequent refresh does not treat the empty clear as
+        // a new history event.
+        lastChangeCount = UIPasteboard.general.changeCount
+    }
 }
 
 @MainActor
