@@ -232,6 +232,11 @@ extension DesktopSession {
             return
         }
 
+        if window.title == "Clipboard" {
+            handleClipboardClick(at: cursor, in: frame)
+            return
+        }
+
         if window.title == "Sheets" {
             guard let cell = sheetsCell(at: cursor, in: frame) else {
                 wantsPhoneKeyboard = false
@@ -277,6 +282,7 @@ extension DesktopSession {
               window.title != "Documents",
               window.title != "Sheets",
               window.title != "Calculator",
+              window.title != "Clipboard",
               let point = webContentPoint(at: cursor, in: effectiveFrame(for: window), for: window.title) else { return }
 
         wantsPhoneKeyboard = false
