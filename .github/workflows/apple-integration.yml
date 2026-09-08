@@ -45,6 +45,9 @@ jobs:
       - name: Verify Calculator reliability contract
         run: bash scripts/calculator-contract-smoke.sh
 
+      - name: Verify Clipboard reliability contract
+        run: bash scripts/clipboard-contract-smoke.sh
+
       # The script may recover transient simulator infrastructure internally,
       # but product/build/protocol failures remain hard failures. Do not rerun a
       # failed same-SHA workflow to manufacture a passing first-attempt result.
