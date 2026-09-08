@@ -50,6 +50,18 @@ struct DesktopLabView: View {
             #if DEBUG
             _ = DesktopCalculatorLifecycleSmoke.run(on: desktop)
             _ = DesktopClipboardLifecycleSmoke.run(on: desktop)
+            if ProcessInfo.processInfo.arguments.contains(DesktopClipboardLifecycleSmoke.launchArgument) {
+                // The lifecycle smoke above intentionally tests model/window ownership
+                // synchronously. Rendered Clipboard hit targets only exist after SwiftUI
+                // commits the app view, so exercise the actual pointer controls on a
+                // later main-actor turn instead of faking geometry in the harness.
+                Task { @MainActor in
+                    await Task.yield()
+                    await Task.yield()
+                    try? await Task.sleep(for: .milliseconds(650))
+                    _ = await DesktopClipboardPointerSmoke.run(on: desktop)
+                }
+            }
             #endif
             signalReadinessAfterInitialRender()
         }
