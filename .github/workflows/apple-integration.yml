@@ -54,6 +54,12 @@ jobs:
       - name: Run Kamihi Desktop simulator smoke
         run: bash scripts/apple-integration-smoke.sh
 
+      # Clipboard paste/focus ownership is now a dedicated first-attempt app-flow
+      # gate. It reuses the exact iPhone simulator build and must prove Notes
+      # handoff, unsupported-target blocking, lifecycle controls, and nonblank UI.
+      - name: Run Clipboard lifecycle simulator smoke
+        run: bash scripts/clipboard-simulator-smoke.sh
+
       # Kamihi targets both device families. Reuse the exact simulator build from
       # the iPhone smoke and prove that the same binary launches and renders a
       # non-blank regular-width Desktop Lab on a current iPad simulator. This is
