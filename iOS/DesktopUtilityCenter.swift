@@ -313,10 +313,12 @@ struct DesktopClipboardCenterView: View {
 
                                 HStack(spacing: 6) {
                                     Button("Paste", systemImage: "arrow.down.doc") {
-                                        desktop.typeIntoActiveDesktopField(item)
+                                        desktop.pasteClipboardItemIntoPreviousApp(item)
                                     }
                                     .buttonStyle(.borderedProminent)
                                     .controlSize(.small)
+                                    .disabled(!desktop.canPasteClipboardIntoPreviousApp)
+                                    .accessibilityHint("Pastes into the most recently used editable app behind Clipboard")
 
                                     Button("Copy", systemImage: "doc.on.doc") { clipboard.copy(item) }
                                         .buttonStyle(.bordered)
