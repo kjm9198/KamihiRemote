@@ -378,6 +378,7 @@ private struct DesktopKeyboardInputBar: View {
                 .lineLimit(1...3)
                 .focused($focused)
                 .submitLabel(.return)
+                .keyboardType(keyboardType)
                 .textInputAutocapitalization(keyboardAutocapitalization)
                 .autocorrectionDisabled(disablesAutocorrection)
                 .onSubmit(submit)
@@ -388,7 +389,7 @@ private struct DesktopKeyboardInputBar: View {
                 Image(systemName: "arrow.turn.down.left").frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Return")
+            .accessibilityLabel(activeWindowTitle == "Calculator" ? "Equals" : "Return")
 
             Button("Done") {
                 focused = false; onDismiss()
@@ -405,16 +406,20 @@ private struct DesktopKeyboardInputBar: View {
 
     private var activeWindowTitle: String { desktop.activeWindow?.title ?? "" }
 
+    private var keyboardType: UIKeyboardType {
+        activeWindowTitle == "Calculator" ? .numbersAndPunctuation : .default
+    }
+
     private var keyboardAutocapitalization: TextInputAutocapitalization? {
         switch activeWindowTitle {
-        case "Browser", "Sheets": return .never
+        case "Browser", "Sheets", "Calculator": return .never
         default: return .sentences
         }
     }
 
     private var disablesAutocorrection: Bool {
         switch activeWindowTitle {
-        case "Browser", "Sheets": return true
+        case "Browser", "Sheets", "Calculator": return true
         default: return false
         }
     }
@@ -426,6 +431,7 @@ private struct DesktopKeyboardInputBar: View {
         case "Sheets": return "Edit selected cell…"
         case "Browser": return "Type in browser…"
         case "ChatGPT": return "Message ChatGPT…"
+        case "Calculator": return "Enter calculation…"
         default: return "Type on desktop…"
         }
     }
@@ -445,7 +451,11 @@ private struct DesktopKeyboardInputBar: View {
 
     private func submit() {
         guard targetsCapturedWindow else { onDismiss(); return }
-        desktop.pressEnterInActiveDesktopField()
+        if activeWindowTitle == "Calculator" {
+            DesktopCalculatorStore.shared.evaluate()
+        } else {
+            desktop.pressEnterInActiveDesktopField()
+        }
         isClearingAfterSubmit = true
         text = ""
     }
@@ -459,11 +469,41 @@ private struct DesktopKeyboardInputBar: View {
         var common = 0
         while common < min(oldChars.count, newChars.count), oldChars[common] == newChars[common] { common += 1 }
 
+        if activeWindowTitle == "Calculator" {
+            if oldChars.count > common {
+                for _ in common..<oldChars.count { DesktopCalculatorStore.shared.backspace() }
+            }
+            if newChars.count > common {
+                routeCalculatorText(String(newChars.dropFirst(common)))
+            }
+            return
+        }
+
         if oldChars.count > common {
             for _ in common..<oldChars.count { desktop.deleteBackwardInActiveDesktopField() }
         }
         if newChars.count > common {
             desktop.typeIntoActiveDesktopField(String(newChars.dropFirst(common)))
+        }
+    }
+
+    private func routeCalculatorText(_ input: String) {
+        let calculator = DesktopCalculatorStore.shared
+        for character in input {
+            switch character {
+            case "0"..."9", ".", "(", ")", "+":
+                calculator.append(String(character))
+            case "-", "−":
+                calculator.append("−")
+            case "*", "×":
+                calculator.append("×")
+            case "/", "÷":
+                calculator.append("÷")
+            case "=":
+                calculator.evaluate()
+            default:
+                continue
+            }
         }
     }
 }
