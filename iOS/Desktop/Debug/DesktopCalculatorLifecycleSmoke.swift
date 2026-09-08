@@ -6,11 +6,23 @@ import OSLog
 enum DesktopCalculatorLifecycleSmoke {
     private static let logger = Logger(subsystem: "com.kamihi.remote", category: "CalculatorSmoke")
     static let launchArgument = "-KamihiCalculatorLifecycleSmoke"
+    static let persistenceVerifyLaunchArgument = "-KamihiCalculatorPersistenceVerifySmoke"
     static let successMarker = "KAMIHI_CALCULATOR_LIFECYCLE_OK"
+    static let persistenceSuccessMarker = "KAMIHI_CALCULATOR_PROCESS_RESTART_OK"
 
     @discardableResult
     static func run(on desktop: DesktopSession) -> Bool {
-        guard ProcessInfo.processInfo.arguments.contains(launchArgument) else { return true }
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains(launchArgument) || arguments.contains(persistenceVerifyLaunchArgument) else { return true }
+
+        // The production app activates this during launch. Calling it here too
+        // removes scheduling ambiguity from the DEBUG smoke and guarantees that
+        // the seed calculation is written before simctl terminates the process.
+        DesktopCalculatorPersistence.shared.activate()
+
+        if arguments.contains(persistenceVerifyLaunchArgument) {
+            return verifyProcessRestartPersistence(on: desktop)
+        }
 
         // Start from a deterministic app state without touching the user's normal
         // persistent Desktop path. This harness is DEBUG-only and is invoked only
@@ -67,6 +79,31 @@ enum DesktopCalculatorLifecycleSmoke {
 
         logger.notice("\(successMarker, privacy: .public)")
         print(successMarker)
+        return true
+    }
+
+    private static func verifyProcessRestartPersistence(on desktop: DesktopSession) -> Bool {
+        let calculator = DesktopCalculatorStore.shared
+        guard calculator.expression == "12×(3+4)", calculator.result == "84" else {
+            return fail(
+                "process-restart",
+                "expected persisted 12×(3+4) = 84, got \(calculator.expression) = \(calculator.result)"
+            )
+        }
+
+        if let existing = desktop.windows.first(where: { $0.title == "Calculator" }) {
+            desktop.close(existing.id)
+        }
+        let reopenedID = desktop.openProductivityApp(
+            "Calculator",
+            frame: CGRect(x: 0.28, y: 0.12, width: 0.44, height: 0.70)
+        )
+        guard assertWindow(desktop, id: reopenedID, minimized: false, maximized: false, active: true, step: "process-restart-window") else {
+            return false
+        }
+
+        logger.notice("\(persistenceSuccessMarker, privacy: .public)")
+        print(persistenceSuccessMarker)
         return true
     }
 
