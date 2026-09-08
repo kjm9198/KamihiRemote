@@ -81,13 +81,32 @@ xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
 xcrun simctl bootstatus "$UDID" -b
 xcrun simctl install "$UDID" "$IOS_APP"
 
-if ! xcrun simctl launch "$UDID" com.kamihi.remote -KamihiDesktopLab >> "$IPAD_LOG" 2>&1; then
+if ! xcrun simctl launch "$UDID" com.kamihi.remote -KamihiDesktopLab -KamihiCalculatorLifecycleSmoke >> "$IPAD_LOG" 2>&1; then
   echo "Kamihi Desktop failed to launch on iPad Simulator"
   exit 1
 fi
 
-# Give SwiftUI enough time to resolve the regular-width layout and Desktop Lab.
+# Give SwiftUI enough time to resolve the regular-width layout, Desktop Lab,
+# and the Calculator lifecycle harness that leaves the reopened Calculator
+# frontmost for visual evidence.
 sleep 3
+
+calculator_ok=0
+for poll in $(seq 1 20); do
+  if xcrun simctl spawn "$UDID" log show --last 2m --style compact \
+      --predicate 'subsystem == "com.kamihi.remote" AND category == "CalculatorSmoke"' \
+      2>/dev/null | grep -Fq "KAMIHI_CALCULATOR_LIFECYCLE_OK"; then
+    echo "iPad Calculator lifecycle marker ready on poll $poll"
+    calculator_ok=1
+    break
+  fi
+  sleep 1
+done
+
+if (( calculator_ok != 1 )); then
+  echo "Calculator lifecycle did not complete successfully on iPad Simulator"
+  exit 1
+fi
 
 SCREENSHOT="$SMOKE_DIR/ipad-desktop-lab.png"
 rm -f "$SCREENSHOT"
@@ -119,4 +138,5 @@ if ! xcrun simctl spawn "$UDID" launchctl print system 2>/dev/null | grep -Fq "c
   fi
 fi
 
+echo "KAMIHI_IPAD_CALCULATOR_LIFECYCLE_OK" | tee "$SMOKE_DIR/ipad-calculator-smoke.txt"
 echo "KAMIHI_IPAD_SMOKE_OK" | tee "$SMOKE_DIR/ipad-smoke.txt"
