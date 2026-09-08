@@ -136,10 +136,11 @@ wait_for_marker "CalculatorSmoke" "KAMIHI_CALCULATOR_PROCESS_RESTART_OK" "iPad C
 capture_nonblank "$SMOKE_DIR/ipad-calculator-process-restart.png"
 echo "KAMIHI_IPAD_CALCULATOR_PROCESS_RESTART_OK" | tee "$SMOKE_DIR/ipad-calculator-process-restart-smoke.txt"
 
-# Clipboard has its own iPad app-flow gate. The first marker proves lifecycle and
-# destination ownership; the second is emitted only after the rendered SwiftUI
-# Refresh/Copy/Notes/Paste/Share/Clear targets and long-history native scrolling
-# have been driven through the same software pointer used by the iPhone trackpad.
+# Clipboard has its own iPad app-flow gate. The lifecycle marker proves window
+# ownership; the WebView marker proves a focused local WKWebView editor receives
+# exactly one handoff through the production Browser input registry; the pointer
+# marker is emitted only after the rendered SwiftUI Refresh/Copy/Notes/Paste/
+# Share/Clear targets and long-history native scrolling have been exercised.
 xcrun simctl terminate "$UDID" com.kamihi.remote >/dev/null 2>&1 || true
 if ! xcrun simctl launch "$UDID" com.kamihi.remote -KamihiDesktopLab -KamihiClipboardLifecycleSmoke >> "$IPAD_LOG" 2>&1; then
   echo "Kamihi Desktop failed to relaunch for Clipboard lifecycle on iPad Simulator"
@@ -147,9 +148,11 @@ if ! xcrun simctl launch "$UDID" com.kamihi.remote -KamihiDesktopLab -KamihiClip
 fi
 sleep 2
 wait_for_marker "ClipboardSmoke" "KAMIHI_CLIPBOARD_LIFECYCLE_OK" "iPad Clipboard lifecycle marker"
+wait_for_marker "ClipboardWebViewSmoke" "KAMIHI_CLIPBOARD_WEBVIEW_OK" "iPad Clipboard WebView handoff marker"
 wait_for_marker "ClipboardPointerSmoke" "KAMIHI_CLIPBOARD_POINTER_OK" "iPad Clipboard rendered-pointer marker"
 capture_nonblank "$SMOKE_DIR/ipad-clipboard-pointer-controls.png"
 echo "KAMIHI_IPAD_CLIPBOARD_LIFECYCLE_OK" | tee "$SMOKE_DIR/ipad-clipboard-smoke.txt"
+echo "KAMIHI_IPAD_CLIPBOARD_WEBVIEW_OK" | tee "$SMOKE_DIR/ipad-clipboard-webview-smoke.txt"
 echo "KAMIHI_IPAD_CLIPBOARD_POINTER_OK" | tee "$SMOKE_DIR/ipad-clipboard-pointer-smoke.txt"
 
 if ! xcrun simctl spawn "$UDID" launchctl print system 2>/dev/null | grep -Fq "com.kamihi.remote"; then
