@@ -33,6 +33,10 @@ struct KamihiDesktopApp: App {
                 print("  [\(result.passed ? "PASS" : "FAIL")] \(result.name): \(result.message)")
             }
             print("==========================================")
+
+            if ProcessInfo.processInfo.arguments.contains("-KamihiChatGPTLifecycleSmoke") {
+                _ = DesktopChatGPTLifecycleSmoke.run(desktop: DesktopSession.shared)
+            }
             #endif
         }
     }
