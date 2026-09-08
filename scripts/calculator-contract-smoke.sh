@@ -2,11 +2,14 @@
 set -euo pipefail
 
 SOURCE="iOS/DesktopUtilityCenter.swift"
+PERSISTENCE="iOS/Desktop/Apps/Calculator/DesktopCalculatorPersistence.swift"
 KEYBOARD="iOS/Desktop/Controller/DesktopHardwareKeyboardReceiver.swift"
 CONTROLLER="iOS/Desktop/Controller/DesktopControllerView.swift"
 APP="iOS/KamihiDesktopApp.swift"
 POINTER="iOS/Desktop/Apps/Calculator/DesktopCalculatorHitRegistry.swift"
 SESSION="iOS/Desktop/DesktopSessionExtensions.swift"
+LIFECYCLE="iOS/Desktop/Debug/DesktopCalculatorLifecycleSmoke.swift"
+SIM_SMOKE="scripts/apple-integration-smoke.sh"
 
 fail() {
   echo "Calculator contract failed: $1" >&2
@@ -14,11 +17,14 @@ fail() {
 }
 
 [[ -f "$SOURCE" ]] || fail "missing $SOURCE"
+[[ -f "$PERSISTENCE" ]] || fail "missing $PERSISTENCE"
 [[ -f "$KEYBOARD" ]] || fail "missing $KEYBOARD"
 [[ -f "$CONTROLLER" ]] || fail "missing $CONTROLLER"
 [[ -f "$APP" ]] || fail "missing $APP"
 [[ -f "$POINTER" ]] || fail "missing $POINTER"
 [[ -f "$SESSION" ]] || fail "missing $SESSION"
+[[ -f "$LIFECYCLE" ]] || fail "missing $LIFECYCLE"
+[[ -f "$SIM_SMOKE" ]] || fail "missing $SIM_SMOKE"
 
 grep -Fq 'private static let binaryOperators: Set<Character>' "$SOURCE" || fail "binary operator normalization missing"
 grep -Fq 'appendDecimalPoint()' "$SOURCE" || fail "decimal de-duplication path missing"
@@ -33,6 +39,19 @@ grep -Fq '.accessibilityValue(calculator.result)' "$SOURCE" || fail "result acce
 # Division-by-zero and malformed expressions must remain explicit equals errors.
 grep -Fq 'if token == "/" && rhs == 0 { return nil }' "$SOURCE" || fail "division-by-zero parser guard missing"
 grep -Fq 'result = "Error"' "$SOURCE" || fail "explicit evaluation error state missing"
+
+# Calculator value must survive a real app-process restart through small,
+# calculator-owned UserDefaults state. Corrupt/oversized state is rejected.
+grep -Fq 'kamihi.desktop.calculator.expression' "$PERSISTENCE" || fail "persisted expression key missing"
+grep -Fq 'kamihi.desktop.calculator.result' "$PERSISTENCE" || fail "persisted result key missing"
+grep -Fq 'DesktopCalculatorStore.shared' "$PERSISTENCE" || fail "Calculator persistence is not attached to the local store"
+grep -Fq 'value.count <= 256' "$PERSISTENCE" || fail "persisted expression size bound missing"
+grep -Fq 'value.count <= 64' "$PERSISTENCE" || fail "persisted result size bound missing"
+grep -Fq 'DesktopCalculatorPersistence.shared.activate()' "$APP" || fail "Calculator persistence is not activated during app launch"
+grep -Fq 'persistenceVerifyLaunchArgument' "$LIFECYCLE" || fail "process-restart verification launch argument missing"
+grep -Fq 'KAMIHI_CALCULATOR_PROCESS_RESTART_OK' "$LIFECYCLE" || fail "process-restart runtime success marker missing"
+grep -Fq 'run_calculator_process_restart_smoke' "$SIM_SMOKE" || fail "simulator process-restart gate missing"
+grep -Fq -- '-KamihiCalculatorPersistenceVerifySmoke' "$SIM_SMOKE" || fail "process-restart relaunch argument missing"
 
 # Hardware keyboard Calculator routing must stay local and transport-independent.
 grep -Fq 'desktop.activeWindow?.title == "Calculator"' "$KEYBOARD" || fail "Calculator hardware-keyboard focus route missing"
