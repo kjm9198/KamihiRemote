@@ -387,65 +387,83 @@ struct DesktopCalculatorView: View {
     ]
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "plus.forwardslash.minus")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.orange)
-                    .frame(width: 26, height: 26)
-                    .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                Text("Calculator")
-                    .font(.system(size: 13, weight: .semibold))
-                Spacer()
-                Button { calculator.clear() } label: {
-                    DesktopToolbarIconLabel("clear")
+        GeometryReader { calculatorGeo in
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus.forwardslash.minus")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.orange)
+                        .frame(width: 26, height: 26)
+                        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    Text("Calculator")
+                        .font(.system(size: 13, weight: .semibold))
+                    Spacer()
+                    Button { calculator.clear() } label: {
+                        DesktopToolbarIconLabel("clear")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear calculator")
+                    .desktopCalculatorHitTarget(.toolbarClear, containerSize: calculatorGeo.size)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear calculator")
-            }
-            .padding(.horizontal, 10)
-            .frame(height: DesktopShellMetrics.toolbarHeight)
-            .desktopAppToolbar()
+                .padding(.horizontal, 10)
+                .frame(height: DesktopShellMetrics.toolbarHeight)
+                .desktopAppToolbar()
 
-            VStack(spacing: 12) {
-                VStack(alignment: .trailing, spacing: 5) {
-                    Text(calculator.expression.isEmpty ? "0" : calculator.expression)
-                        .font(.system(size: 16, weight: .regular).monospaced())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                    Text(calculator.result)
-                        .font(.system(size: 38, weight: .medium))
-                        .minimumScaleFactor(0.5)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                        .accessibilityLabel("Result")
-                        .accessibilityValue(calculator.result)
-                }
-                .padding(14)
-                .desktopInsetPanel()
+                VStack(spacing: 12) {
+                    VStack(alignment: .trailing, spacing: 5) {
+                        Text(calculator.expression.isEmpty ? "0" : calculator.expression)
+                            .font(.system(size: 16, weight: .regular).monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                        Text(calculator.result)
+                            .font(.system(size: 38, weight: .medium))
+                            .minimumScaleFactor(0.5)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            .accessibilityLabel("Result")
+                            .accessibilityValue(calculator.result)
+                    }
+                    .padding(14)
+                    .desktopInsetPanel()
 
-                ForEach(rows, id: \.self) { row in
-                    HStack(spacing: 8) {
-                        ForEach(row, id: \.self) { key in
-                            Button { press(key) } label: {
-                                Text(key)
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundStyle(key == "=" ? Color.white : Color.primary)
-                                    .frame(maxWidth: .infinity, minHeight: 46)
-                                    .background(
-                                        key == "=" ? Color.accentColor : Color.primary.opacity(0.065),
-                                        in: RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                    )
+                    ForEach(rows, id: \.self) { row in
+                        HStack(spacing: 8) {
+                            ForEach(row, id: \.self) { key in
+                                Button { press(key) } label: {
+                                    Text(key)
+                                        .font(.system(size: 18, weight: .semibold))
+                                        .foregroundStyle(key == "=" ? Color.white : Color.primary)
+                                        .frame(maxWidth: .infinity, minHeight: 46)
+                                        .background(
+                                            key == "=" ? Color.accentColor : Color.primary.opacity(0.065),
+                                            in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(accessibilityLabel(for: key))
+                                .desktopCalculatorHitTarget(.key(key), containerSize: calculatorGeo.size)
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(accessibilityLabel(for: key))
                         }
                     }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
+                .padding(14)
             }
-            .padding(14)
+            .coordinateSpace(name: "desktopCalculatorContent")
+            .onPreferenceChange(DesktopCalculatorHitPreferenceKey.self) { preferences in
+                DesktopCalculatorHitRegistry.shared.update(
+                    entries: preferences.map {
+                        DesktopCalculatorHitRegistry.Entry(
+                            target: $0.target,
+                            normalizedFrame: $0.normalizedFrame
+                        )
+                    }
+                )
+            }
+            .onDisappear {
+                DesktopCalculatorHitRegistry.shared.clear()
+            }
         }
         .background(DesktopShellPalette.canvas)
     }
