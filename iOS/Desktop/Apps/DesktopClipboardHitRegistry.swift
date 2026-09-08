@@ -54,7 +54,8 @@ final class DesktopClipboardHitRegistry {
         case .toolbarRefresh:
             clipboard.captureIfChanged()
         case .toolbarClear:
-            guard onClearRequested != nil else { return false }
+            guard (!clipboard.items.isEmpty || !UIPasteboard.general.items.isEmpty),
+                  onClearRequested != nil else { return false }
             onClearRequested?()
         case .itemPaste(let item):
             return desktop.pasteClipboardItemIntoPreviousApp(item)
