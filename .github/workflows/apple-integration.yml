@@ -57,6 +57,13 @@ jobs:
       - name: Run Kamihi Desktop simulator smoke
         run: bash scripts/apple-integration-smoke.sh
 
+      # ChatGPT is a first-class desktop app, so model-only lifecycle checks are
+      # insufficient. Reuse the exact simulator binary and prove open, minimize,
+      # restore/bring-front, maximize/restore, true close and reopen on both
+      # current iPhone and iPad simulators before advancing to live-auth testing.
+      - name: Run ChatGPT lifecycle simulator smoke
+        run: bash scripts/chatgpt-lifecycle-simulator-smoke.sh
+
       # Clipboard paste/focus ownership is now a dedicated first-attempt app-flow
       # gate. It reuses the exact iPhone simulator build and must prove Notes
       # handoff, unsupported-target blocking, lifecycle controls, and nonblank UI.
