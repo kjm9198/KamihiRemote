@@ -41,6 +41,7 @@ require '.desktopClipboardHitTarget(.itemPaste(item)' "$UI" 'Paste must expose r
 require 'Button("Copy", systemImage: "doc.on.doc")' "$UI" 'Copy control missing'
 require '.desktopClipboardHitTarget(.itemCopy(item)' "$UI" 'Copy must expose rendered pointer geometry'
 require 'Button("Notes", systemImage: "note.text.badge.plus")' "$UI" 'Notes handoff missing'
+require 'DesktopClipboardHitRegistry.shared.perform(.itemNotes(item), desktop: desktop)' "$UI" 'touch Notes handoff must reuse the authoritative rendered-pointer Notes route'
 require '.desktopClipboardHitTarget(.itemNotes(item)' "$UI" 'Notes handoff must expose rendered pointer geometry'
 require 'ShareLink(item: item)' "$UI" 'Share control missing'
 require '.desktopClipboardHitTarget(.itemShare(item)' "$UI" 'Share must expose rendered pointer geometry'
@@ -98,6 +99,11 @@ require 'KAMIHI_IPAD_CLIPBOARD_POINTER_OK' "$IPAD_SMOKE" 'iPad Clipboard pointer
 
 if grep -Fq 'desktop.typeIntoActiveDesktopField(item)' "$UI"; then
   echo 'Clipboard contract failed: Paste must never type while Clipboard owns active-window focus' >&2
+  exit 1
+fi
+
+if grep -Fq 'notes.text' "$UI"; then
+  echo 'Clipboard contract failed: touch Notes handoff must not mutate the compatibility text mirror directly' >&2
   exit 1
 fi
 
