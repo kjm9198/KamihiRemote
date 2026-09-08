@@ -54,11 +54,14 @@ struct KamihiDesktopApp: App {
 
                         // A physical keyboard is connected to the iPhone scene,
                         // while the desktop scene itself is intentionally passive.
-                        // Capture only while a desktop field explicitly owns text
-                        // focus, then route through the same safe app/WebKit paths
-                        // as the phone keyboard.
+                        // Capture while a desktop field explicitly owns text focus.
+                        // Calculator is a command-like native surface with no text
+                        // field, so it keeps the hardware receiver active whenever it
+                        // is frontmost; the receiver accepts only calculator-safe keys.
                         DesktopHardwareKeyboardReceiver(
-                            isEnabled: hardwareInput.isKeyboardConnected && desktop.wantsPhoneKeyboard,
+                            isEnabled: hardwareInput.isKeyboardConnected && (
+                                desktop.wantsPhoneKeyboard || desktop.activeWindow?.title == "Calculator"
+                            ),
                             desktop: desktop
                         )
                         .frame(width: 1, height: 1)

@@ -6,8 +6,10 @@ import UIKit
 /// The external display is intentionally non-interactive, so hardware keyboard text
 /// arrives on the iPhone scene. This receiver forwards only ordinary text editing
 /// into the currently focused Kamihi field through DesktopSession's existing app/
-/// WebView input routes. Command shortcuts continue to bubble to SwiftUI's
-/// DesktopHardwareShortcutLayer and passwords/passkeys remain owned by WebKit/iOS.
+/// WebView input routes. Calculator is intentionally handled here as a command-like
+/// native surface because it has no editable UITextField of its own. Command
+/// shortcuts continue to bubble to SwiftUI's DesktopHardwareShortcutLayer and
+/// passwords/passkeys remain owned by WebKit/iOS.
 struct DesktopHardwareKeyboardReceiver: UIViewRepresentable {
     let isEnabled: Bool
     let desktop: DesktopSession
@@ -36,7 +38,12 @@ struct DesktopHardwareKeyboardReceiver: UIViewRepresentable {
 
         override var canBecomeFirstResponder: Bool { captureEnabled }
         override var inputView: UIView? { suppressedSoftwareKeyboard }
-        var hasText: Bool { false }
+        var hasText: Bool {
+            if desktop?.activeWindow?.title == "Calculator" {
+                return !DesktopCalculatorStore.shared.expression.isEmpty
+            }
+            return false
+        }
 
         override init(frame: CGRect) {
             super.init(frame: frame)
@@ -75,6 +82,12 @@ struct DesktopHardwareKeyboardReceiver: UIViewRepresentable {
 
         func insertText(_ text: String) {
             guard captureEnabled, let desktop else { return }
+
+            if desktop.activeWindow?.title == "Calculator" {
+                routeCalculatorText(text)
+                return
+            }
+
             if text == "\n" || text == "\r" || text == "\r\n" {
                 desktop.pressEnterInActiveDesktopField()
             } else if !text.isEmpty {
@@ -84,7 +97,39 @@ struct DesktopHardwareKeyboardReceiver: UIViewRepresentable {
 
         func deleteBackward() {
             guard captureEnabled else { return }
+            if desktop?.activeWindow?.title == "Calculator" {
+                DesktopCalculatorStore.shared.backspace()
+                return
+            }
             desktop?.deleteBackwardInActiveDesktopField()
+        }
+
+        private func routeCalculatorText(_ text: String) {
+            let calculator = DesktopCalculatorStore.shared
+
+            if text == "\n" || text == "\r" || text == "\r\n" {
+                calculator.evaluate()
+                return
+            }
+
+            for character in text {
+                switch character {
+                case "0"..."9", ".", "(", ")", "+":
+                    calculator.append(String(character))
+                case "-", "−":
+                    calculator.append("−")
+                case "*", "×":
+                    calculator.append("×")
+                case "/", "÷":
+                    calculator.append("÷")
+                case "=":
+                    calculator.evaluate()
+                default:
+                    // Ignore unsupported text rather than forwarding it into a
+                    // different app or corrupting the calculator expression.
+                    continue
+                }
+            }
         }
 
         private func installEditingObserverIfNeeded() {
