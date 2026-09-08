@@ -406,7 +406,10 @@ struct WKWebViewRepresentable: UIViewRepresentable {
         configuration.preferences.isElementFullscreenEnabled = false
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15"
+        // Keep WebKit's real iOS user agent so sites can correctly detect the
+        // platform capabilities used by Password AutoFill, passkeys, OAuth,
+        // CAPTCHA and file pickers. Desktop layout is requested separately via
+        // preferredContentMode; Kamihi must not impersonate macOS Safari.
         webView.isOpaque = false
         webView.backgroundColor = .systemBackground
         webView.scrollView.backgroundColor = .systemBackground
