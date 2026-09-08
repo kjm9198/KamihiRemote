@@ -113,12 +113,14 @@ capture_evidence() {
 run_family() {
   local family="$1"
   local slug="$2"
-  local selection udid name poll log_file log_pid=""
+  local selection udid name poll log_file stderr_file
   selection="$(pick_device "$family")"
   udid="${selection%%|*}"
   name="${selection#*|}"
   log_file="$SMOKE_DIR/chatgpt-lifecycle-${slug}.log"
+  stderr_file="$SMOKE_DIR/chatgpt-lifecycle-${slug}.stderr.log"
   : > "$log_file"
+  : > "$stderr_file"
   echo "==> ChatGPT lifecycle smoke on $name ($udid)"
 
   if ! ensure_simulator_ready "$udid" "$name"; then
@@ -126,40 +128,33 @@ run_family() {
     return 1
   fi
 
-  # Stream only lifecycle messages once. Repeated `log show` calls were taking
-  # minutes each on macOS-26 runners even after the app had already succeeded,
-  # exhausting the job budget and cancelling later Clipboard/iPad gates.
-  xcrun simctl spawn "$udid" log stream --style compact --level info \
-    --predicate 'subsystem == "com.kamihi.remote" AND composedMessage CONTAINS "KAMIHI_CHATGPT_LIFECYCLE"' \
-    > "$log_file" 2>&1 &
-  log_pid=$!
-  sleep 1
-
-  if ! bounded 10 xcrun simctl launch "$udid" "$BUNDLE" -KamihiDesktopLab -KamihiChatGPTLifecycleSmoke >/dev/null; then
+  # The DEBUG lifecycle harness deliberately prints its success/failure marker.
+  # Capture that app-process output directly instead of querying or streaming the
+  # unified log database. This avoids macOS-runner log latency/races while keeping
+  # the product assertion single-launch and deterministic.
+  if ! bounded 10 xcrun simctl launch \
+      --terminate-running-process \
+      --stdout="$log_file" \
+      --stderr="$stderr_file" \
+      "$udid" "$BUNDLE" -KamihiDesktopLab -KamihiChatGPTLifecycleSmoke >/dev/null; then
     echo "ChatGPT lifecycle app launch failed on $name"
-    kill "$log_pid" >/dev/null 2>&1 || true
-    wait "$log_pid" >/dev/null 2>&1 || true
     capture_evidence "$udid" "$slug"
     return 1
   fi
 
   poll=1
   while (( poll <= 30 )); do
-    if grep -Fq "KAMIHI_CHATGPT_LIFECYCLE_OK" "$log_file"; then
+    if grep -Fq "KAMIHI_CHATGPT_LIFECYCLE_OK" "$log_file" "$stderr_file" 2>/dev/null; then
       capture_evidence "$udid" "$slug"
       echo "KAMIHI_CHATGPT_LIFECYCLE_OK ($name)"
       bounded 5 xcrun simctl terminate "$udid" "$BUNDLE" >/dev/null 2>&1 || true
-      kill "$log_pid" >/dev/null 2>&1 || true
-      wait "$log_pid" >/dev/null 2>&1 || true
       return 0
     fi
 
-    if grep -Fq "KAMIHI_CHATGPT_LIFECYCLE_FAIL" "$log_file"; then
+    if grep -Fq "KAMIHI_CHATGPT_LIFECYCLE_FAIL" "$log_file" "$stderr_file" 2>/dev/null; then
       echo "ChatGPT lifecycle harness reported failure on $name"
       capture_evidence "$udid" "$slug"
       bounded 5 xcrun simctl terminate "$udid" "$BUNDLE" >/dev/null 2>&1 || true
-      kill "$log_pid" >/dev/null 2>&1 || true
-      wait "$log_pid" >/dev/null 2>&1 || true
       return 1
     fi
 
@@ -170,8 +165,6 @@ run_family() {
   echo "ChatGPT lifecycle success marker was not observed on $name"
   capture_evidence "$udid" "$slug"
   bounded 5 xcrun simctl terminate "$udid" "$BUNDLE" >/dev/null 2>&1 || true
-  kill "$log_pid" >/dev/null 2>&1 || true
-  wait "$log_pid" >/dev/null 2>&1 || true
   return 1
 }
 
