@@ -84,17 +84,14 @@ extension View {
         background {
             GeometryReader { proxy in
                 let frame = proxy.frame(in: .named("desktopCalculatorContent"))
-                let normalized: CGRect
-                if containerSize.width > 0, containerSize.height > 0 {
-                    normalized = CGRect(
+                let normalized = containerSize.width > 0 && containerSize.height > 0
+                    ? CGRect(
                         x: frame.minX / containerSize.width,
                         y: frame.minY / containerSize.height,
                         width: frame.width / containerSize.width,
                         height: frame.height / containerSize.height
                     )
-                } else {
-                    normalized = .zero
-                }
+                    : CGRect.zero
 
                 Color.clear.preference(
                     key: DesktopCalculatorHitPreferenceKey.self,
