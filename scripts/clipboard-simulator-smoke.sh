@@ -44,20 +44,24 @@ LOG="$SMOKE_DIR/clipboard-simulator-launch.log"
 xcrun simctl launch "$UDID" "$BUNDLE" -KamihiDesktopLab -KamihiClipboardLifecycleSmoke >> "$LOG" 2>&1
 
 lifecycle_seen=0
+webview_seen=0
 pointer_seen=0
 poll=1
 while (( poll <= 30 )); do
   system_log="$(xcrun simctl spawn "$UDID" log show --last 2m --style compact \
-    --predicate 'subsystem == "com.kamihi.remote" AND (category == "ClipboardSmoke" OR category == "ClipboardPointerSmoke")' 2>/dev/null || true)"
+    --predicate 'subsystem == "com.kamihi.remote" AND (category == "ClipboardSmoke" OR category == "ClipboardWebViewSmoke" OR category == "ClipboardPointerSmoke")' 2>/dev/null || true)"
   if grep -Fq "KAMIHI_CLIPBOARD_LIFECYCLE_OK" <<< "$system_log"; then
     lifecycle_seen=1
+  fi
+  if grep -Fq "KAMIHI_CLIPBOARD_WEBVIEW_OK" <<< "$system_log"; then
+    webview_seen=1
   fi
   if grep -Fq "KAMIHI_CLIPBOARD_POINTER_OK" <<< "$system_log"; then
     pointer_seen=1
   fi
 
-  if (( lifecycle_seen == 1 && pointer_seen == 1 )); then
-    echo "Clipboard lifecycle and rendered-pointer runtime markers observed"
+  if (( lifecycle_seen == 1 && webview_seen == 1 && pointer_seen == 1 )); then
+    echo "Clipboard lifecycle, WebView handoff, and rendered-pointer runtime markers observed"
     xcrun simctl io "$UDID" screenshot "$SMOKE_DIR/clipboard-pointer-controls.png" >/dev/null
     size="$(stat -f '%z' "$SMOKE_DIR/clipboard-pointer-controls.png" 2>/dev/null || stat -c '%s' "$SMOKE_DIR/clipboard-pointer-controls.png")"
     (( size >= 60000 )) || { echo "Clipboard pointer screenshot too small: $size bytes"; exit 1; }
@@ -68,7 +72,7 @@ while (( poll <= 30 )); do
   poll=$((poll + 1))
 done
 
-echo "Clipboard smoke markers missing: lifecycle=$lifecycle_seen pointer=$pointer_seen"
+echo "Clipboard smoke markers missing: lifecycle=$lifecycle_seen webview=$webview_seen pointer=$pointer_seen"
 xcrun simctl spawn "$UDID" log show --last 3m --style compact \
   --predicate 'process == "KamihiRemote" OR subsystem == "com.kamihi.remote"' 2>/dev/null \
   | tail -1600 > "$SMOKE_DIR/clipboard-simulator-system.log" || true
