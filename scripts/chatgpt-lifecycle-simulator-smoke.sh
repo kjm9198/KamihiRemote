@@ -5,6 +5,7 @@ DERIVED_IOS="${RUNNER_TEMP:-/tmp}/kamihi-ios-derived"
 SMOKE_DIR="${RUNNER_TEMP:-/tmp}/kamihi-smoke"
 APP="$DERIVED_IOS/Build/Products/Debug-iphonesimulator/KamihiRemote.app"
 BUNDLE="com.kamihi.remote"
+MARKER_NAME="kamihi-chatgpt-lifecycle-smoke.txt"
 mkdir -p "$SMOKE_DIR"
 
 [[ -d "$APP" ]] || { echo "ChatGPT smoke requires the simulator build from apple-integration-smoke.sh"; exit 1; }
@@ -113,14 +114,12 @@ capture_evidence() {
 run_family() {
   local family="$1"
   local slug="$2"
-  local selection udid name poll log_file stderr_file
+  local selection udid name poll data_container marker_file evidence_log
   selection="$(pick_device "$family")"
   udid="${selection%%|*}"
   name="${selection#*|}"
-  log_file="$SMOKE_DIR/chatgpt-lifecycle-${slug}.log"
-  stderr_file="$SMOKE_DIR/chatgpt-lifecycle-${slug}.stderr.log"
-  : > "$log_file"
-  : > "$stderr_file"
+  evidence_log="$SMOKE_DIR/chatgpt-lifecycle-${slug}.log"
+  : > "$evidence_log"
   echo "==> ChatGPT lifecycle smoke on $name ($udid)"
 
   if ! ensure_simulator_ready "$udid" "$name"; then
@@ -128,14 +127,21 @@ run_family() {
     return 1
   fi
 
-  # The DEBUG lifecycle harness deliberately prints its success/failure marker.
-  # Capture that app-process output directly instead of querying or streaming the
-  # unified log database. This avoids macOS-runner log latency/races while keeping
-  # the product assertion single-launch and deterministic.
+  data_container="$(bounded 8 xcrun simctl get_app_container "$udid" "$BUNDLE" data 2>/dev/null || true)"
+  if [[ -z "$data_container" || ! -d "$data_container" ]]; then
+    echo "Could not resolve ChatGPT smoke app container on $name"
+    capture_evidence "$udid" "$slug"
+    return 1
+  fi
+
+  marker_file="$data_container/tmp/$MARKER_NAME"
+  rm -f "$marker_file"
+
+  # The DEBUG lifecycle harness writes exactly one success/failure marker inside
+  # its own simulator data container. Reading that file avoids unified-log and
+  # detached-process stdout races while preserving a single real app launch.
   if ! bounded 10 xcrun simctl launch \
       --terminate-running-process \
-      --stdout="$log_file" \
-      --stderr="$stderr_file" \
       "$udid" "$BUNDLE" -KamihiDesktopLab -KamihiChatGPTLifecycleSmoke >/dev/null; then
     echo "ChatGPT lifecycle app launch failed on $name"
     capture_evidence "$udid" "$slug"
@@ -144,18 +150,22 @@ run_family() {
 
   poll=1
   while (( poll <= 30 )); do
-    if grep -Fq "KAMIHI_CHATGPT_LIFECYCLE_OK" "$log_file" "$stderr_file" 2>/dev/null; then
-      capture_evidence "$udid" "$slug"
-      echo "KAMIHI_CHATGPT_LIFECYCLE_OK ($name)"
-      bounded 5 xcrun simctl terminate "$udid" "$BUNDLE" >/dev/null 2>&1 || true
-      return 0
-    fi
+    if [[ -f "$marker_file" ]]; then
+      cat "$marker_file" | tee "$evidence_log"
 
-    if grep -Fq "KAMIHI_CHATGPT_LIFECYCLE_FAIL" "$log_file" "$stderr_file" 2>/dev/null; then
-      echo "ChatGPT lifecycle harness reported failure on $name"
-      capture_evidence "$udid" "$slug"
-      bounded 5 xcrun simctl terminate "$udid" "$BUNDLE" >/dev/null 2>&1 || true
-      return 1
+      if grep -Fq "KAMIHI_CHATGPT_LIFECYCLE_OK" "$marker_file"; then
+        capture_evidence "$udid" "$slug"
+        echo "KAMIHI_CHATGPT_LIFECYCLE_OK ($name)"
+        bounded 5 xcrun simctl terminate "$udid" "$BUNDLE" >/dev/null 2>&1 || true
+        return 0
+      fi
+
+      if grep -Fq "KAMIHI_CHATGPT_LIFECYCLE_FAIL" "$marker_file"; then
+        echo "ChatGPT lifecycle harness reported failure on $name"
+        capture_evidence "$udid" "$slug"
+        bounded 5 xcrun simctl terminate "$udid" "$BUNDLE" >/dev/null 2>&1 || true
+        return 1
+      fi
     fi
 
     sleep 1
@@ -163,6 +173,9 @@ run_family() {
   done
 
   echo "ChatGPT lifecycle success marker was not observed on $name"
+  if [[ -f "$marker_file" ]]; then
+    cat "$marker_file" | tee "$evidence_log"
+  fi
   capture_evidence "$udid" "$slug"
   bounded 5 xcrun simctl terminate "$udid" "$BUNDLE" >/dev/null 2>&1 || true
   return 1
