@@ -95,6 +95,7 @@ require_literal "$CHATGPT_SMOKE" 'configuration.websiteDataStore = .nonPersisten
 require_literal "$CHATGPT_SMOKE" 'DesktopWebInputRegistry.shared.type(key: "ChatGPT", text: "hello")' 'ChatGPT routed typing smoke'
 require_literal "$CHATGPT_SMOKE" 'DesktopWebInputRegistry.shared.deleteBackward(key: "ChatGPT")' 'ChatGPT routed delete smoke'
 require_literal "$CHATGPT_SMOKE" 'DesktopWebInputRegistry.shared.pressEnter(key: "ChatGPT")' 'ChatGPT routed Enter smoke'
-require_literal "$CHATGPT_SMOKE" 'waitForTitle("SENT:hello"' 'ChatGPT send assertion'
+require_literal "$CHATGPT_SMOKE" 'document.documentElement.dataset.kamihiSent = composer.textContent' 'ChatGPT fixture records click-handler DOM state'
+require_literal "$CHATGPT_SMOKE" 'waitForSentValue("hello", in: webView)' 'ChatGPT live DOM send assertion'
 
 echo 'Standalone web-app contract OK'
