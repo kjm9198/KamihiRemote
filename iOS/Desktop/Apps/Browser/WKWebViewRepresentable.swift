@@ -218,9 +218,9 @@ final class DesktopWebInputRegistry {
                 const val = editable.value || '';
                 const pos = editable.selectionStart ?? 0;
                 let start = pos;
-                while (start > 0 && !/\s/.test(val[start - 1])) start--;
+                while (start > 0 && !/\\s/.test(val[start - 1])) start--;
                 let end = pos;
-                while (end < val.length && !/\s/.test(val[end])) end++;
+                while (end < val.length && !/\\s/.test(val[end])) end++;
                 if (start < end && editable.setSelectionRange) {
                   editable.setSelectionRange(start, end);
                 }
@@ -231,9 +231,9 @@ final class DesktopWebInputRegistry {
                   const text = node.nodeValue || '';
                   const offset = range.startOffset;
                   let s = offset;
-                  while (s > 0 && /\w/.test(text[s - 1])) s--;
+                  while (s > 0 && /\\w/.test(text[s - 1])) s--;
                   let e = offset;
-                  while (e < text.length && /\w/.test(text[e])) e++;
+                  while (e < text.length && /\\w/.test(text[e])) e++;
                   const wordRange = document.createRange();
                   wordRange.setStart(node, s);
                   wordRange.setEnd(node, e);
