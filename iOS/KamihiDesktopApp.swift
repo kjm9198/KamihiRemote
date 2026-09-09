@@ -24,6 +24,15 @@ struct KamihiDesktopApp: App {
             DesktopHardwareInputManager.shared.start()
 
             #if DEBUG
+            // Lifecycle smokes must measure the production window-management path,
+            // not the duration of unrelated DEBUG self-checks. Run this deterministic
+            // harness first so CI can observe its single result promptly even when
+            // the broader architecture checks are expensive on hosted simulators.
+            if ProcessInfo.processInfo.arguments.contains("-KamihiChatGPTLifecycleSmoke") {
+                _ = DesktopChatGPTLifecycleSmoke.run(desktop: DesktopSession.shared)
+                return
+            }
+
             let servicesPassed = DesktopServicesTests.runSelfChecks()
             let refactor = DesktopRefactorTests.runSelfChecks()
             print("=== KAMIHI DESKTOP RUNTIME SELF-CHECKS ===")
@@ -33,10 +42,6 @@ struct KamihiDesktopApp: App {
                 print("  [\(result.passed ? "PASS" : "FAIL")] \(result.name): \(result.message)")
             }
             print("==========================================")
-
-            if ProcessInfo.processInfo.arguments.contains("-KamihiChatGPTLifecycleSmoke") {
-                _ = DesktopChatGPTLifecycleSmoke.run(desktop: DesktopSession.shared)
-            }
             #endif
         }
     }
