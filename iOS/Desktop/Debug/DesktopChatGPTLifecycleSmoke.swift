@@ -200,7 +200,14 @@ enum DesktopChatGPTLifecycleSmoke {
         ) else {
             return fail("composer-navigation")
         }
-        guard webView.title == "READY" || await waitForTitle("READY", in: webView) else {
+
+        let fixtureReady: Bool
+        if webView.title == "READY" {
+            fixtureReady = true
+        } else {
+            fixtureReady = await waitForTitle("READY", in: webView)
+        }
+        guard fixtureReady else {
             return fail("composer-fixture")
         }
         guard await focusComposer(in: webView) else {
