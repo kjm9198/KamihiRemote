@@ -129,13 +129,13 @@ enum DesktopChatGPTLifecycleSmoke {
 
     /// Network-free WebKit fixture for the exact shared input bridge used by the
     /// ChatGPT window. It intentionally contains no account/session data and uses
-    /// a non-persistent website store. Attach the WebView to a real foreground
-    /// UIWindow so WebKit gets the same scene/process lifecycle as a rendered app,
-    /// then require an actual WKNavigationDelegate completion before input begins.
+    /// a non-persistent website store. Attach the WebView to a real UIWindowScene
+    /// so WebKit gets rendered process lifecycle rather than a detached test view.
+    /// The app-level DEBUG harness can start before SwiftUI finishes scene hookup,
+    /// so wait a short bounded interval for UIKit to publish the scene instead of
+    /// failing before the product UI has had a chance to connect.
     private static func verifyRoutedComposerInput() async -> Bool {
-        guard let scene = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .first(where: { $0.activationState == .foregroundActive }) else {
+        guard let scene = await waitForWindowScene() else {
             return fail("composer-scene")
         }
 
@@ -236,6 +236,24 @@ enum DesktopChatGPTLifecycleSmoke {
         }
 
         return true
+    }
+
+    private static func waitForWindowScene(attempts: Int = 50) async -> UIWindowScene? {
+        for _ in 0..<attempts {
+            let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            if let active = scenes.first(where: { $0.activationState == .foregroundActive }) {
+                return active
+            }
+            if let inactive = scenes.first(where: { $0.activationState == .foregroundInactive }) {
+                return inactive
+            }
+            if let connected = scenes.first {
+                return connected
+            }
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return nil
     }
 
     private static func focusComposer(in webView: WKWebView) async -> Bool {
