@@ -6,13 +6,13 @@ SMOKE_DIR="${RUNNER_TEMP:-/tmp}/kamihi-smoke"
 APP="$DERIVED_IOS/Build/Products/Debug-iphonesimulator/KamihiRemote.app"
 BUNDLE="com.kamihi.remote"
 MARKER_NAME="kamihi-chatgpt-lifecycle-smoke.txt"
+GENERAL_RESULT="$SMOKE_DIR/result.txt"
 mkdir -p "$SMOKE_DIR"
 
 [[ -d "$APP" ]] || { echo "ChatGPT smoke requires the simulator build from apple-integration-smoke.sh"; exit 1; }
 
-# CoreSimulator commands occasionally wedge on hosted macOS runners. Bound only
-# infrastructure operations; the actual ChatGPT lifecycle assertion still gets
-# exactly one app launch and must emit its own success marker.
+# Bound CoreSimulator infrastructure only. The ChatGPT lifecycle assertion itself
+# still gets exactly one app launch and must emit its own success marker.
 bounded() {
   local seconds="$1"
   shift
@@ -43,14 +43,24 @@ for runtime, devices in payload.get("devices", {}).items():
     for device in devices:
         name=device.get("name", "")
         if device.get("isAvailable") and name.startswith(family):
-            candidates.append((version, name, device["udid"]))
+            boot_rank=0 if device.get("state") == "Booted" else 1
+            candidates.append((version, boot_rank, name, device["udid"]))
 if not candidates:
     raise SystemExit(1)
 latest=max(item[0] for item in candidates)
-choices=sorted(item for item in candidates if item[0] == latest)
-_, name, udid=choices[0]
+choices=sorted(item for item in candidates if item[0] == latest, key=lambda item: (item[1], item[2]))
+_, _, name, udid=choices[0]
 print(f"{udid}|{name}")
 ' "$family"
+}
+
+previous_iphone_selection() {
+  [[ -f "$GENERAL_RESULT" ]] || return 1
+  local udid name
+  udid="$(sed -n 's/^simulator_udid=//p' "$GENERAL_RESULT" | head -1)"
+  name="$(sed -n 's/^simulator_name=//p' "$GENERAL_RESULT" | head -1)"
+  [[ -n "$udid" && -n "$name" ]] || return 1
+  printf '%s|%s\n' "$udid" "$name"
 }
 
 is_booted() {
@@ -67,17 +77,36 @@ raise SystemExit(1)
 ' "$udid"
 }
 
+has_installed_app() {
+  local udid="$1"
+  bounded 6 xcrun simctl get_app_container "$udid" "$BUNDLE" app >/dev/null 2>&1
+}
+
 ensure_simulator_ready() {
   local udid="$1"
   local name="$2"
+  local reuse_installed="${3:-false}"
   local attempt
+
+  # The preceding general Desktop smoke has already booted a simulator and
+  # installed this exact current-SHA app. Reuse it instead of throwing away a
+  # known-good CoreSimulator and starting migration on a fresh iPhone.
+  if [[ "$reuse_installed" == "true" ]] && is_booted "$udid" && has_installed_app "$udid"; then
+    bounded 5 xcrun simctl terminate "$udid" "$BUNDLE" >/dev/null 2>&1 || true
+    echo "Reusing exact-build simulator from general Desktop smoke: $name ($udid)"
+    return 0
+  fi
 
   if ! is_booted "$udid"; then
     bounded 8 xcrun simctl boot "$udid" >/dev/null 2>&1 || true
+    # Booted alone is not sufficient on fresh hosted-runner devices: installation
+    # services can remain unavailable while first-boot migrations run. Wait for
+    # CoreSimulator terminal readiness, but keep the infrastructure wait bounded.
+    bounded 150 xcrun simctl bootstatus "$udid" -b >/dev/null 2>&1 || true
   fi
 
   attempt=1
-  while (( attempt <= 45 )); do
+  while (( attempt <= 30 )); do
     if is_booted "$udid"; then
       break
     fi
@@ -93,15 +122,15 @@ ensure_simulator_ready() {
   bounded 8 xcrun simctl uninstall "$udid" "$BUNDLE" >/dev/null 2>&1 || true
 
   attempt=1
-  while (( attempt <= 8 )); do
-    if bounded 10 xcrun simctl install "$udid" "$APP" >/dev/null 2>&1; then
+  while (( attempt <= 4 )); do
+    if bounded 15 xcrun simctl install "$udid" "$APP" >/dev/null 2>&1; then
       return 0
     fi
     sleep 2
     attempt=$((attempt + 1))
   done
 
-  echo "Simulator became Booted but never accepted app install: $name ($udid)"
+  echo "Simulator reached Booted state but never accepted exact-build app install: $name ($udid)"
   return 1
 }
 
@@ -114,15 +143,21 @@ capture_evidence() {
 run_family() {
   local family="$1"
   local slug="$2"
-  local selection udid name poll data_container marker_file evidence_log
-  selection="$(pick_device "$family")"
+  local selection udid name poll data_container marker_file evidence_log reuse_installed=false
+
+  if [[ "$family" == "iPhone" ]] && selection="$(previous_iphone_selection)"; then
+    reuse_installed=true
+  else
+    selection="$(pick_device "$family")"
+  fi
+
   udid="${selection%%|*}"
   name="${selection#*|}"
   evidence_log="$SMOKE_DIR/chatgpt-lifecycle-${slug}.log"
   : > "$evidence_log"
   echo "==> ChatGPT lifecycle smoke on $name ($udid)"
 
-  if ! ensure_simulator_ready "$udid" "$name"; then
+  if ! ensure_simulator_ready "$udid" "$name" "$reuse_installed"; then
     capture_evidence "$udid" "$slug"
     return 1
   fi
@@ -137,9 +172,6 @@ run_family() {
   marker_file="$data_container/tmp/$MARKER_NAME"
   rm -f "$marker_file"
 
-  # The DEBUG lifecycle harness writes exactly one success/failure marker inside
-  # its own simulator data container. Reading that file avoids unified-log and
-  # detached-process stdout races while preserving a single real app launch.
   if ! bounded 10 xcrun simctl launch \
       --terminate-running-process \
       "$udid" "$BUNDLE" -KamihiDesktopLab -KamihiChatGPTLifecycleSmoke >/dev/null; then
