@@ -172,13 +172,12 @@ run_family() {
   marker_file="$data_container/tmp/$MARKER_NAME"
   rm -f "$marker_file"
 
-  # Launch only the dedicated lifecycle harness. It exercises DesktopSession and
-  # a network-free WKWebView fixture directly and does not require Desktop Lab.
-  # Keeping a single smoke argument also avoids coupling this gate to the normal
-  # Desktop Lab startup path or argument-order behavior in CoreSimulator.
+  # Launch only the dedicated lifecycle harness. Use a plain non-option token for
+  # the app argument: on hosted CoreSimulator a leading-dash token can be consumed
+  # by simctl itself instead of reaching ProcessInfo.arguments in the app.
   if ! bounded 10 xcrun simctl launch \
       --terminate-running-process \
-      "$udid" "$BUNDLE" -KamihiChatGPTLifecycleSmoke >/dev/null; then
+      "$udid" "$BUNDLE" KamihiChatGPTLifecycleSmoke >/dev/null; then
     echo "ChatGPT lifecycle app launch failed on $name"
     capture_evidence "$udid" "$slug"
     return 1
