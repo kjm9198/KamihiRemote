@@ -299,10 +299,50 @@ final class DesktopWebInputRegistry {
 
     func pressEnter(key: String) {
         guard let webView = webViews[key]?.value else { return }
+        let chatGPTSubmitMode = key == "ChatGPT" ? "true" : "false"
         let script = """
         (() => {
           const el = document.activeElement;
           if (!el) return false;
+          const chatGPTSubmitMode = \(chatGPTSubmitMode);
+
+          // ChatGPT uses a multiline contenteditable composer, but normal Enter
+          // means Send. The previous generic contenteditable branch inserted a
+          // line break before submit logic could run, so both phone and hardware
+          // keyboards could never send a prompt. Keep this app-specific: do not
+          // change Enter semantics for arbitrary editable websites.
+          if (chatGPTSubmitMode && el.isContentEditable) {
+            const composer = el.closest?.('form, [data-testid*="composer"], [class*="composer"]') || el.parentElement;
+            const selectors = [
+              '[data-testid="send-button"]',
+              'button[aria-label="Send prompt"]',
+              'button[aria-label="Send message"]',
+              'button[type="submit"]'
+            ];
+            const scopes = [composer, document];
+            for (const scope of scopes) {
+              if (!scope?.querySelector) continue;
+              for (const selector of selectors) {
+                const button = scope.querySelector(selector);
+                if (!button || button.disabled || button.getAttribute?.('aria-disabled') === 'true') continue;
+                button.click();
+                return true;
+              }
+            }
+
+            const form = el.closest?.('form');
+            if (form?.requestSubmit) {
+              try {
+                form.requestSubmit();
+                return true;
+              } catch (e) {}
+            }
+
+            // Normal Enter in the ChatGPT composer must not silently degrade into
+            // a newline if the live site changes its submit markup. Returning false
+            // leaves the user's draft untouched and makes the failure diagnosable.
+            return false;
+          }
 
           if (el.tagName === 'TEXTAREA' || el.isContentEditable) {
             if (el.isContentEditable) document.execCommand('insertLineBreak', false, null);
