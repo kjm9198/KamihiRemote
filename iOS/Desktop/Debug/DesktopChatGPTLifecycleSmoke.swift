@@ -184,6 +184,7 @@ enum DesktopChatGPTLifecycleSmoke {
               });
               send.addEventListener('click', event => {
                 event.preventDefault();
+                document.documentElement.dataset.kamihiSent = composer.textContent;
                 document.title = 'SENT:' + composer.textContent;
               });
               composer.focus();
@@ -241,7 +242,12 @@ enum DesktopChatGPTLifecycleSmoke {
 
         bindFixture(webView)
         DesktopWebInputRegistry.shared.pressEnter(key: "ChatGPT")
-        guard await waitForTitle("SENT:hello", in: webView) else {
+        // The routed send is a DOM action. Assert the click handler's live DOM
+        // state directly rather than relying solely on WKWebView.title KVO, which
+        // can lag independently of JavaScript execution on hosted simulators.
+        // This remains strict: only the production registry call above can set
+        // this value, and the expected composer payload must match exactly.
+        guard await waitForSentValue("hello", in: webView) else {
             return fail("composer-enter-send")
         }
 
@@ -294,6 +300,24 @@ enum DesktopChatGPTLifecycleSmoke {
     ) async -> Bool {
         for _ in 0..<attempts {
             if !webView.isLoading, webView.title == expected { return true }
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        return false
+    }
+
+    private static func waitForSentValue(
+        _ expected: String,
+        in webView: WKWebView,
+        attempts: Int = 50
+    ) async -> Bool {
+        for _ in 0..<attempts {
+            let value: String? = await withCheckedContinuation { continuation in
+                webView.evaluateJavaScript("document.documentElement.dataset.kamihiSent || ''") { result, _ in
+                    continuation.resume(returning: result as? String)
+                }
+            }
+            if value == expected { return true }
             await Task.yield()
             try? await Task.sleep(for: .milliseconds(100))
         }
