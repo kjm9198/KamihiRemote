@@ -32,9 +32,11 @@ final class TrackpadEngine: ObservableObject {
 
     /// Two-finger movement normally means scrolling. Resizing is armed only by
     /// a deliberate hold before movement, never merely because the pointer happens
-    /// to be resting near a window edge.
+    /// to be resting near a window edge. One-finger edge drag is handled separately
+    /// from the exact edge that was under the cursor when the gesture began.
     private static let resizeHoldDuration: TimeInterval = 0.24
     private static let resizePreHoldMovementTolerance: CGFloat = 7.0
+    private static let oneFingerResizeMovementThreshold: CGFloat = 1.5
 
     /// Momentum should feel like a physical continuation of the user's lift, not
     /// stale velocity replayed after they deliberately paused before releasing.
@@ -61,6 +63,7 @@ final class TrackpadEngine: ObservableObject {
     private var lastObservedFingerCount: Int = 0
     private var secondTapCandidate = false
     private var dragHoldEligible = true
+    private var oneFingerResizeArmed = false
     private var threeFingerActionFired = false
     /// Three-finger controller gestures must begin only after the third finger is
     /// actually present. Reusing the original one-finger centroid can inherit
@@ -97,6 +100,7 @@ final class TrackpadEngine: ObservableObject {
             totalMovementDistance = 0
             gestureFingerCount = 1
             dragHoldEligible = true
+            oneFingerResizeArmed = desktop.resizeEdgeAtCursor() != nil
             threeFingerActionFired = false
             leftEdgeSwipeFired = false
             threeFingerStartCentroid = nil
@@ -112,6 +116,9 @@ final class TrackpadEngine: ObservableObject {
             lastCentroid = center
             lastSampleTime = now
             gestureFingerCount = max(gestureFingerCount, activeFingers)
+            if activeFingers != 1 {
+                oneFingerResizeArmed = false
+            }
             if activeFingers == 3 && lastObservedFingerCount != 3 {
                 threeFingerStartCentroid = center
             } else if activeFingers != 3 {
@@ -140,6 +147,9 @@ final class TrackpadEngine: ObservableObject {
         // When a second/third finger joins or leaves, reset the sampling origin
         // and consume that sample. This prevents the classic multi-touch jump.
         if activeFingers != lastObservedFingerCount {
+            if activeFingers != 1 {
+                oneFingerResizeArmed = false
+            }
             if activeFingers == 3 {
                 threeFingerStartCentroid = center
             } else {
@@ -221,6 +231,9 @@ final class TrackpadEngine: ObservableObject {
 
         activeFingers = max(remainingTouchCount, 0)
         lastObservedFingerCount = activeFingers
+        if activeFingers != 1 {
+            oneFingerResizeArmed = false
+        }
         if activeFingers != 3 {
             threeFingerStartCentroid = nil
         }
@@ -300,6 +313,7 @@ final class TrackpadEngine: ObservableObject {
         totalMovementDistance = 0
         secondTapCandidate = false
         dragHoldEligible = true
+        oneFingerResizeArmed = false
         threeFingerActionFired = false
         threeFingerStartCentroid = nil
         twoFingerStartTime = nil
@@ -317,6 +331,7 @@ final class TrackpadEngine: ObservableObject {
         totalMovementDistance = 0
         secondTapCandidate = false
         dragHoldEligible = true
+        oneFingerResizeArmed = false
         threeFingerActionFired = false
         threeFingerStartCentroid = nil
         twoFingerStartTime = nil
@@ -391,9 +406,31 @@ final class TrackpadEngine: ObservableObject {
         let distance = hypot(dx, dy)
         guard distance > 0.16 else { return }
 
+        if state == .resizing {
+            desktop.updatePointerResize(delta: CGSize(width: dx, height: dy))
+            return
+        }
+
         if state == .dragLocked || state == .dragging {
             let delta = acceleratedDelta(dx: dx, dy: dy, dt: dt, settings: settings)
             desktop.updateWindowDrag(delta: delta)
+            return
+        }
+
+        // A resize is armed only if the pointer was already on a visible edge or
+        // corner when this one-finger gesture began. This makes edge dragging feel
+        // immediate again without turning ordinary pointer travel across an edge
+        // into an accidental resize and without stealing two-finger scrolling.
+        if oneFingerResizeArmed,
+           totalMovementDistance >= Self.oneFingerResizeMovementThreshold,
+           desktop.resizeEdgeAtCursor() != nil,
+           desktop.beginPointerResize() {
+            state = .resizing
+            titleBarHoldTask?.cancel()
+            titleBarHoldTask = nil
+            resetPointerSmoothing()
+            if settings.hapticsEnabled { Haptics.touchTap() }
+            desktop.updatePointerResize(delta: CGSize(width: dx, height: dy))
             return
         }
 
@@ -416,6 +453,7 @@ final class TrackpadEngine: ObservableObject {
     private func updateTitleBarHoldWatch(desktop: DesktopSession, settings: TrackpadSettings) {
         guard activeFingers == 1,
               dragHoldEligible,
+              !oneFingerResizeArmed,
               (state == .idle || state == .moving) else {
             titleBarHoldTask?.cancel()
             titleBarHoldTask = nil
@@ -435,6 +473,7 @@ final class TrackpadEngine: ObservableObject {
                 guard let self, let desktop, !Task.isCancelled else { return }
                 guard self.activeFingers == 1,
                       self.dragHoldEligible,
+                      !self.oneFingerResizeArmed,
                       (self.state == .idle || self.state == .moving),
                       desktop.isCursorOverTitleBar() else { return }
                 if desktop.beginWindowDrag() {
