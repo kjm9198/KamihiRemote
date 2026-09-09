@@ -5,9 +5,13 @@ import OSLog
 @MainActor
 enum DesktopChatGPTLifecycleSmoke {
     private static let logger = Logger(subsystem: "com.kamihi.remote", category: "DesktopSmoke")
+    private static let markerURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("kamihi-chatgpt-lifecycle-smoke.txt", isDirectory: false)
 
     @discardableResult
     static func run(desktop: DesktopSession = .shared) -> Bool {
+        try? FileManager.default.removeItem(at: markerURL)
+
         let originalWindows = desktop.windows
         let originalActiveID = desktop.activeWindowID
         let originalKeyboardRequest = desktop.wantsPhoneKeyboard
@@ -76,15 +80,29 @@ enum DesktopChatGPTLifecycleSmoke {
             return fail("final-close")
         }
 
-        logger.notice("KAMIHI_CHATGPT_LIFECYCLE_OK")
-        print("KAMIHI_CHATGPT_LIFECYCLE_OK")
+        emit("KAMIHI_CHATGPT_LIFECYCLE_OK")
         return true
     }
 
     private static func fail(_ step: String) -> Bool {
-        logger.error("KAMIHI_CHATGPT_LIFECYCLE_FAIL [\(step, privacy: .public)]")
-        print("KAMIHI_CHATGPT_LIFECYCLE_FAIL [\(step)]")
+        emit("KAMIHI_CHATGPT_LIFECYCLE_FAIL [\(step)]")
         return false
+    }
+
+    private static func emit(_ marker: String) {
+        if marker.hasPrefix("KAMIHI_CHATGPT_LIFECYCLE_FAIL") {
+            logger.error("\(marker, privacy: .public)")
+        } else {
+            logger.notice("\(marker, privacy: .public)")
+        }
+        print(marker)
+
+        do {
+            try Data((marker + "\n").utf8).write(to: markerURL, options: .atomic)
+        } catch {
+            logger.error("KAMIHI_CHATGPT_LIFECYCLE_MARKER_WRITE_FAIL [\(error.localizedDescription, privacy: .public)]")
+            print("KAMIHI_CHATGPT_LIFECYCLE_MARKER_WRITE_FAIL [\(error.localizedDescription)]")
+        }
     }
 }
 #endif
