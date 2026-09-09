@@ -28,7 +28,11 @@ struct KamihiDesktopApp: App {
             // not the duration of unrelated DEBUG self-checks. Run this deterministic
             // harness first so CI can observe its single result promptly even when
             // the broader architecture checks are expensive on hosted simulators.
-            if ProcessInfo.processInfo.arguments.contains("-KamihiChatGPTLifecycleSmoke") {
+            // Accept the historical dash-prefixed spelling for compatibility, but
+            // prefer the plain token because CoreSimulator can consume a leading-dash
+            // launch argument as a simctl option on hosted runners.
+            let arguments = ProcessInfo.processInfo.arguments
+            if arguments.contains("KamihiChatGPTLifecycleSmoke") || arguments.contains("-KamihiChatGPTLifecycleSmoke") {
                 _ = await DesktopChatGPTLifecycleSmoke.run(desktop: DesktopSession.shared)
                 return
             }
