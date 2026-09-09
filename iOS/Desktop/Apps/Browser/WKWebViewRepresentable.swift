@@ -218,9 +218,9 @@ final class DesktopWebInputRegistry {
                 const val = editable.value || '';
                 const pos = editable.selectionStart ?? 0;
                 let start = pos;
-                while (start > 0 && !/\\s/.test(val[start - 1])) start--;
+                while (start > 0 && !/\s/.test(val[start - 1])) start--;
                 let end = pos;
-                while (end < val.length && !/\\s/.test(val[end])) end++;
+                while (end < val.length && !/\s/.test(val[end])) end++;
                 if (start < end && editable.setSelectionRange) {
                   editable.setSelectionRange(start, end);
                 }
@@ -231,9 +231,9 @@ final class DesktopWebInputRegistry {
                   const text = node.nodeValue || '';
                   const offset = range.startOffset;
                   let s = offset;
-                  while (s > 0 && /\\w/.test(text[s - 1])) s--;
+                  while (s > 0 && /\w/.test(text[s - 1])) s--;
                   let e = offset;
-                  while (e < text.length && /\\w/.test(text[e])) e++;
+                  while (e < text.length && /\w/.test(text[e])) e++;
                   const wordRange = document.createRange();
                   wordRange.setStart(node, s);
                   wordRange.setEnd(node, e);
@@ -482,7 +482,6 @@ final class DesktopWebInputRegistry {
 
           if (chatGPTSubmitMode && el.isContentEditable) {
             const keyOptions = {key:'Enter', code:'Enter', keyCode:13, which:13, bubbles:true, cancelable:true};
-            const keyDownAccepted = el.dispatchEvent(new KeyboardEvent('keydown', keyOptions));
 
             const selectors = [
               '[data-testid="send-button"]',
@@ -517,34 +516,36 @@ final class DesktopWebInputRegistry {
             }
 
             if (sendButton) {
-              // Dispatch one bubbling click rather than mixing synthetic pointer
-              // sequences with HTMLElement.click(). React-style delegated handlers
-              // and simple DOM listeners both receive this path exactly once.
-              sendButton.dispatchEvent(new MouseEvent('click', {
-                bubbles: true,
-                cancelable: true,
-                view: window,
-                button: 0,
-                buttons: 0
-              }));
-              el.dispatchEvent(new KeyboardEvent('keyup', keyOptions));
+              // Use the element's standards-based activation behavior exactly once.
+              // This reaches normal DOM and delegated React click handlers without
+              // double-applying pointer/mouse event sequences.
+              try {
+                sendButton.click();
+              } catch (e) {
+                return false;
+              }
               return true;
             }
 
+            // If the current ChatGPT markup exposes a form but no recognizable
+            // send button, prefer native form submission over inserting a newline.
             const form = el.closest?.('form');
             if (form?.requestSubmit) {
               try {
                 form.requestSubmit();
-                el.dispatchEvent(new KeyboardEvent('keyup', keyOptions));
                 return true;
               } catch (e) {}
             }
 
-            el.dispatchEvent(new KeyboardEvent('keyup', keyOptions));
-            // If a site keydown handler consumed Enter, leave the editor untouched.
-            // Otherwise also leave it untouched: normal Enter in ChatGPT must never
-            // silently degrade into a newline when send markup changes.
-            return !keyDownAccepted;
+            // Last resort: let ChatGPT's own Enter key listener observe the key.
+            // Do not synthesize a newline if its markup changes.
+            try {
+              el.dispatchEvent(new KeyboardEvent('keydown', keyOptions));
+              el.dispatchEvent(new KeyboardEvent('keyup', keyOptions));
+              return true;
+            } catch (e) {
+              return false;
+            }
           }
 
           if (el.tagName === 'TEXTAREA' || el.isContentEditable) {
