@@ -24,6 +24,7 @@ final class DesktopWebInputRegistry {
 
     private var webViews: [String: WeakWebView] = [:]
     private var lastPrimaryClick: [String: PrimaryClickSample] = [:]
+    private var fullscreenMaximizedByKamihi: Set<String> = []
 
     private init() {}
 
@@ -46,6 +47,7 @@ final class DesktopWebInputRegistry {
         }
         for key in removedKeys {
             lastPrimaryClick.removeValue(forKey: key)
+            fullscreenMaximizedByKamihi.remove(key)
         }
     }
 
@@ -54,6 +56,7 @@ final class DesktopWebInputRegistry {
         webViews = webViews.filter { $0.value.value != nil }
         for key in releasedKeys {
             lastPrimaryClick.removeValue(forKey: key)
+            fullscreenMaximizedByKamihi.remove(key)
         }
     }
 
@@ -87,6 +90,7 @@ final class DesktopWebInputRegistry {
             lastPrimaryClick[key] = PrimaryClickSample(time: now, x: safeX, y: safeY, count: clickCount)
         }
 
+        let youtubeMode = key == "YouTube" ? "true" : "false"
         let script = """
         (() => {
           const x = window.innerWidth * \(safeX);
@@ -94,6 +98,7 @@ final class DesktopWebInputRegistry {
           const hit = document.elementFromPoint(x, y);
           if (!hit) return false;
 
+          const youtubeMode = \(youtubeMode);
           const editable = hit.closest?.('input:not([type="button"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"]), textarea, [contenteditable="true"], [role="textbox"]') || (hit.isContentEditable ? hit : null);
           if (editable && !editable.disabled && !editable.readOnly && editable.focus) {
             editable.focus();
@@ -103,6 +108,63 @@ final class DesktopWebInputRegistry {
 
           const anchor = hit.closest?.('a[href]');
           const interactive = hit.closest?.('a, button, [role="button"], [role="link"], input, select, textarea, video, audio') || hit;
+
+          // WKWebView's native element-fullscreen support is enabled below, but an
+          // external-display software pointer cannot manufacture WebKit's trusted
+          // user-activation token. When the user targets YouTube's own fullscreen
+          // control, use a reversible page-local presentation fallback and let the
+          // desktop window maximize around it. Direct iPad/touch fullscreen can
+          // still use WebKit's native fullscreen API.
+          if (youtubeMode) {
+            const fullscreenControl = hit.closest?.(
+              '.ytp-fullscreen-button, button[aria-label*="full screen" i], button[aria-label*="fullscreen" i], button[title*="full screen" i], button[title*="fullscreen" i]'
+            );
+            if (fullscreenControl) {
+              const root = document.querySelector('#movie_player') ||
+                           hit.closest?.('#movie_player, ytd-player, ytd-reel-video-renderer') ||
+                           document.querySelector('video')?.parentElement;
+              if (root) {
+                const styleID = 'kamihi-youtube-fullscreen-style';
+                const active = document.documentElement.hasAttribute('data-kamihi-youtube-fullscreen');
+                if (active) {
+                  document.documentElement.removeAttribute('data-kamihi-youtube-fullscreen');
+                  document.getElementById(styleID)?.remove();
+                  root.removeAttribute?.('data-kamihi-fullscreen-target');
+                  return 'kamihi-fullscreen-off';
+                }
+
+                const style = document.createElement('style');
+                style.id = styleID;
+                style.textContent = `
+                  html[data-kamihi-youtube-fullscreen],
+                  html[data-kamihi-youtube-fullscreen] body {
+                    overflow: hidden !important;
+                    background: #000 !important;
+                  }
+                  [data-kamihi-fullscreen-target] {
+                    position: fixed !important;
+                    inset: 0 !important;
+                    width: 100vw !important;
+                    height: 100vh !important;
+                    max-width: none !important;
+                    max-height: none !important;
+                    z-index: 2147483647 !important;
+                    background: #000 !important;
+                    margin: 0 !important;
+                  }
+                  [data-kamihi-fullscreen-target] video {
+                    width: 100% !important;
+                    height: 100% !important;
+                    object-fit: contain !important;
+                  }
+                `;
+                document.head.appendChild(style);
+                document.documentElement.setAttribute('data-kamihi-youtube-fullscreen', 'true');
+                root.setAttribute('data-kamihi-fullscreen-target', 'true');
+                return 'kamihi-fullscreen-on';
+              }
+            }
+          }
 
           const eventInit = {
             bubbles: true,
@@ -197,8 +259,25 @@ final class DesktopWebInputRegistry {
         """
 
         webView.evaluateJavaScript(script) { result, _ in
-            let editable = result as? Bool ?? false
-            Task { @MainActor in completion(editable) }
+            Task { @MainActor in
+                if let command = result as? String,
+                   command == "kamihi-fullscreen-on" || command == "kamihi-fullscreen-off" {
+                    if let window = DesktopSession.shared.windows.last(where: { $0.title == key }) {
+                        if command == "kamihi-fullscreen-on" {
+                            if !window.isMaximized {
+                                DesktopSession.shared.toggleMaximize(window.id)
+                                self.fullscreenMaximizedByKamihi.insert(key)
+                            }
+                        } else if self.fullscreenMaximizedByKamihi.remove(key) != nil,
+                                  window.isMaximized {
+                            DesktopSession.shared.toggleMaximize(window.id)
+                        }
+                    }
+                    completion(false)
+                    return
+                }
+                completion(result as? Bool ?? false)
+            }
         }
     }
 
@@ -221,19 +300,120 @@ final class DesktopWebInputRegistry {
     }
 
     func scroll(key: String, deltaX: CGFloat, deltaY: CGFloat) {
-        lastPrimaryClick.removeValue(forKey: key)
-        guard let webView = webViews[key]?.value else { return }
-        var offset = webView.scrollView.contentOffset
-        offset.x += deltaX
-        offset.y += deltaY
+        guard let webView = webViews[key]?.value else {
+            lastPrimaryClick.removeValue(forKey: key)
+            return
+        }
 
-        let minX = -webView.scrollView.adjustedContentInset.left
-        let minY = -webView.scrollView.adjustedContentInset.top
-        let maxX = max(minX, webView.scrollView.contentSize.width - webView.scrollView.bounds.width + webView.scrollView.adjustedContentInset.right)
-        let maxY = max(minY, webView.scrollView.contentSize.height - webView.scrollView.bounds.height + webView.scrollView.adjustedContentInset.bottom)
-        offset.x = min(max(offset.x, minX), maxX)
-        offset.y = min(max(offset.y, minY), maxY)
-        webView.scrollView.setContentOffset(offset, animated: false)
+        // Keep the most recent click location as the preferred scroll target. This
+        // lets Shorts, sidebars, comment panes, and other nested SPA scrollers own
+        // the wheel/two-finger gesture instead of always moving WKWebView's root.
+        let sample = lastPrimaryClick[key]
+        let safeX = min(max(sample?.x ?? 0.5, 0), 1)
+        let safeY = min(max(sample?.y ?? 0.5, 0), 1)
+        let dx = Double(deltaX)
+        let dy = Double(deltaY)
+        let script = """
+        (() => {
+          const dx = \(dx);
+          const dy = \(dy);
+          const x = window.innerWidth * \(safeX);
+          const y = window.innerHeight * \(safeY);
+          const hit = document.elementFromPoint(x, y) || document.activeElement || document.body;
+          if (!hit) return false;
+
+          // Let app-level wheel listeners (including YouTube Shorts navigation)
+          // observe the gesture before applying a direct overflow fallback.
+          try {
+            hit.dispatchEvent(new WheelEvent('wheel', {
+              bubbles: true,
+              cancelable: true,
+              deltaX: dx,
+              deltaY: dy,
+              deltaMode: 0
+            }));
+          } catch (e) {}
+
+          const canScroll = (node) => {
+            if (!node || node === document.documentElement) return false;
+            const style = getComputedStyle(node);
+            const allowsY = /(auto|scroll|overlay)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 1;
+            const allowsX = /(auto|scroll|overlay)/.test(style.overflowX) && node.scrollWidth > node.clientWidth + 1;
+            return (Math.abs(dy) > 0.01 && allowsY) || (Math.abs(dx) > 0.01 && allowsX);
+          };
+
+          const move = (node) => {
+            if (!canScroll(node)) return false;
+            const beforeX = node.scrollLeft;
+            const beforeY = node.scrollTop;
+            node.scrollBy({left: dx, top: dy, behavior: 'auto'});
+            return node.scrollLeft !== beforeX || node.scrollTop !== beforeY;
+          };
+
+          let node = hit;
+          while (node && node !== document.body) {
+            if (move(node)) return true;
+            node = node.parentElement;
+          }
+
+          // SPA feeds frequently place the scroll owner beside rather than above
+          // the element under the pointer. Prefer visible YouTube/feed containers,
+          // then any large visible overflow container before falling back to root.
+          const preferredSelectors = [
+            'ytd-shorts',
+            'ytd-reel-shelf-renderer',
+            '#shorts-container',
+            '#contents',
+            '[role="feed"]',
+            '[data-testid*="scroll"]'
+          ];
+          for (const selector of preferredSelectors) {
+            for (const candidate of document.querySelectorAll(selector)) {
+              const rect = candidate.getBoundingClientRect();
+              if (rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight && move(candidate)) {
+                return true;
+              }
+            }
+          }
+
+          const candidates = Array.from(document.querySelectorAll('*'))
+            .filter((candidate) => {
+              if (!canScroll(candidate)) return false;
+              const rect = candidate.getBoundingClientRect();
+              return rect.width > 80 && rect.height > 80 && rect.bottom > 0 && rect.top < innerHeight && rect.right > 0 && rect.left < innerWidth;
+            })
+            .sort((a, b) => {
+              const ar = a.getBoundingClientRect();
+              const br = b.getBoundingClientRect();
+              return (br.width * br.height) - (ar.width * ar.height);
+            });
+          for (const candidate of candidates) {
+            if (move(candidate)) return true;
+          }
+
+          const beforeX = window.scrollX;
+          const beforeY = window.scrollY;
+          window.scrollBy({left: dx, top: dy, behavior: 'auto'});
+          return window.scrollX !== beforeX || window.scrollY !== beforeY;
+        })();
+        """
+
+        webView.evaluateJavaScript(script) { result, _ in
+            guard (result as? Bool) != true else { return }
+            Task { @MainActor in
+                var offset = webView.scrollView.contentOffset
+                offset.x += deltaX
+                offset.y += deltaY
+
+                let minX = -webView.scrollView.adjustedContentInset.left
+                let minY = -webView.scrollView.adjustedContentInset.top
+                let maxX = max(minX, webView.scrollView.contentSize.width - webView.scrollView.bounds.width + webView.scrollView.adjustedContentInset.right)
+                let maxY = max(minY, webView.scrollView.contentSize.height - webView.scrollView.bounds.height + webView.scrollView.adjustedContentInset.bottom)
+                offset.x = min(max(offset.x, minX), maxX)
+                offset.y = min(max(offset.y, minY), maxY)
+                webView.scrollView.setContentOffset(offset, animated: false)
+            }
+        }
     }
 
     func type(key: String, text: String) {
@@ -457,7 +637,7 @@ struct WKWebViewRepresentable: UIViewRepresentable {
         configuration.defaultWebpagePreferences.preferredContentMode = .desktop
         configuration.allowsInlineMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
-        configuration.preferences.isElementFullscreenEnabled = false
+        configuration.preferences.isElementFullscreenEnabled = true
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.isOpaque = false
