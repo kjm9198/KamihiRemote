@@ -214,28 +214,42 @@ enum DesktopChatGPTLifecycleSmoke {
             return fail("composer-focus")
         }
 
-        DesktopWebInputRegistry.shared.register(webView, key: "ChatGPT")
+        // The lifecycle portion above intentionally creates and destroys the real
+        // ChatGPT SwiftUI WebView. Its representable can finish an asynchronous
+        // update/dismantle while this isolated fixture is running, and both use the
+        // production registry key. Re-bind the exact fixture immediately before
+        // every routed command so a delayed real-view callback cannot redirect a
+        // test operation to a stale WebView. The command implementation itself is
+        // unchanged and remains the same route used by phone/hardware input.
+        bindFixture(webView)
         DesktopWebInputRegistry.shared.type(key: "ChatGPT", text: "hello")
         guard await waitForTitle("VALUE:hello", in: webView) else {
             return fail("composer-type")
         }
 
+        bindFixture(webView)
         DesktopWebInputRegistry.shared.deleteBackward(key: "ChatGPT")
         guard await waitForTitle("VALUE:hell", in: webView) else {
             return fail("composer-delete")
         }
 
+        bindFixture(webView)
         DesktopWebInputRegistry.shared.type(key: "ChatGPT", text: "o")
         guard await waitForTitle("VALUE:hello", in: webView) else {
             return fail("composer-retype")
         }
 
+        bindFixture(webView)
         DesktopWebInputRegistry.shared.pressEnter(key: "ChatGPT")
         guard await waitForTitle("SENT:hello", in: webView) else {
             return fail("composer-enter-send")
         }
 
         return true
+    }
+
+    private static func bindFixture(_ webView: WKWebView) {
+        DesktopWebInputRegistry.shared.register(webView, key: "ChatGPT")
     }
 
     private static func waitForWindowScene(attempts: Int = 50) async -> UIWindowScene? {
