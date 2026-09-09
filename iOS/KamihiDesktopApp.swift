@@ -29,7 +29,7 @@ struct KamihiDesktopApp: App {
             // harness first so CI can observe its single result promptly even when
             // the broader architecture checks are expensive on hosted simulators.
             if ProcessInfo.processInfo.arguments.contains("-KamihiChatGPTLifecycleSmoke") {
-                _ = DesktopChatGPTLifecycleSmoke.run(desktop: DesktopSession.shared)
+                _ = await DesktopChatGPTLifecycleSmoke.run(desktop: DesktopSession.shared)
                 return
             }
 
