@@ -120,10 +120,6 @@ final class DesktopWebInputRegistry {
             isPrimary: true
           };
 
-          // For anchor links, skip synthetic event dispatch to avoid conflicts
-          // with site JS event handlers (e.g. Google search results use event
-          // delegation that can swallow synthetic events). Native .click() on
-          // the <a> element is the most reliable path for link navigation.
           if (anchor) {
             anchor.click();
           } else {
@@ -135,8 +131,6 @@ final class DesktopWebInputRegistry {
             hit.dispatchEvent(new MouseEvent('mouseup', upInit));
             hit.dispatchEvent(new MouseEvent('click', upInit));
 
-            // For non-link interactive elements (buttons, inputs, etc.),
-            // also call native .click() as a reliable fallback.
             if (interactive !== hit && interactive.click && !interactive.closest?.('a[href]')) {
               interactive.click();
             } else if (hit.click && !hit.closest?.('a[href]')) {
@@ -306,42 +300,71 @@ final class DesktopWebInputRegistry {
           if (!el) return false;
           const chatGPTSubmitMode = \(chatGPTSubmitMode);
 
-          // ChatGPT uses a multiline contenteditable composer, but normal Enter
-          // means Send. The previous generic contenteditable branch inserted a
-          // line break before submit logic could run, so both phone and hardware
-          // keyboards could never send a prompt. Keep this app-specific: do not
-          // change Enter semantics for arbitrary editable websites.
           if (chatGPTSubmitMode && el.isContentEditable) {
-            const composer = el.closest?.('form, [data-testid*="composer"], [class*="composer"]') || el.parentElement;
+            const keyOptions = {key:'Enter', code:'Enter', keyCode:13, which:13, bubbles:true, cancelable:true};
+            const keyDownAccepted = el.dispatchEvent(new KeyboardEvent('keydown', keyOptions));
+
             const selectors = [
               '[data-testid="send-button"]',
               'button[aria-label="Send prompt"]',
               'button[aria-label="Send message"]',
               'button[type="submit"]'
             ];
-            const scopes = [composer, document];
-            for (const scope of scopes) {
-              if (!scope?.querySelector) continue;
-              for (const selector of selectors) {
-                const button = scope.querySelector(selector);
-                if (!button || button.disabled || button.getAttribute?.('aria-disabled') === 'true') continue;
-                button.click();
-                return true;
+
+            const composer = el.closest?.('form, [data-testid*="composer"], [class*="composer"]') || el.parentElement;
+            let sendButton = null;
+
+            // Prefer a document-level lookup first. ChatGPT's send control can be
+            // rendered outside the focused contenteditable subtree by React/SPA
+            // composition, and limiting the first search to a guessed ancestor made
+            // Enter-to-send brittle in both the app and deterministic WebKit fixture.
+            for (const selector of selectors) {
+              const candidate = document.querySelector(selector);
+              if (candidate && !candidate.disabled && candidate.getAttribute?.('aria-disabled') !== 'true') {
+                sendButton = candidate;
+                break;
               }
+            }
+
+            if (!sendButton && composer?.querySelector) {
+              for (const selector of selectors) {
+                const candidate = composer.querySelector(selector);
+                if (candidate && !candidate.disabled && candidate.getAttribute?.('aria-disabled') !== 'true') {
+                  sendButton = candidate;
+                  break;
+                }
+              }
+            }
+
+            if (sendButton) {
+              // Dispatch one bubbling click rather than mixing synthetic pointer
+              // sequences with HTMLElement.click(). React-style delegated handlers
+              // and simple DOM listeners both receive this path exactly once.
+              sendButton.dispatchEvent(new MouseEvent('click', {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                button: 0,
+                buttons: 0
+              }));
+              el.dispatchEvent(new KeyboardEvent('keyup', keyOptions));
+              return true;
             }
 
             const form = el.closest?.('form');
             if (form?.requestSubmit) {
               try {
                 form.requestSubmit();
+                el.dispatchEvent(new KeyboardEvent('keyup', keyOptions));
                 return true;
               } catch (e) {}
             }
 
-            // Normal Enter in the ChatGPT composer must not silently degrade into
-            // a newline if the live site changes its submit markup. Returning false
-            // leaves the user's draft untouched and makes the failure diagnosable.
-            return false;
+            el.dispatchEvent(new KeyboardEvent('keyup', keyOptions));
+            // If a site keydown handler consumed Enter, leave the editor untouched.
+            // Otherwise also leave it untouched: normal Enter in ChatGPT must never
+            // silently degrade into a newline when send markup changes.
+            return !keyDownAccepted;
           }
 
           if (el.tagName === 'TEXTAREA' || el.isContentEditable) {
@@ -355,16 +378,11 @@ final class DesktopWebInputRegistry {
             return true;
           }
 
-          // Dispatch key events first — some sites use keydown listeners
           const options = {key:'Enter', code:'Enter', keyCode:13, which:13, bubbles:true, cancelable:true};
           el.dispatchEvent(new KeyboardEvent('keydown', options));
           el.dispatchEvent(new KeyboardEvent('keypress', options));
           el.dispatchEvent(new KeyboardEvent('keyup', options));
 
-          // Strategy 1: Find and click the form's submit button directly.
-          // This is the most reliable approach for Google, YouTube, and
-          // standard web forms since synthetic KeyboardEvents are untrusted
-          // in WebKit and many sites ignore them.
           const form = el.form || el.closest?.('form');
           if (form) {
             const submitBtn = form.querySelector('button[type="submit"], input[type="submit"], button:not([type])');
@@ -372,7 +390,6 @@ final class DesktopWebInputRegistry {
               submitBtn.click();
               return true;
             }
-            // Fallback: use requestSubmit for HTML5 validation, or submit()
             try {
               if (form.requestSubmit) form.requestSubmit();
               else form.submit();
@@ -380,8 +397,6 @@ final class DesktopWebInputRegistry {
             return true;
           }
 
-          // Strategy 2: Find a nearby search/submit button by common patterns
-          // used by YouTube, Google, and SPAs that don't use <form> elements.
           const container = el.closest?.('[role="search"], [role="combobox"], .search-box, .search-container, #search-form') || el.parentElement;
           if (container) {
             const nearbyBtn = container.querySelector('button[aria-label*="earch"], button[type="submit"], [role="button"][aria-label*="earch"], button.search-icon, button svg');
@@ -392,7 +407,6 @@ final class DesktopWebInputRegistry {
             }
           }
 
-          // Strategy 3: For YouTube specifically, the search icon button
           const ytSearch = document.querySelector('#search-icon-legacy, button#search-icon-legacy, ytd-searchbox button');
           if (ytSearch) {
             ytSearch.click();
@@ -446,10 +460,6 @@ struct WKWebViewRepresentable: UIViewRepresentable {
         configuration.preferences.isElementFullscreenEnabled = false
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
-        // Keep WebKit's real iOS user agent so sites can correctly detect the
-        // platform capabilities used by Password AutoFill, passkeys, OAuth,
-        // CAPTCHA and file pickers. Desktop layout is requested separately via
-        // preferredContentMode; Kamihi must not impersonate macOS Safari.
         webView.isOpaque = false
         webView.backgroundColor = .systemBackground
         webView.scrollView.backgroundColor = .systemBackground
@@ -477,10 +487,6 @@ struct WKWebViewRepresentable: UIViewRepresentable {
     }
 
     static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
-        // Closing/replacing a standalone web app should stop network/media work
-        // immediately instead of waiting for WebKit/ARC to eventually tear the
-        // renderer down. Persistent cookies/session state stay in the default
-        // WKWebsiteDataStore and are not copied or deleted here.
         webView.stopLoading()
         webView.uiDelegate = nil
         webView.navigationDelegate = nil
@@ -495,11 +501,6 @@ struct WKWebViewRepresentable: UIViewRepresentable {
             for navigationAction: WKNavigationAction,
             windowFeatures: WKWindowFeatures
         ) -> WKWebView? {
-            // Standalone Desktop web apps intentionally stay single-window. Sites
-            // frequently use target=_blank/window.open for sign-in, help and
-            // external links; without a UI delegate WebKit silently drops those
-            // navigations. Keep the flow alive in the same retained view so login
-            // cookies/session state remain in WebKit's default data store.
             guard navigationAction.targetFrame == nil,
                   let requestURL = navigationAction.request.url else { return nil }
             webView.load(URLRequest(url: requestURL))
@@ -507,11 +508,6 @@ struct WKWebViewRepresentable: UIViewRepresentable {
         }
 
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-            // iOS can reclaim a standalone ChatGPT/YouTube/Takeover renderer during
-            // a long external-display session. Recover only while this WebView is
-            // still presented; dismantled/hidden apps must not restart network or
-            // media work. Authentication cookies/session state remain owned by
-            // WebKit's default data store and are never read by Kamihi.
             guard webView.superview != nil else { return }
             webView.reload()
         }
