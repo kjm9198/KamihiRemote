@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import UIKit
 import WebKit
 
 #if DEBUG
@@ -8,6 +9,44 @@ enum DesktopChatGPTLifecycleSmoke {
     private static let logger = Logger(subsystem: "com.kamihi.remote", category: "DesktopSmoke")
     private static let markerURL = FileManager.default.temporaryDirectory
         .appendingPathComponent("kamihi-chatgpt-lifecycle-smoke.txt", isDirectory: false)
+
+    private final class FixtureNavigationWaiter: NSObject, WKNavigationDelegate {
+        private var continuation: CheckedContinuation<Bool, Never>?
+
+        func loadHTML(_ html: String, baseURL: URL?, in webView: WKWebView) async -> Bool {
+            webView.navigationDelegate = self
+            return await withCheckedContinuation { continuation in
+                self.continuation = continuation
+                webView.loadHTMLString(html, baseURL: baseURL)
+            }
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            finish(true)
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            didFail navigation: WKNavigation!,
+            withError error: Error
+        ) {
+            finish(false)
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            didFailProvisionalNavigation navigation: WKNavigation!,
+            withError error: Error
+        ) {
+            finish(false)
+        }
+
+        private func finish(_ succeeded: Bool) {
+            guard let continuation else { return }
+            self.continuation = nil
+            continuation.resume(returning: succeeded)
+        }
+    }
 
     @discardableResult
     static func run(desktop providedDesktop: DesktopSession? = nil) async -> Bool {
@@ -90,50 +129,78 @@ enum DesktopChatGPTLifecycleSmoke {
 
     /// Network-free WebKit fixture for the exact shared input bridge used by the
     /// ChatGPT window. It intentionally contains no account/session data and uses
-    /// a non-persistent website store. This proves focus -> type -> delete -> type
-    /// -> normal Enter/send without relying on the live ChatGPT service or auth.
+    /// a non-persistent website store. Attach the WebView to a real foreground
+    /// UIWindow so WebKit gets the same scene/process lifecycle as a rendered app,
+    /// then require an actual WKNavigationDelegate completion before input begins.
     private static func verifyRoutedComposerInput() async -> Bool {
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }) else {
+            return fail("composer-scene")
+        }
+
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         let webView = WKWebView(
             frame: CGRect(x: 0, y: 0, width: 800, height: 600),
             configuration: configuration
         )
+        let hostController = UIViewController()
+        hostController.view.backgroundColor = .systemBackground
+        webView.frame = hostController.view.bounds
+        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        hostController.view.addSubview(webView)
+
+        let hostWindow = UIWindow(windowScene: scene)
+        hostWindow.frame = scene.effectiveGeometry.coordinateSpace.bounds
+        hostWindow.rootViewController = hostController
+        hostWindow.windowLevel = .normal
+        hostWindow.isHidden = false
+
+        let navigationWaiter = FixtureNavigationWaiter()
         defer {
             DesktopWebInputRegistry.shared.unregister(webView)
             webView.stopLoading()
+            webView.navigationDelegate = nil
+            webView.removeFromSuperview()
+            hostWindow.isHidden = true
+            hostWindow.rootViewController = nil
         }
 
-        webView.loadHTMLString(
-            """
-            <!doctype html>
-            <html>
-              <head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-              <body>
-                <div id="composer-shell" data-testid="composer">
-                  <div id="composer" role="textbox" contenteditable="true" aria-label="Prompt"></div>
-                  <button id="send" data-testid="send-button" type="button">Send</button>
-                </div>
-                <script>
-                  const composer = document.getElementById('composer');
-                  const send = document.getElementById('send');
-                  composer.addEventListener('input', () => {
-                    document.title = 'VALUE:' + composer.textContent;
-                  });
-                  send.addEventListener('click', event => {
-                    event.preventDefault();
-                    document.title = 'SENT:' + composer.textContent;
-                  });
-                  composer.focus();
-                  document.title = 'READY';
-                </script>
-              </body>
-            </html>
-            """,
-            baseURL: URL(string: "https://kamihi-chatgpt.local")
-        )
+        let html = """
+        <!doctype html>
+        <html>
+          <head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+          <body>
+            <div id="composer-shell" data-testid="composer">
+              <div id="composer" role="textbox" contenteditable="true" aria-label="Prompt"></div>
+              <button id="send" data-testid="send-button" type="button">Send</button>
+            </div>
+            <script>
+              const composer = document.getElementById('composer');
+              const send = document.getElementById('send');
+              composer.addEventListener('input', () => {
+                document.title = 'VALUE:' + composer.textContent;
+              });
+              send.addEventListener('click', event => {
+                event.preventDefault();
+                document.title = 'SENT:' + composer.textContent;
+              });
+              composer.focus();
+              document.title = 'READY';
+            </script>
+          </body>
+        </html>
+        """
 
-        guard await waitForTitle("READY", in: webView) else {
+        guard await navigationWaiter.loadHTML(
+            html,
+            baseURL: URL(string: "https://kamihi-chatgpt.local"),
+            in: webView
+        ) else {
+            return fail("composer-navigation")
+        }
+        guard webView.title == "READY" || await waitForTitle("READY", in: webView) else {
             return fail("composer-fixture")
         }
         guard await focusComposer(in: webView) else {
