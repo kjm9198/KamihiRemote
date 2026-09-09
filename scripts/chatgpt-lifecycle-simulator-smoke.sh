@@ -48,7 +48,7 @@ for runtime, devices in payload.get("devices", {}).items():
 if not candidates:
     raise SystemExit(1)
 latest=max(item[0] for item in candidates)
-choices=sorted(item for item in candidates if item[0] == latest, key=lambda item: (item[1], item[2]))
+choices=sorted([item for item in candidates if item[0] == latest], key=lambda item: (item[1], item[2]))
 _, _, name, udid=choices[0]
 print(f"{udid}|{name}")
 ' "$family"
