@@ -10,7 +10,8 @@ enum DesktopChatGPTLifecycleSmoke {
         .appendingPathComponent("kamihi-chatgpt-lifecycle-smoke.txt", isDirectory: false)
 
     @discardableResult
-    static func run(desktop: DesktopSession = .shared) async -> Bool {
+    static func run(desktop providedDesktop: DesktopSession? = nil) async -> Bool {
+        let desktop = providedDesktop ?? DesktopSession.shared
         try? FileManager.default.removeItem(at: markerURL)
 
         let originalWindows = desktop.windows
@@ -109,17 +110,17 @@ enum DesktopChatGPTLifecycleSmoke {
             <html>
               <head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
               <body>
-                <form id="composer-form" data-testid="composer">
+                <div id="composer-shell" data-testid="composer">
                   <div id="composer" role="textbox" contenteditable="true" aria-label="Prompt"></div>
-                  <button id="send" data-testid="send-button" type="submit">Send</button>
-                </form>
+                  <button id="send" data-testid="send-button" type="button">Send</button>
+                </div>
                 <script>
                   const composer = document.getElementById('composer');
-                  const form = document.getElementById('composer-form');
+                  const send = document.getElementById('send');
                   composer.addEventListener('input', () => {
                     document.title = 'VALUE:' + composer.textContent;
                   });
-                  form.addEventListener('submit', event => {
+                  send.addEventListener('click', event => {
                     event.preventDefault();
                     document.title = 'SENT:' + composer.textContent;
                   });
