@@ -443,7 +443,7 @@ private struct DesktopSettingsWebView: UIViewRepresentable {
                     <h2>Dock</h2>
                     <div class='group'>
                       <div class='row'><div><div class='label'>Automatically hide and show the Dock</div><div class='detail'>Dock stays hidden until cursor hovers at the bottom of the screen.</div></div><div class='choices'>\(button(s.autohideDock ? "On":"Off",action:"autohideDock",value:"",isActive:s.autohideDock))</div></div>
-                      <div class='row'><div><div class='label'>Dock Auto-Hide Action</div><div class='detail'>Toggle hiding without leaving your current workspace.</div></div><div class='choices'>\(button(s.autohideDock ? "Keep Dock Visible" : "Turn Off Dock",action:"autohideDock",value:""))</div></div>
+                      <div class='row'><div><div class='label'>Dock Auto-Hide Action</div><div class='detail'>Toggle hiding without leaving your current workspace.</div></div><div class='choices'>\(button(s.autohideDock ? "Keep Dock Visible" : "Hide Dock Automatically",action:"autohideDock",value:""))</div></div>
                     </div>
 
                     <h2>Windows & Workspaces</h2>
