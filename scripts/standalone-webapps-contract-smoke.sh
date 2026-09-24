@@ -98,6 +98,6 @@ require_literal "$CHATGPT_SMOKE" 'DesktopWebInputRegistry.shared.deleteBackward(
 require_literal "$CHATGPT_SMOKE" 'DesktopWebInputRegistry.shared.pressEnter(key: "ChatGPT")' 'ChatGPT routed Enter smoke'
 require_literal "$CHATGPT_SMOKE" 'document.documentElement.dataset.kamihiSent = composer.textContent' 'ChatGPT fixture records click-handler DOM state'
 require_literal "$CHATGPT_SMOKE" 'waitForSentValue("hello", in: webView)' 'ChatGPT live DOM send assertion'
-require_literal "$CHATGPT_SMOKE" 'bounded 420 xcrun simctl bootstatus "$udid" -b' 'fresh iPad waits for terminal CoreSimulator readiness before install'
+require_literal "$CHATGPT_SMOKE" 'bounded 420 xcrun simctl bootstatus' 'fresh iPad waits for terminal CoreSimulator readiness before install'
 
 echo 'Standalone web-app contract OK'
