@@ -30,9 +30,11 @@ PY
 
 pick_device() {
   local family="$1"
+  local excluded_udid="${2:-}"
   xcrun simctl list devices available -j | python3 -c '
 import json, re, sys
 family=sys.argv[1]
+excluded_udid=sys.argv[2]
 payload=json.load(sys.stdin)
 candidates=[]
 for runtime, devices in payload.get("devices", {}).items():
@@ -42,7 +44,7 @@ for runtime, devices in payload.get("devices", {}).items():
     version=tuple(int(part) for part in match.group(1).split("-"))
     for device in devices:
         name=device.get("name", "")
-        if device.get("isAvailable") and name.startswith(family):
+        if device.get("isAvailable") and name.startswith(family) and device["udid"] != excluded_udid:
             boot_rank=0 if device.get("state") == "Booted" else 1
             candidates.append((version, boot_rank, name, device["udid"]))
 if not candidates:
@@ -51,7 +53,7 @@ latest=max(item[0] for item in candidates)
 choices=sorted([item for item in candidates if item[0] == latest], key=lambda item: (item[1], item[2]))
 _, _, name, udid=choices[0]
 print(f"{udid}|{name}")
-' "$family"
+' "$family" "$excluded_udid"
 }
 
 previous_iphone_selection() {
@@ -165,8 +167,28 @@ run_family() {
   echo "==> ChatGPT lifecycle smoke on $name ($udid)"
 
   if ! ensure_simulator_ready "$udid" "$name" "$reuse_installed"; then
-    capture_evidence "$udid" "$slug"
-    return 1
+    capture_evidence "$udid" "${slug}-setup-failed"
+    if [[ "$family" != "iPad" ]]; then
+      return 1
+    fi
+
+    # Hosted runners occasionally report a fresh iPad as terminally booted while
+    # its installation service still rejects every exact-build install attempt.
+    # Retry infrastructure setup once on a different current-runtime iPad. The
+    # ChatGPT lifecycle assertion itself still runs exactly once and remains a
+    # hard failure if the app launches but the product behavior is wrong.
+    echo "Primary iPad simulator setup unavailable; trying one alternate iPad"
+    if ! selection="$(pick_device "$family" "$udid")"; then
+      echo "No alternate iPad Simulator available after setup failure"
+      return 1
+    fi
+    udid="${selection%%|*}"
+    name="${selection#*|}"
+    echo "==> Retrying ChatGPT lifecycle setup on $name ($udid)"
+    if ! ensure_simulator_ready "$udid" "$name" false; then
+      capture_evidence "$udid" "${slug}-alternate-setup-failed"
+      return 1
+    fi
   fi
 
   data_container="$(bounded 8 xcrun simctl get_app_container "$udid" "$BUNDLE" data 2>/dev/null || true)"
