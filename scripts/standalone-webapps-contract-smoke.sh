@@ -9,6 +9,7 @@ HARDWARE_KEYBOARD="$ROOT_DIR/iOS/Desktop/Controller/DesktopHardwareKeyboardRecei
 TRACKPAD="$ROOT_DIR/iOS/Desktop/Controller/TrackpadEngine.swift"
 SESSION_INPUT="$ROOT_DIR/iOS/Desktop/DesktopSessionExtensions.swift"
 CHATGPT_SMOKE="$ROOT_DIR/iOS/Desktop/Debug/DesktopChatGPTLifecycleSmoke.swift"
+CHATGPT_SIM_SMOKE="$ROOT_DIR/scripts/chatgpt-lifecycle-simulator-smoke.sh"
 
 require_literal() {
   local file="$1"
@@ -20,7 +21,7 @@ require_literal() {
   fi
 }
 
-for file in "$WEBVIEW" "$CHATGPT" "$YOUTUBE" "$HARDWARE_KEYBOARD" "$TRACKPAD" "$SESSION_INPUT" "$CHATGPT_SMOKE"; do
+for file in "$WEBVIEW" "$CHATGPT" "$YOUTUBE" "$HARDWARE_KEYBOARD" "$TRACKPAD" "$SESSION_INPUT" "$CHATGPT_SMOKE" "$CHATGPT_SIM_SMOKE"; do
   [[ -f "$file" ]] || { echo "Missing expected standalone web-app source: $file"; exit 1; }
 done
 
@@ -86,6 +87,7 @@ require_literal "$WEBVIEW" 'let chatGPTSubmitMode = key == "ChatGPT" ? "true" : 
 require_literal "$WEBVIEW" 'if (chatGPTSubmitMode && el.isContentEditable)' 'ChatGPT contenteditable send branch'
 require_literal "$WEBVIEW" '[data-testid="send-button"]' 'ChatGPT send button fallback'
 require_literal "$WEBVIEW" 'if (el.tagName === '\''TEXTAREA'\'' || el.isContentEditable)' 'generic multiline Enter fallback'
+require_literal "$WEBVIEW" "el.setRangeText('\\\\n', start, end, 'end');" 'JavaScript newline escape survives Swift string interpolation'
 require_literal "$SESSION_INPUT" 'DesktopWebInputRegistry.shared.pressEnter(key: key)' 'DesktopSession Enter routing to WebKit'
 require_literal "$HARDWARE_KEYBOARD" 'desktop.pressEnterInActiveDesktopField()' 'hardware keyboard Enter routing'
 
@@ -97,5 +99,6 @@ require_literal "$CHATGPT_SMOKE" 'DesktopWebInputRegistry.shared.deleteBackward(
 require_literal "$CHATGPT_SMOKE" 'DesktopWebInputRegistry.shared.pressEnter(key: "ChatGPT")' 'ChatGPT routed Enter smoke'
 require_literal "$CHATGPT_SMOKE" 'document.documentElement.dataset.kamihiSent = composer.textContent' 'ChatGPT fixture records click-handler DOM state'
 require_literal "$CHATGPT_SMOKE" 'waitForSentValue("hello", in: webView)' 'ChatGPT live DOM send assertion'
+require_literal "$CHATGPT_SIM_SMOKE" 'bounded 420 xcrun simctl bootstatus' 'fresh iPad waits for terminal CoreSimulator readiness before install'
 
 echo 'Standalone web-app contract OK'

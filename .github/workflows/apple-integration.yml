@@ -51,6 +51,9 @@ jobs:
       - name: Verify standalone web-app auth/input contract
         run: bash scripts/standalone-webapps-contract-smoke.sh
 
+      - name: Verify Settings action contract
+        run: bash scripts/settings-contract-smoke.sh
+
       # The script may recover transient simulator infrastructure internally,
       # but product/build/protocol failures remain hard failures. Do not rerun a
       # failed same-SHA workflow to manufacture a passing first-attempt result.

@@ -57,14 +57,15 @@ for runtime, devices in payload.get("devices", {}).items():
     for device in devices:
         name=device.get("name", "")
         if device.get("isAvailable") and name.startswith("iPad"):
+            boot_rank=0 if device.get("state") == "Booted" else 1
             rank=preferred.index(name) if name in preferred else len(preferred)
-            candidates.append((version, rank, name, device["udid"]))
+            candidates.append((version, boot_rank, rank, name, device["udid"]))
 if not candidates:
     raise SystemExit(1)
 latest=max(item[0] for item in candidates)
 choices=[item for item in candidates if item[0] == latest]
-choices.sort(key=lambda item: (item[1], item[2]))
-_, _, name, udid=choices[0]
+choices.sort(key=lambda item: (item[1], item[2], item[3]))
+_, _, _, name, udid=choices[0]
 print(f"{udid}|{name}")
 ')"
 
@@ -76,7 +77,6 @@ SIM_NAME="${SIM_SELECTION#*|}"
 }
 
 echo "==> Using iPad simulator: $SIM_NAME ($UDID)"
-xcrun simctl shutdown "$UDID" >/dev/null 2>&1 || true
 xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
 xcrun simctl bootstatus "$UDID" -b
 xcrun simctl install "$UDID" "$IOS_APP"
