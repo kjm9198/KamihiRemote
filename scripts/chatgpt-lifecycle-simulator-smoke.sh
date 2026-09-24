@@ -102,7 +102,14 @@ ensure_simulator_ready() {
     # Booted alone is not sufficient on fresh hosted-runner devices: installation
     # services can remain unavailable while first-boot migrations run. Wait for
     # CoreSimulator terminal readiness, but keep the infrastructure wait bounded.
-    bounded 150 xcrun simctl bootstatus "$udid" -b >/dev/null 2>&1 || true
+    # Hosted macOS runners can spend more than five minutes in first-boot
+    # CoreSimulator data migration while already reporting the device as Booted.
+    # Require terminal boot readiness before installation; this is infrastructure
+    # hardening only and does not retry or weaken any ChatGPT product assertion.
+    if ! bounded 420 xcrun simctl bootstatus "$udid" -b >/dev/null 2>&1; then
+      echo "Simulator never reached terminal boot readiness: $name ($udid)"
+      return 1
+    fi
   fi
 
   attempt=1
