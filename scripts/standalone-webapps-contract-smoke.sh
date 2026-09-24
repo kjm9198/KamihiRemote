@@ -86,6 +86,7 @@ require_literal "$WEBVIEW" 'let chatGPTSubmitMode = key == "ChatGPT" ? "true" : 
 require_literal "$WEBVIEW" 'if (chatGPTSubmitMode && el.isContentEditable)' 'ChatGPT contenteditable send branch'
 require_literal "$WEBVIEW" '[data-testid="send-button"]' 'ChatGPT send button fallback'
 require_literal "$WEBVIEW" 'if (el.tagName === '\''TEXTAREA'\'' || el.isContentEditable)' 'generic multiline Enter fallback'
+require_literal "$WEBVIEW" "el.setRangeText('\\\\n', start, end, 'end');" 'JavaScript newline escape survives Swift string interpolation'
 require_literal "$SESSION_INPUT" 'DesktopWebInputRegistry.shared.pressEnter(key: key)' 'DesktopSession Enter routing to WebKit'
 require_literal "$HARDWARE_KEYBOARD" 'desktop.pressEnterInActiveDesktopField()' 'hardware keyboard Enter routing'
 
