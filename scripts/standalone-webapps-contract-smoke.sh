@@ -52,6 +52,12 @@ require_literal "$CHATGPT" 'URL(string: "https://chatgpt.com")' 'ChatGPT product
 require_literal "$CHATGPT" 'registryKey: "ChatGPT"' 'ChatGPT input registry identity'
 require_literal "$YOUTUBE" 'registryKey: "YouTube"' 'YouTube input registry identity'
 
+# Avoid two DOM click events for one pointer tap.
+if grep -Fq "hit.dispatchEvent(new MouseEvent('click'" "$WEBVIEW"; then
+  echo 'Duplicate pointer click detected'
+  exit 1
+fi
+
 # YouTube must support the interactions expected from a desktop video app. Keep
 # native WebKit element fullscreen enabled for direct iPad/touch interaction and
 # preserve the software-pointer fullscreen fallback for external-display control.

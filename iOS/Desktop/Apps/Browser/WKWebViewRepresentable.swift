@@ -191,7 +191,8 @@ final class DesktopWebInputRegistry {
             const upInit = Object.assign({}, eventInit, { buttons: 0 });
             hit.dispatchEvent(new PointerEvent('pointerup', upInit));
             hit.dispatchEvent(new MouseEvent('mouseup', upInit));
-            hit.dispatchEvent(new MouseEvent('click', upInit));
+            // The Element.click() below dispatches the click and default activation.
+            // Do not send an extra synthetic click (it double-activates controls).
 
             if (interactive !== hit && interactive.click && !interactive.closest?.('a[href]')) {
               interactive.click();
