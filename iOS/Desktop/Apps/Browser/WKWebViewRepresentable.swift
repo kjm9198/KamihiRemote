@@ -30,6 +30,12 @@ final class DesktopWebInputRegistry {
 
     func register(_ webView: WKWebView, key: String) {
         pruneReleasedEntries()
+        // A newly created WebView must not inherit double-click history from
+        // the previous view registered under this app's identity. Re-registering
+        // the same instance during a SwiftUI update preserves its click sequence.
+        if let current = webViews[key]?.value, current !== webView {
+            lastPrimaryClick.removeValue(forKey: key)
+        }
         webViews[key] = WeakWebView(webView)
     }
 
