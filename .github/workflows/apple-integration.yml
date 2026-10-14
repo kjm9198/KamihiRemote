@@ -51,6 +51,9 @@ jobs:
       - name: Verify standalone web-app auth/input contract
         run: bash scripts/standalone-webapps-contract-smoke.sh
 
+      - name: Verify WebView registry lifecycle contract
+        run: bash scripts/webview-registry-lifecycle-smoke.sh
+
       - name: Verify Settings action contract
         run: bash scripts/settings-contract-smoke.sh
 

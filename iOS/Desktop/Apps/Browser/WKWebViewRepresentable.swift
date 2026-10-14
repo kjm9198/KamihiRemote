@@ -30,6 +30,12 @@ final class DesktopWebInputRegistry {
 
     func register(_ webView: WKWebView, key: String) {
         pruneReleasedEntries()
+        // A newly created WebView must not inherit double-click history from
+        // the previous view registered under this app's identity. Re-registering
+        // the same instance during a SwiftUI update preserves its click sequence.
+        if let current = webViews[key]?.value, current !== webView {
+            lastPrimaryClick.removeValue(forKey: key)
+        }
         webViews[key] = WeakWebView(webView)
     }
 
@@ -191,7 +197,8 @@ final class DesktopWebInputRegistry {
             const upInit = Object.assign({}, eventInit, { buttons: 0 });
             hit.dispatchEvent(new PointerEvent('pointerup', upInit));
             hit.dispatchEvent(new MouseEvent('mouseup', upInit));
-            hit.dispatchEvent(new MouseEvent('click', upInit));
+            // The Element.click() below dispatches the click and default activation.
+            // Do not send an extra synthetic click (it double-activates controls).
 
             if (interactive !== hit && interactive.click && !interactive.closest?.('a[href]')) {
               interactive.click();

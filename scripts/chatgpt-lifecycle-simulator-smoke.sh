@@ -101,17 +101,16 @@ ensure_simulator_ready() {
 
   if ! is_booted "$udid"; then
     bounded 8 xcrun simctl boot "$udid" >/dev/null 2>&1 || true
-    # Booted alone is not sufficient on fresh hosted-runner devices: installation
-    # services can remain unavailable while first-boot migrations run. Wait for
-    # CoreSimulator terminal readiness, but keep the infrastructure wait bounded.
-    # Hosted macOS runners can spend more than five minutes in first-boot
-    # CoreSimulator data migration while already reporting the device as Booted.
-    # Require terminal boot readiness before installation; this is infrastructure
-    # hardening only and does not retry or weaken any ChatGPT product assertion.
-    if ! bounded 420 xcrun simctl bootstatus "$udid" -b >/dev/null 2>&1; then
-      echo "Simulator never reached terminal boot readiness: $name ($udid)"
-      return 1
-    fi
+  fi
+
+  # Booted is not terminal CoreSimulator readiness. Check even already-booted
+  # iPads; first-boot migration can still be running when installation begins.
+  # The previously proven exact-build iPhone reuse path above is unchanged.
+  local boot_log="$SMOKE_DIR/chatgpt-simulator-bootstatus-${udid}.log"
+  if ! bounded 420 xcrun simctl bootstatus "$udid" -b > "$boot_log" 2>&1; then
+    echo "Simulator never reached terminal boot readiness: $name ($udid)"
+    tail -n 30 "$boot_log" || true
+    return 1
   fi
 
   attempt=1
@@ -130,16 +129,21 @@ ensure_simulator_ready() {
   bounded 5 xcrun simctl terminate "$udid" "$BUNDLE" >/dev/null 2>&1 || true
   bounded 8 xcrun simctl uninstall "$udid" "$BUNDLE" >/dev/null 2>&1 || true
 
+  # Preserve the exact CoreSimulator installation error in the smoke artifact.
+  local install_log="$SMOKE_DIR/chatgpt-simulator-install-${udid}.log"
+  : > "$install_log"
   attempt=1
   while (( attempt <= 4 )); do
-    if bounded 15 xcrun simctl install "$udid" "$APP" >/dev/null 2>&1; then
+    if bounded 20 xcrun simctl install "$udid" "$APP" >> "$install_log" 2>&1; then
       return 0
     fi
+    printf 'Install attempt %s/4 failed\n' "$attempt" >> "$install_log"
     sleep 2
     attempt=$((attempt + 1))
   done
 
   echo "Simulator reached Booted state but never accepted exact-build app install: $name ($udid)"
+  tail -n 80 "$install_log" || true
   return 1
 }
 
