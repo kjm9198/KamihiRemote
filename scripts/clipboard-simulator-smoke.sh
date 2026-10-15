@@ -36,7 +36,15 @@ SIM_NAME="${SIM_SELECTION#*|}"
 echo "==> Clipboard simulator smoke on $SIM_NAME ($UDID)"
 xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
 xcrun simctl bootstatus "$UDID" -b >/dev/null
-xcrun simctl install "$UDID" "$APP" >/dev/null 2>&1 || true
+# Never run Clipboard assertions against a stale installation. A failed
+# CoreSimulator install must fail this smoke rather than silently reusing an
+# app left behind by the earlier Desktop/ChatGPT simulator checks.
+INSTALL_LOG="$SMOKE_DIR/clipboard-simulator-install.log"
+if ! xcrun simctl install "$UDID" "$APP" >"$INSTALL_LOG" 2>&1; then
+  echo "Clipboard smoke: exact-build app install failed on $SIM_NAME ($UDID)" >&2
+  tail -n 60 "$INSTALL_LOG" >&2 || true
+  exit 1
+fi
 xcrun simctl terminate "$UDID" "$BUNDLE" >/dev/null 2>&1 || true
 
 LOG="$SMOKE_DIR/clipboard-simulator-launch.log"
