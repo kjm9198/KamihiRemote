@@ -149,6 +149,29 @@ capture_evidence() {
   bounded 6 xcrun simctl io "$udid" screenshot "$SMOKE_DIR/chatgpt-lifecycle-${slug}.png" >/dev/null 2>&1 || true
 }
 
+# A simulator can have an installed app container while its data-container
+# lookup is temporarily unavailable after another simulator smoke. Retry only
+# this CoreSimulator infrastructure lookup; never retry a lifecycle assertion.
+resolve_data_container() {
+  local udid="$1"
+  local slug="$2"
+  local attempt container
+  local log="$SMOKE_DIR/chatgpt-container-${slug}.log"
+  : > "$log"
+
+  for attempt in 1 2 3 4; do
+    if container="$(bounded 8 xcrun simctl get_app_container "$udid" "$BUNDLE" data 2>>"$log")" \
+       && [[ -d "$container" ]]; then
+      printf '%s\n' "$container"
+      return 0
+    fi
+    echo "Data-container lookup unavailable (attempt $attempt/4)" >> "$log"
+    if (( attempt < 4 )); then sleep 2; fi
+  done
+  echo "Data-container lookup failed; diagnostic log: $log" >&2
+  return 1
+}
+
 run_family() {
   local family="$1"
   local slug="$2"
@@ -191,7 +214,7 @@ run_family() {
     fi
   fi
 
-  data_container="$(bounded 8 xcrun simctl get_app_container "$udid" "$BUNDLE" data 2>/dev/null || true)"
+  data_container="$(resolve_data_container "$udid" "$slug" || true)"
   if [[ -z "$data_container" || ! -d "$data_container" ]]; then
     echo "Could not resolve ChatGPT smoke app container on $name"
     capture_evidence "$udid" "$slug"

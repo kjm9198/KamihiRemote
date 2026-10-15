@@ -70,6 +70,11 @@ let cases: [(String, String, String?)] = [
     ("client_assertion", "https://example.com/?client_assertion=FAKE", "https://example.com/"),
     ("AWS secret access key", "https://example.com/?aws_secret_access_key=FAKE", "https://example.com/"),
     ("signedRequest", "https://example.com/?signedRequest=FAKE", "https://example.com/"),
+    ("access_key", "https://example.com/?access_key=FAKE", "https://example.com/"),
+    ("auth_key", "https://example.com/?auth_key=FAKE", "https://example.com/"),
+    ("secret_key", "https://example.com/?secret_key=FAKE", "https://example.com/"),
+    ("private_key", "https://example.com/?private_key=FAKE", "https://example.com/"),
+    ("x-api-key", "https://example.com/?x-api-key=FAKE", "https://example.com/"),
     ("non-http", "ftp://example.com/file?token=FAKE", nil)
 ]
 var failures = 0
