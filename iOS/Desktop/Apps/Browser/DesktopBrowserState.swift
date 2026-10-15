@@ -441,25 +441,56 @@ public final class DesktopBrowserState: ObservableObject {
             return nil
         }
 
+        // Inspect nested redirect URLs as well as top-level query keys before
+        // persisting history, bookmarks or restored tabs.
+        func sensitiveQueryName(_ name: String) -> Bool {
+            let normalized = name.lowercased().replacingOccurrences(of: "-", with: "_")
+            let compact = normalized.replacingOccurrences(of: "_", with: "")
+            return sensitiveHistoryQueryNames.contains(normalized)
+                || sensitiveHistoryQueryNames.contains(compact)
+                || ["token", "secret", "password", "credential", "signature"].contains(where: {
+                    compact.hasSuffix($0)
+                })
+        }
+
+        func nestedCredentials(_ value: String?) -> Bool {
+            guard let value else { return false }
+            // Bound both traversal and input size. If inspection cannot finish,
+            // discard the parameter rather than persisting an uninspected secret.
+            var pending = [value]
+            var inspected = 0
+            while let next = pending.popLast() {
+                inspected += 1
+                if inspected > 64 || next.count > 16_384 { return true }
+                var candidate = next
+                for _ in 0..<3 {
+                    if let nested = URL(string: candidate),
+                       let scheme = nested.scheme?.lowercased(),
+                       (scheme == "http" || scheme == "https"),
+                       let parts = URLComponents(url: nested, resolvingAgainstBaseURL: false) {
+                        if parts.user != nil || parts.password != nil || parts.fragment != nil {
+                            return true
+                        }
+                        for item in parts.queryItems ?? [] {
+                            if sensitiveQueryName(item.name) { return true }
+                            if let child = item.value { pending.append(child) }
+                        }
+                        break
+                    }
+                    guard let decoded = candidate.removingPercentEncoding,
+                          decoded != candidate else { break }
+                    candidate = decoded
+                }
+            }
+            return false
+        }
+
         components.fragment = nil
         components.user = nil
         components.password = nil
         if let queryItems = components.queryItems {
             let safeItems = queryItems.filter { item in
-                let normalizedName = item.name.lowercased().replacingOccurrences(of: "-", with: "_")
-                let compactName = normalizedName.replacingOccurrences(of: "_", with: "")
-                return !sensitiveHistoryQueryNames.contains(normalizedName)
-                    && !sensitiveHistoryQueryNames.contains(compactName)
-                    && !normalizedName.hasSuffix("_token")
-                    && !normalizedName.hasSuffix("_secret")
-                    && !normalizedName.hasSuffix("_password")
-                    && !normalizedName.hasSuffix("_credential")
-                    && !normalizedName.hasSuffix("_signature")
-                    && !compactName.hasSuffix("token")
-                    && !compactName.hasSuffix("secret")
-                    && !compactName.hasSuffix("password")
-                    && !compactName.hasSuffix("credential")
-                    && !compactName.hasSuffix("signature")
+                !sensitiveQueryName(item.name) && !nestedCredentials(item.value)
             }
             components.queryItems = safeItems.isEmpty ? nil : safeItems
         }

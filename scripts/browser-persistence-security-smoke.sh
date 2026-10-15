@@ -75,6 +75,12 @@ let cases: [(String, String, String?)] = [
     ("secret_key", "https://example.com/?secret_key=FAKE", "https://example.com/"),
     ("private_key", "https://example.com/?private_key=FAKE", "https://example.com/"),
     ("x-api-key", "https://example.com/?x-api-key=FAKE", "https://example.com/"),
+    ("nested OAuth token", "https://example.com/go?next=https%3A%2F%2Fauth.example%2Fcb%3Faccess_token%3DFAKE&q=hello", "https://example.com/go?q=hello"),
+    ("nested userinfo", "https://example.com/go?next=https%3A%2F%2Fuser%3AFAKE%40auth.example%2Fhome", "https://example.com/go"),
+    ("double-encoded nested OAuth token", "https://example.com/go?next=https%253A%252F%252Fauth.example%252Fcb%253Faccess_token%253DFAKE", "https://example.com/go"),
+    ("two nested redirects OAuth", "https://example.com/go?next=https%3A%2F%2Fmiddle.example%2Fredirect%3Fnext%3Dhttps%253A%252F%252Fauth.example%252Fcb%253Faccess_token%253DFAKE", "https://example.com/go"),
+    ("three nested redirects OAuth", "https://example.com/go?next=https%3A%2F%2Fmiddle2.example%2Fredirect%3Fnext%3Dhttps%253A%252F%252Fmiddle.example%252Fredirect%253Fnext%253Dhttps%25253A%25252F%25252Fauth.example%25252Fcb%25253Faccess_token%25253DFAKE", "https://example.com/go"),
+    ("benign nested URL", "https://example.com/go?next=https://other.example/article", "https://example.com/go?next=https://other.example/article"),
     ("non-http", "ftp://example.com/file?token=FAKE", nil)
 ]
 var failures = 0
