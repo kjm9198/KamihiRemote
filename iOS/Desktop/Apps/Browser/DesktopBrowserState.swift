@@ -93,17 +93,37 @@ public final class DesktopBrowserState: ObservableObject {
 
     private static let sensitiveHistoryQueryNames: Set<String> = [
         "access_token",
+        "accesstoken",
+        "accesskeyid",
+        "apikey",
         "auth",
+        "authcode",
         "authorization",
+        "authorizationcode",
+        "authtoken",
+        "awsaccesskeyid",
+        "awssecretaccesskey",
+        "clientassertion",
         "code",
         "credential",
         "id_token",
+        "idtoken",
+        "jwt",
         "key",
+        "oauthverifier",
         "password",
         "passwd",
+        "refreshtoken",
+        "samlresponse",
         "secret",
         "session",
         "session_id",
+        "sessionid",
+        "sessionkey",
+        "sig",
+        "signature",
+        "signedrequest",
+        "state",
         "token"
     ]
 
@@ -417,13 +437,24 @@ public final class DesktopBrowserState: ObservableObject {
         }
 
         components.fragment = nil
+        components.user = nil
+        components.password = nil
         if let queryItems = components.queryItems {
             let safeItems = queryItems.filter { item in
                 let normalizedName = item.name.lowercased().replacingOccurrences(of: "-", with: "_")
+                let compactName = normalizedName.replacingOccurrences(of: "_", with: "")
                 return !sensitiveHistoryQueryNames.contains(normalizedName)
+                    && !sensitiveHistoryQueryNames.contains(compactName)
                     && !normalizedName.hasSuffix("_token")
                     && !normalizedName.hasSuffix("_secret")
                     && !normalizedName.hasSuffix("_password")
+                    && !normalizedName.hasSuffix("_credential")
+                    && !normalizedName.hasSuffix("_signature")
+                    && !compactName.hasSuffix("token")
+                    && !compactName.hasSuffix("secret")
+                    && !compactName.hasSuffix("password")
+                    && !compactName.hasSuffix("credential")
+                    && !compactName.hasSuffix("signature")
             }
             components.queryItems = safeItems.isEmpty ? nil : safeItems
         }
