@@ -93,17 +93,42 @@ public final class DesktopBrowserState: ObservableObject {
 
     private static let sensitiveHistoryQueryNames: Set<String> = [
         "access_token",
+        "accesstoken",
+        "accesskeyid",
+        "accesskey",
+        "authkey",
+        "privatekey",
+        "secretkey",
+        "xapikey",
+        "apikey",
         "auth",
+        "authcode",
         "authorization",
+        "authorizationcode",
+        "authtoken",
+        "awsaccesskeyid",
+        "awssecretaccesskey",
+        "clientassertion",
         "code",
         "credential",
         "id_token",
+        "idtoken",
+        "jwt",
         "key",
+        "oauthverifier",
         "password",
         "passwd",
+        "refreshtoken",
+        "samlresponse",
         "secret",
         "session",
         "session_id",
+        "sessionid",
+        "sessionkey",
+        "sig",
+        "signature",
+        "signedrequest",
+        "state",
         "token"
     ]
 
@@ -416,14 +441,69 @@ public final class DesktopBrowserState: ObservableObject {
             return nil
         }
 
+        // Inspect nested redirect URLs as well as top-level query keys before
+        // persisting history, bookmarks or restored tabs.
+        func sensitiveQueryName(_ name: String) -> Bool {
+            // URLComponents decodes query names once. Inspect additional
+            // encoding layers, failing closed when the depth is exhausted.
+            var candidate = name
+            for decodingStep in 0..<8 {
+                let normalized = candidate.lowercased().replacingOccurrences(of: "-", with: "_")
+                let compact = normalized.replacingOccurrences(of: "_", with: "")
+                if sensitiveHistoryQueryNames.contains(normalized)
+                    || sensitiveHistoryQueryNames.contains(compact)
+                    || ["token", "secret", "password", "credential", "signature"].contains(where: {
+                        compact.hasSuffix($0)
+                    }) {
+                    return true
+                }
+                guard let decoded = candidate.removingPercentEncoding else { return true }
+                if decoded == candidate { return false }
+                if decodingStep == 7 { return true }
+                candidate = decoded
+            }
+            return false
+        }
+
+        func nestedCredentials(_ value: String?) -> Bool {
+            guard let value else { return false }
+            // Bound both traversal and input size. If inspection cannot finish,
+            // discard the parameter rather than persisting an uninspected secret.
+            var pending = [value]
+            var inspected = 0
+            while let next = pending.popLast() {
+                inspected += 1
+                if inspected > 64 || next.count > 16_384 { return true }
+                var candidate = next
+                for decodingStep in 0..<8 {
+                    if let nested = URL(string: candidate),
+                       let scheme = nested.scheme?.lowercased(),
+                       (scheme == "http" || scheme == "https"),
+                       let parts = URLComponents(url: nested, resolvingAgainstBaseURL: false) {
+                        if parts.user != nil || parts.password != nil || parts.fragment != nil {
+                            return true
+                        }
+                        for item in parts.queryItems ?? [] {
+                            if sensitiveQueryName(item.name) { return true }
+                            if let child = item.value { pending.append(child) }
+                        }
+                        break
+                    }
+                    guard let decoded = candidate.removingPercentEncoding,
+                          decoded != candidate else { break }
+                    if decodingStep == 7 { return true }
+                    candidate = decoded
+                }
+            }
+            return false
+        }
+
         components.fragment = nil
+        components.user = nil
+        components.password = nil
         if let queryItems = components.queryItems {
             let safeItems = queryItems.filter { item in
-                let normalizedName = item.name.lowercased().replacingOccurrences(of: "-", with: "_")
-                return !sensitiveHistoryQueryNames.contains(normalizedName)
-                    && !normalizedName.hasSuffix("_token")
-                    && !normalizedName.hasSuffix("_secret")
-                    && !normalizedName.hasSuffix("_password")
+                !sensitiveQueryName(item.name) && !nestedCredentials(item.value)
             }
             components.queryItems = safeItems.isEmpty ? nil : safeItems
         }
