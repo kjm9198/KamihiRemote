@@ -444,13 +444,25 @@ public final class DesktopBrowserState: ObservableObject {
         // Inspect nested redirect URLs as well as top-level query keys before
         // persisting history, bookmarks or restored tabs.
         func sensitiveQueryName(_ name: String) -> Bool {
-            let normalized = name.lowercased().replacingOccurrences(of: "-", with: "_")
-            let compact = normalized.replacingOccurrences(of: "_", with: "")
-            return sensitiveHistoryQueryNames.contains(normalized)
-                || sensitiveHistoryQueryNames.contains(compact)
-                || ["token", "secret", "password", "credential", "signature"].contains(where: {
-                    compact.hasSuffix($0)
-                })
+            // URLComponents decodes query names once. Inspect additional
+            // encoding layers, failing closed when the depth is exhausted.
+            var candidate = name
+            for decodingStep in 0..<8 {
+                let normalized = candidate.lowercased().replacingOccurrences(of: "-", with: "_")
+                let compact = normalized.replacingOccurrences(of: "_", with: "")
+                if sensitiveHistoryQueryNames.contains(normalized)
+                    || sensitiveHistoryQueryNames.contains(compact)
+                    || ["token", "secret", "password", "credential", "signature"].contains(where: {
+                        compact.hasSuffix($0)
+                    }) {
+                    return true
+                }
+                guard let decoded = candidate.removingPercentEncoding else { return true }
+                if decoded == candidate { return false }
+                if decodingStep == 7 { return true }
+                candidate = decoded
+            }
+            return false
         }
 
         func nestedCredentials(_ value: String?) -> Bool {
@@ -463,7 +475,7 @@ public final class DesktopBrowserState: ObservableObject {
                 inspected += 1
                 if inspected > 64 || next.count > 16_384 { return true }
                 var candidate = next
-                for _ in 0..<3 {
+                for decodingStep in 0..<8 {
                     if let nested = URL(string: candidate),
                        let scheme = nested.scheme?.lowercased(),
                        (scheme == "http" || scheme == "https"),
@@ -479,6 +491,7 @@ public final class DesktopBrowserState: ObservableObject {
                     }
                     guard let decoded = candidate.removingPercentEncoding,
                           decoded != candidate else { break }
+                    if decodingStep == 7 { return true }
                     candidate = decoded
                 }
             }
